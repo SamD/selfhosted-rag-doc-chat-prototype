@@ -1,0 +1,24 @@
+# --- Builder stage ---
+FROM node:20 AS builder
+
+WORKDIR /app
+
+# Install dependencies only when package.json changes
+COPY package.json package-lock.json* ./
+RUN npm install  --legacy-peer-deps
+
+# Copy the rest of the app
+COPY . .
+
+# --- Dev runner stage ---
+FROM node:20 AS dev
+
+WORKDIR /app
+
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+COPY . .
+
+EXPOSE 4321
+
+CMD ["npm", "run", "dev"]

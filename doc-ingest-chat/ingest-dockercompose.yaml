@@ -1,0 +1,272 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7
+    command: --port ${REDIS_PORT:-6380} --save "" --appendonly no
+    ports:
+      - "${REDIS_PORT:-6380}:${REDIS_PORT:-6380}"
+    expose:
+      - "${REDIS_PORT:-6380}"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    environment:
+      - REDIS_PORT=${REDIS_PORT:-6380}
+
+# config options can viewed at: https://github.com/chroma-core/chroma/blob/main/rust/frontend/sample_configs/single_node_full.yaml
+  chromadb:
+    image: chromadb/chroma:latest
+#    build:
+#      context: .
+#      dockerfile: ./Chroma-Dockerfile
+#    env_file:
+#      - ingest-svc.env
+    environment:
+      - "${CHROMA_HOST_ADDR:-0.0.0.0}:0.0.0.0"
+      - "${CHROMA_HOST_PORT:-9001}:8000"
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_WORKERS=1
+      - CHROMA_TIMEOUT_KEEP_ALIVE=30
+      - CHROMA_LOG_LEVEL=DEBUG
+    ports:
+      - "${CHROMA_HOST_PORT:-9001}:8000"
+    volumes:
+      - "${CHROMA_DATA_DIR}:/data"
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+  consumer_worker_gpu:
+    container_name: consumer_worker_gpu
+    hostname: consumer_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cuda
+    command: ["python", "run_consumer.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=true
+    depends_on:
+      - redis
+      - chromadb
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+#    working_dir: /app/doc-ingest-chat
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run_consumer.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # or specify a number, e.g., 1, or specific device_ids: ['0', '1']
+              capabilities: [ gpu ] # This is mandatory for GPU devices
+  
+  consumer_worker_cpu:
+    container_name: consumer_worker_cpu
+    hostname: consumer_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cpu
+    command: ["python", "run_consumer.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=false
+    depends_on:
+      - redis
+      - chromadb
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+    #    working_dir: /app/doc-ingest-chat
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run_consumer.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  ocr_worker:
+    container_name: ocr_worker
+    hostname: ocr_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cuda
+      - cpu
+    command: ["python", "run_ocr_worker.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=false
+#    depends_on:
+#      consumer_worker:
+#        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+#    working_dir: /app/doc-ingest-chat
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run_ocr_worker.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  producer_worker:
+    container_name: producer_worker
+    hostname: producer_worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cuda
+      - cpu
+    command: ["python", "run_producer.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=false
+    depends_on:
+      ocr_worker:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+#    working_dir: /app/doc-ingest-chat
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run_producer.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+
+  api_gpu:
+    container_name: api_gpu
+    hostname: api
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cuda
+#    working_dir: /app/doc-ingest-chat
+    command: ["python", "apimain.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=true
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # or specify a number, e.g., 1, or specific device_ids: ['0', '1']
+              capabilities: [ gpu ] # This is mandatory for GPU devices
+
+  api_cpu:
+    container_name: api_cpu
+    hostname: api
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cpu
+    #    working_dir: /app/doc-ingest-chat
+    command: ["python", "apimain.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - E5_MODEL_PATH=${E5_MODEL_PATH}
+      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=false
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
+      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ../astro-frontend
+      dockerfile: Dockerfile.frontend
+      target: dev
+    profiles:
+      - with-frontend
+    ports:
+      - "4321:4321"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ../astro-frontend:/app
+
+volumes:
+  redis_data:

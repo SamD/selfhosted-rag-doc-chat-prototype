@@ -1,0 +1,191 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="AI Chat Interface">
+	<div class="container mx-auto px-4 py-8 max-w-4xl">
+		<header class="text-center mb-8">
+			<h1 class="text-4xl font-bold text-gray-900 mb-2">AI Chat Interface</h1>
+			<p class="text-gray-600">Ask questions and get intelligent responses with citations</p>
+		</header>
+
+		<div class="bg-white rounded-lg shadow-lg overflow-hidden">
+			<!-- Chat Messages Area -->
+			<div id="chat-messages" class="h-96 overflow-y-auto p-6 space-y-4">
+				<div class="text-center text-gray-500">
+					<p>Start a conversation by typing your question below</p>
+				</div>
+			</div>
+
+			<!-- Input Area -->
+			<div class="border-t border-gray-200 p-4">
+				<form id="chat-form" class="flex gap-3">
+					<input
+						type="text"
+						id="message-input"
+						placeholder="Type your question here..."
+						class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						required
+					/>
+					<button
+						type="submit"
+						id="send-button"
+						class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+					>
+						Send
+					</button>
+				</form>
+			</div>
+		</div>
+
+		<!-- Status Indicator -->
+		<div id="status" class="mt-4 text-center text-sm text-gray-600">
+			<span id="status-text">Ready</span>
+		</div>
+	</div>
+</Layout>
+
+<script>
+	// API Configuration
+	const API_BASE_URL = 'http://localhost:8000/api/v1';
+	
+	// DOM Elements
+	const chatForm = document.getElementById('chat-form') as HTMLFormElement;
+	const messageInput = document.getElementById('message-input') as HTMLInputElement;
+	const sendButton = document.getElementById('send-button') as HTMLButtonElement;
+	const chatMessages = document.getElementById('chat-messages') as HTMLDivElement;
+	const statusText = document.getElementById('status-text') as HTMLSpanElement;
+
+	// Chat state
+	let chatHistory: Array<{role: string, content: string}> = [];
+	let isProcessing = false;
+
+	// Utility functions
+	function updateStatus(message: string, isError = false) {
+		statusText.textContent = message;
+		statusText.className = `text-sm ${isError ? 'text-red-600' : 'text-gray-600'}`;
+	}
+
+	function setLoading(loading: boolean) {
+		isProcessing = loading;
+		sendButton.disabled = loading;
+		messageInput.disabled = loading;
+		if (loading) {
+			sendButton.textContent = 'Sending...';
+			updateStatus('Processing your question...');
+		} else {
+			sendButton.textContent = 'Send';
+			updateStatus('Ready');
+		}
+	}
+
+	function addMessage(content: string, isUser: boolean, citations?: string) {
+		const messageDiv = document.createElement('div');
+		messageDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
+		
+		const messageBubble = document.createElement('div');
+		messageBubble.className = `max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+			isUser 
+				? 'bg-blue-600 text-white' 
+				: 'bg-gray-100 text-gray-900'
+		}`;
+		
+		messageBubble.innerHTML = `
+			<div class="whitespace-pre-wrap">${content}</div>
+			${citations ? `<div class="mt-2 text-xs opacity-75">${citations}</div>` : ''}
+		`;
+		
+		messageDiv.appendChild(messageBubble);
+		chatMessages.appendChild(messageDiv);
+		chatMessages.scrollTop = chatMessages.scrollHeight;
+	}
+
+	function clearChat() {
+		chatMessages.innerHTML = `
+			<div class="text-center text-gray-500">
+				<p>Start a conversation by typing your question below</p>
+			</div>
+		`;
+		chatHistory = [];
+	}
+
+	// API Functions
+	async function sendQuery(query: string) {
+		try {
+			const response = await fetch(`${API_BASE_URL}/query`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					query: query,
+					chat_history: chatHistory
+				})
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const data = await response.json();
+			return data;
+		} catch (error) {
+			console.error('Error sending query:', error);
+			throw error;
+		}
+	}
+
+	async function checkHealth() {
+		try {
+			const response = await fetch(`${API_BASE_URL}/health`);
+			return response.ok;
+		} catch (error) {
+			console.error('Health check failed:', error);
+			return false;
+		}
+	}
+
+	// Event Handlers
+	chatForm.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		
+		if (isProcessing) return;
+		
+		const message = messageInput.value.trim();
+		if (!message) return;
+
+		// Add user message to chat
+		addMessage(message, true);
+		chatHistory.push({ role: 'user', content: message });
+		
+		// Clear input
+		messageInput.value = '';
+		
+		// Send to API
+		setLoading(true);
+		
+		try {
+			const result = await sendQuery(message);
+			
+			// Add AI response to chat
+			addMessage(result.answer, false, result.debug);
+			chatHistory.push({ role: 'assistant', content: result.answer });
+			
+		} catch (error) {
+			console.error('Failed to send query:', error);
+			addMessage('Sorry, I encountered an error processing your request. Please try again.', false);
+			updateStatus('Error: Failed to connect to API', true);
+		} finally {
+			setLoading(false);
+		}
+	});
+
+	// Initialize
+	document.addEventListener('DOMContentLoaded', async () => {
+		// Check API health on load
+		const isHealthy = await checkHealth();
+		if (!isHealthy) {
+			updateStatus('Warning: API server may not be running', true);
+		}
+	});
+</script>
