@@ -28,7 +28,7 @@ This prototype was tested locally on the following hardware:
 ### PDF & HTML Document Chatbot (RAG System with Local LLM)
 
 >A modular, transparent pipeline for retrieving and answering questions
->from document collections using local embeddings and LLMs.
+>from document collections using **local** embeddings and LLMs.
 ------------------------------------------------------------------------
 
 This project implements a retrieval-augmented generation (RAG) system
@@ -61,6 +61,8 @@ images) via:
 
 Redis queues connect all services with coordinated backpressure,
 retries, and transactional guarantees at the file level.
+
+![Self Hosted Rag Doc Pipeline](./project-docs/selfhosted-rag-doc-ingest-1024x375.gif)
 
 ------------------------------------------------------------------------
 
@@ -112,40 +114,50 @@ both are critical for embedding and LLM-based response generation.
 
 ### 🐳 Run and Test with Docker Compose
 
-If your `INGEST_FOLDER` is empty of `PDF` or `HTML` files, you can copy files into that directory once running
-, the directory is periodically scanned for new files
-
+#### Start
 Use the provided `run-compose.sh` script to start the stack:
 
 ```shell
 ./doc-ingest-chat/run-compose.sh
 ```
 
-If you are using the `$PROJECTDIR/Docs` directory for the `INGEST_FOLDER` you can copy your pdf and/or html file(s) there, 
-for earlier testing I used:
+Successful Startup
+![Successful Startup](./project-docs/compose-startup-complete.png)
+
+
+#### Ingest
+
+If your `INGEST_FOLDER` is empty of `PDF` or `HTML` files, you can copy files into that directory once running
+, the directory is periodically scanned for new files.
+For earlier testing I used:
 * [The Outline Of History PT1](https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf)
 * [The Outline Of History PT2](https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf)
 
-
-> 🗂️ **NOTE** These PDF files contain several scanned pages which cannot be parsed by `pdfplumber`. In these cases 
+> 🗂️ **NOTE** These PDF files contain several scanned pages which cannot be parsed by `pdfplumber`. In these cases
 > the `ocr` fallback is triggered which results in the chunk(s) sent to the `OCR_WORKER` via redis.
 > This results in a much slower ingestion if there are many pages but the purpose is to demonstrate the fallback
 > handling feature
 
-Once running:
-- The ingestion API will be available at `http://localhost:8000`
+Successful Ingest
+![Document Ingested](./project-docs/successful-ingest.png)
 
-- \*The local Astro frontend will be served at
-  \**`http://localhost:4321`*
+
+#### RAG
+
+Once running:
+* The ingestion API will be available at `http://localhost:8000`
+* The local Astro frontend will be served at `http://localhost:4321`
 
 The UI is a basic chatbox , queries for the session maintain conversation history. From here
 you can ask relevant queries based on the documents you have ingested.
 
+![RAG](./project-docs/ui-doc-chatbox.png)
 
 #### *CPU Mode Only*
-Optionally a CPU only mode can be used if running on system with non-nvidia or lower end GPU. 
-Note though this will likely run very slow and likely need to modify the llama and/or retriever 
+Optionally a CPU only mode can be used if running on system with non-nvidia or lower end GPU.
+Note though this will likely run very slow and likely need to modify the llama and/or retriever
 properties in the `ingest-svc.env`
+
 ```sh
 ./doc-ingest-chat/run-compose-cpu.sh
 ```
