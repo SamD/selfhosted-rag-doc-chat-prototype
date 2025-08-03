@@ -3,11 +3,11 @@
 	"type": "module",
 	"version": "0.0.1",
 	"scripts": {
-		"dev": "astro dev --host",
-		"start": "astro dev --host",
-		"build": "astro check && astro build",
-		"preview": "astro preview",
-		"astro": "astro"
+		"dev": "npx astro dev --host",
+		"start": "npx astro dev --host",
+		"build": "npx astro check && astro build",
+		"preview": "npx astro preview",
+		"astro": "npx astro"
 	},
 	"dependencies": {
 		"@astrojs/tailwind": "^6.0.2",
