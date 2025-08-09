@@ -2,14 +2,13 @@
 API endpoints for chat, health, and status using FastAPI.
 """
 import logging
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
 from models.query import QueryRequest, QueryResponse
+from pydantic import BaseModel
 from services.dependencies import get_rag_service
 from services.rag_service import RagService
-from pydantic import BaseModel
-from typing import Dict, Any
-
 from utils.logging_config import setup_logging
 
 log = setup_logging("api_endpoints.log", logging.DEBUG)

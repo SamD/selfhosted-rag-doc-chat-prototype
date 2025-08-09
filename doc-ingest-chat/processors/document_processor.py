@@ -6,19 +6,15 @@ import base64
 import json
 import re
 import uuid
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
-from PIL import Image
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
+from config.settings import COMPUTE_TYPE, DEVICE, MAX_OCR_DIM, MEDIA_BATCH_SIZE, SUPPORTED_MEDIA_EXT
 from pdf2image import convert_from_path
-
-from config.settings import (
-    SUPPORTED_MEDIA_EXT, MAX_OCR_DIM,
-    DEVICE, MEDIA_BATCH_SIZE, COMPUTE_TYPE
-)
+from PIL import Image
 from processors.text_processor import TextProcessor
 from utils.text_utils import is_bad_ocr
 

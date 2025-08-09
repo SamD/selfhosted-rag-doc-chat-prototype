@@ -5,6 +5,7 @@ RAG service implementation for the chat system.
 
 from chat.chroma_chat import respond  # ✅ import directly
 
+
 class RagService:
     def __init__(self):
         pass  # No retriever/LLM injected yet

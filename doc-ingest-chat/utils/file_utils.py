@@ -3,9 +3,9 @@
 File utility functions.
 """
 import fcntl
-import os
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Set
 

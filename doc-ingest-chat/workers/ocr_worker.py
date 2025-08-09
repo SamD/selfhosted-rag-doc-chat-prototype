@@ -2,20 +2,28 @@
 """
 OCR Worker for processing images and extracting text.
 """
-import os
 import base64
 import json
-import traceback
+import os
 import signal
+import traceback
+from multiprocessing import Lock, Pool
+
 import numpy as np
 import pytesseract
+from config.settings import (
+    DEBUG_IMAGE_DIR,
+    REDIS_OCR_JOB_QUEUE,
+    TESSDATA_PREFIX,
+    TESSERACT_LANGS,
+    TESSERACT_OEM,
+    TESSERACT_PSM,
+    TESSERACT_USE_SCRIPT_LATIN,
+)
 from PIL import Image
-from multiprocessing import Pool, Lock
-
-from config.settings import DEBUG_IMAGE_DIR, REDIS_OCR_JOB_QUEUE
+from services.redis_service import get_redis_client
 from utils.logging_config import setup_logging, setup_pdf_logging
 from utils.text_utils import is_invalid_text
-from services.redis_service import get_redis_client
 
 log = setup_logging("ingest_ocr_worker.log", include_default_filters=True)
 
@@ -54,7 +62,29 @@ def save_bad_image(np_image, debug_image_path, log_prefix):
 def fallback_to_tesseract(np_image, rel_path, page_num):
     """Fallback to Tesseract OCR."""
     log.info(f"↪️ Falling back to Tesseract for {rel_path} page {page_num}")
-    text = pytesseract.image_to_string(np_image, config="--psm 6 --oem 1").strip()
+    env = os.environ.copy()
+    if TESSDATA_PREFIX:
+        env["TESSDATA_PREFIX"] = TESSDATA_PREFIX
+
+    config_parts = [f"--psm {TESSERACT_PSM}", f"--oem {TESSERACT_OEM}"]
+    if TESSERACT_USE_SCRIPT_LATIN:
+        config_parts.append("-c tessedit_script=Latin")
+    config = " ".join(config_parts)
+
+    try:
+        text = pytesseract.image_to_string(
+            np_image,
+            lang=TESSERACT_LANGS,
+            config=config,
+            env=env,
+        ).strip()
+    except TypeError:
+        # Some pytesseract versions do not accept env kwarg
+        text = pytesseract.image_to_string(
+            np_image,
+            lang=TESSERACT_LANGS,
+            config=config,
+        ).strip()
     if is_invalid_text(text):
         log.info(" ⚠️  Tesseract returned empty/short text")
         return None, "notext_tesseract"

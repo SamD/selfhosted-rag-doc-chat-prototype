@@ -3,8 +3,9 @@
 Text processing functionality.
 """
 import hashlib
-from transformers import AutoTokenizer
+
 from config.settings import E5_MODEL_PATH, MAX_TOKENS
+from transformers import AutoTokenizer
 from utils.text_utils import is_bad_ocr
 
 

@@ -4,9 +4,9 @@ Database service for ChromaDB operations.
 """
 
 import chromadb
+from config.settings import CHROMA_COLLECTION, CHROMA_HOST, CHROMA_PORT, E5_MODEL_PATH, LLAMA_USE_GPU
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
-from config.settings import CHROMA_COLLECTION, E5_MODEL_PATH, CHROMA_HOST, CHROMA_PORT, LLAMA_USE_GPU
 
 device = "cuda" if LLAMA_USE_GPU else "cpu"
 print(f"Device: {device}")

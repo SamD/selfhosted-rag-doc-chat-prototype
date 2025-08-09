@@ -1,11 +1,10 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
 
 # Ensure the worker module is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../workers')))
 import ocr_worker
+
 
 def test_safe_image_save_success(tmp_path):
     from PIL import Image

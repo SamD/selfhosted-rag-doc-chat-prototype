@@ -2,26 +2,24 @@
 """
 Consumer Worker for processing chunks and storing them in ChromaDB.
 """
+import json
+import multiprocessing
 import os
 import signal
-import time
-import json
-import traceback
 import sys
-import multiprocessing
+import time
+import traceback
 from collections import defaultdict
 from itertools import cycle
 
+from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, MAX_TOKENS, PARQUET_FILE, QUEUE_NAMES
 from more_itertools import chunked
-
-from config.settings import (
-    CHUNK_TIMEOUT, MAX_CHUNKS, MAX_CHROMA_BATCH_SIZE, MAX_TOKENS, PARQUET_FILE, QUEUE_NAMES
-)
-from utils.logging_config import setup_logging
-from utils.file_utils import update_ingested_files, update_failed_files
 from services.database import get_db
 from services.parquet_service import write_to_parquet
 from services.redis_service import get_redis_client
+from utils.file_utils import update_failed_files, update_ingested_files
+from utils.logging_config import setup_logging
+
 # from workers.queue_manager import QueueManager  # No need for queue manager in consumer
 
 

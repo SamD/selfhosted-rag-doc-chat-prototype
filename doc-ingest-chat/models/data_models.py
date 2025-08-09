@@ -2,8 +2,8 @@
 """
 Data models for the document ingestion system.
 """
-from typing import Optional, List
 from dataclasses import dataclass
+from typing import List, Optional
 
 
 @dataclass

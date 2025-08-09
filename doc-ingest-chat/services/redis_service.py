@@ -4,8 +4,9 @@ Redis service for queue operations.
 """
 import json
 import time
-import redis
 from typing import List, Optional, Tuple
+
+import redis
 from config.settings import REDIS_HOST, REDIS_PORT
 
 

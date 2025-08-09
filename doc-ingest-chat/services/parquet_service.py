@@ -2,9 +2,10 @@
 """
 Parquet service for data storage operations.
 """
-import pandas as pd
+from typing import Any, Dict, List
+
 import duckdb
-from typing import List, Dict, Any
+import pandas as pd
 from config.settings import DUCKDB_FILE
 
 

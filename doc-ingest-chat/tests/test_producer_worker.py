@@ -1,11 +1,11 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import patch
 
 # Ensure the worker module is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../workers')))
 import producer_worker
+
 
 def test_is_bad_ocr_true():
     # Should return True for empty or gibberish text

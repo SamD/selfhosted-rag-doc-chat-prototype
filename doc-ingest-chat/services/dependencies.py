@@ -3,6 +3,7 @@
 Dependencies for FastAPI services.
 """
 from functools import lru_cache
+
 from services.rag_service import RagService
 
 

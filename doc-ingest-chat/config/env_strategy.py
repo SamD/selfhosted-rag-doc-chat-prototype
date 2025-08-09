@@ -1,5 +1,6 @@
 import os
 
+
 class BaseEnvConfig:
     def apply(self):
         raise NotImplementedError()

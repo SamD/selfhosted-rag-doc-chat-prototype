@@ -4,10 +4,12 @@
 Auto-tune LLaMA config and write to .env file
 """
 
-import os
-import psutil
 import argparse
+import os
 import sys
+
+import psutil
+
 
 def get_cpu_ram_gb():
     return psutil.virtual_memory().total / 1e9

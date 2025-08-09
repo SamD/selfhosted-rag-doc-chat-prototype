@@ -19,25 +19,38 @@ import numpy as np
 import pdfplumber
 import redis
 import torch
+
 # from faster_whisper import WhisperModel
 import whisperx
-from PIL import Image
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
-from pdf2image import convert_from_path
-from transformers import AutoTokenizer
 
 # Import configuration
 from config.settings import (
-    REDIS_HOST, REDIS_PORT, REDIS_OCR_JOB_QUEUE,
-    QUEUE_NAMES, FAILED_FILES, INGEST_FOLDER, TRACK_FILE,
-    MAX_OCR_DIM, MAX_CHROMA_BATCH_SIZE_LIMIT, SUPPORTED_MEDIA_EXT, ALL_SUPPORTED_EXT,
-    DEBUG_IMAGE_DIR, DEVICE, MEDIA_BATCH_SIZE, COMPUTE_TYPE, E5_MODEL_PATH
+    ALL_SUPPORTED_EXT,
+    COMPUTE_TYPE,
+    DEBUG_IMAGE_DIR,
+    DEVICE,
+    E5_MODEL_PATH,
+    FAILED_FILES,
+    INGEST_FOLDER,
+    MAX_CHROMA_BATCH_SIZE_LIMIT,
+    MAX_OCR_DIM,
+    MEDIA_BATCH_SIZE,
+    QUEUE_NAMES,
+    REDIS_HOST,
+    REDIS_OCR_JOB_QUEUE,
+    REDIS_PORT,
+    SUPPORTED_MEDIA_EXT,
+    TRACK_FILE,
 )
+from pdf2image import convert_from_path
+from PIL import Image
+from processors.text_processor import TextProcessor, make_chunk_id, split_doc
+from transformers import AutoTokenizer
 from utils.file_utils import load_tracked, normalize_rel_path
 from utils.logging_config import setup_logging
-from utils.text_utils import is_gibberish, is_visibly_corrupt, is_low_quality, is_valid_pdf
-from processors.text_processor import TextProcessor, split_doc, make_chunk_id
+from utils.text_utils import is_gibberish, is_low_quality, is_valid_pdf, is_visibly_corrupt
 
 os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
 

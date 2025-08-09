@@ -6,26 +6,75 @@ import re
 import string
 import unicodedata
 
+import regex  # third-party regex with Unicode script support
+from config.settings import ALLOW_LATIN_EXTENDED, LATIN_SCRIPT_MIN_RATIO
+from ftfy import fix_text
+
 
 class TextUtils:
     """Text processing utility functions as static methods."""
     
     @staticmethod
+    def fix_mojibake(text: str) -> str:
+        """Use ftfy to fix common mojibake/encoding issues before checks."""
+        try:
+            return fix_text(text)
+        except Exception:
+            return text
+
+    @staticmethod
+    def latin_script_ratio(text: str) -> float:
+        """Return fraction of characters that are Latin letters or combining marks."""
+        if not text:
+            return 0.0
+        matches = regex.findall(r"\p{Latin}|\p{M}", text)
+        return (len(matches) / len(text)) if text else 0.0
+
+    @staticmethod
     def is_visibly_corrupt(text: str) -> bool:
-        """Check if text contains corruption indicators."""
-        return re.search(r'[âã¢£™žœÂÃ]', text) is not None
+        """Check if text contains corruption indicators.
+
+        When ALLOW_LATIN_EXTENDED is True, do not treat Latin ligatures/diacritics
+        like 'œ' as corruption.
+        """
+        pattern = r'[âã¢£™žÂÃ]' if ALLOW_LATIN_EXTENDED else r'[âã¢£™žœÂÃ]'
+        return re.search(pattern, text) is not None
 
     @staticmethod
     def is_gibberish(text: str) -> bool:
-        """Check if text appears to be gibberish."""
+        """Check if text appears to be gibberish.
+
+        If ALLOW_LATIN_EXTENDED is True, preserve composed characters (NFC) and
+        ignore combining marks when computing noise.
+        """
         if not text or not text.strip():
             return True
-        normalized = unicodedata.normalize("NFKD", text)
+        # Normalize and clean text first
+        text = TextUtils.fix_mojibake(text)
+        normalized = unicodedata.normalize("NFC" if ALLOW_LATIN_EXTENDED else "NFKD", text)
         printable = ''.join(c for c in normalized if c.isprintable())
         total = len(printable)
         if total == 0:
             return True
-        non_alpha = sum(1 for c in printable if not c.isalpha() and c not in (' ', '\n'))
+        # If allowing Latin extended, quickly gate by script ratio
+        if ALLOW_LATIN_EXTENDED and TextUtils.latin_script_ratio(printable) >= LATIN_SCRIPT_MIN_RATIO:
+            # Likely Latin script; be more lenient about non-alpha characters
+            noise_denominator = max(1, total)
+            non_alpha = 0
+            for c in printable:
+                if unicodedata.category(c) == 'Mn':
+                    continue
+                if not (c.isalpha() or c in (' ', '\n', '\t', '-', '–', '—', '·', '.', ',', ';', ':', '(', ')', '[', ']', "'", '"')):
+                    non_alpha += 1
+            ratio = non_alpha / noise_denominator
+            return ratio > 0.75  # more tolerant threshold for Latin script
+        non_alpha = 0
+        for c in printable:
+            if ALLOW_LATIN_EXTENDED and unicodedata.category(c) == 'Mn':
+                # Ignore combining diacritical marks
+                continue
+            if not (c.isalpha() or c in (' ', '\n')):
+                non_alpha += 1
         ratio = non_alpha / total
         return ratio > 0.6
 
@@ -60,8 +109,24 @@ class TextUtils:
 
     @staticmethod
     def is_invalid_text(text: str) -> bool:
-        """Check if text is invalid for processing."""
-        return not text.strip() or len(text.strip()) < 20 or not TextUtils.is_mostly_printable_ascii(text)
+        """Check if text is invalid for processing.
+
+        When ALLOW_LATIN_EXTENDED is True, replace the ASCII-printable requirement
+        with a Unicode-printable ratio so Latin extended characters are accepted.
+        """
+        if not text or not text.strip() or len(text.strip()) < 20:
+            return True
+
+        if ALLOW_LATIN_EXTENDED:
+            text = TextUtils.fix_mojibake(text)
+            printable_count = sum(1 for c in text if c.isprintable())
+            ratio = printable_count / len(text)
+            # Also require a minimum Latin script ratio if we are using Latin-extended mode
+            if ratio < 0.6:
+                return True
+            return TextUtils.latin_script_ratio(text) < LATIN_SCRIPT_MIN_RATIO
+
+        return not TextUtils.is_mostly_printable_ascii(text)
 
     @staticmethod
     def is_valid_pdf(path: str) -> bool:

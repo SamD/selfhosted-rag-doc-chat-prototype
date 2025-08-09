@@ -2,10 +2,11 @@
 """
 Utility functions for chat formatting and citation.
 """
+import os
 from collections import OrderedDict
 
 from langchain_core.documents import Document
-import os
+
 
 def format_chunks_with_citations(docs: list[Document]) -> list[str]:
     formatted = []

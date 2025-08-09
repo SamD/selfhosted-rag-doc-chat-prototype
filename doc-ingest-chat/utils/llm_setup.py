@@ -3,18 +3,12 @@
 LLM and chain setup for chat system.
 """
 from config.llama_strategy import LlamaParamStrategy
-from config.settings import (
-    USE_OLLAMA, OLLAMA_MODEL, OLLAMA_URL, LLAMA_MODEL_PATH, LLAMA_N_CTX, LLAMA_N_GPU_LAYERS, LLAMA_N_THREADS,
-    LLAMA_N_BATCH,
-    LLAMA_F16_KV, LLAMA_TEMPERATURE, LLAMA_TOP_K, LLAMA_TOP_P, LLAMA_REPEAT_PENALTY,
-    LLAMA_MAX_TOKENS, LLAMA_CHAT_FORMAT, LLAMA_VERBOSE, LLAMA_SEED, RETRIEVER_TOP_K
-)
-from services.database import get_db
-from prompts.chat_prompts import SHARED_CHAT_PROMPT
-
+from config.settings import OLLAMA_MODEL, OLLAMA_URL, RETRIEVER_TOP_K, USE_OLLAMA
+from langchain.chains import ConversationalRetrievalChain
 from langchain_ollama import ChatOllama
 from llama_cpp import Llama
-from langchain.chains import ConversationalRetrievalChain
+from prompts.chat_prompts import SHARED_CHAT_PROMPT
+from services.database import get_db
 
 
 def get_vectorstore():

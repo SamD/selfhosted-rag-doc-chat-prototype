@@ -2,9 +2,9 @@
 """
 Query models for the API endpoints.
 """
-from typing import List, Dict
-from pydantic import BaseModel
+from typing import Dict, List
 
+from pydantic import BaseModel
 
 # class QueryRequest(BaseModel):
 #     """Request model for querying the RAG system."""

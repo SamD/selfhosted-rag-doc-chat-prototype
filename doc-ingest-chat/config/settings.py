@@ -6,6 +6,7 @@ Configuration settings for the document ingestion system.
 - When running in Docker Compose, values from ingest-svc.env will override the defaults.
 """
 import os
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 def _abs_path(path, base=PROJECT_ROOT):
@@ -18,6 +19,13 @@ def _abs_path(path, base=PROJECT_ROOT):
     return os.path.join(base, path)
 
 LLAMA_USE_GPU = os.getenv("LLAMA_USE_GPU", "true").lower() == "true"
+
+# Text acceptance configuration
+# When true, treat Latin extended characters (diacritics, ligatures like œ) as valid text
+# in OCR quality checks. Can be overridden via environment variable.
+ALLOW_LATIN_EXTENDED = os.getenv("ALLOW_LATIN_EXTENDED", "true").lower() == "true"
+# Minimum fraction of letters that must be Latin to treat text as Latin script content
+LATIN_SCRIPT_MIN_RATIO = float(os.getenv("LATIN_SCRIPT_MIN_RATIO", "0.7"))
 
 # File Processing Configuration
 INGEST_FOLDER = _abs_path(os.getenv("INGEST_FOLDER"))
@@ -106,4 +114,11 @@ LLAMA_MAX_TOKENS = int(os.getenv("LLAMA_MAX_TOKENS", "512"))
 LLAMA_CHAT_FORMAT = os.getenv("LLAMA_CHAT_FORMAT", "chatml")
 LLAMA_VERBOSE = os.getenv("LLAMA_VERBOSE", "False").lower() == "true"
 LLAMA_SEED = int(os.getenv("LLAMA_SEED", "42"))
+
+# Tesseract OCR configuration
+TESSERACT_LANGS = os.getenv("TESSERACT_LANGS", "eng+lat")
+TESSERACT_USE_SCRIPT_LATIN = os.getenv("TESSERACT_USE_SCRIPT_LATIN", "true").lower() == "true"
+TESSERACT_PSM = int(os.getenv("TESSERACT_PSM", "6"))
+TESSERACT_OEM = int(os.getenv("TESSERACT_OEM", "1"))
+TESSDATA_PREFIX = os.getenv("TESSDATA_PREFIX", "")
 

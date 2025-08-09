@@ -2,16 +2,23 @@
 """
 Main entry point for the OCR worker.
 """
-from config.env_strategy import get_env_strategy
-get_env_strategy().apply()
 
-import sys
 import os
+import sys
 
-# Add the project root to the Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from config.env_strategy import get_env_strategy
+from workers.ocr_worker import main as _ocr_main
 
-from workers.ocr_worker import main
+
+def main() -> None:
+    # Apply environment strategy early
+    get_env_strategy().apply()
+
+    # Ensure package imports work when running this file directly
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+    _ocr_main()
+
 
 if __name__ == "__main__":
     main() 

@@ -1,12 +1,12 @@
-import pytest
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
 from itertools import cycle
+from unittest.mock import MagicMock, patch
 
 # Ensure the worker module is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../workers')))
 import consumer_worker
+
 
 def test_get_next_queue_cycles():
     # Patch queue_lock and queue_cycle with a cycle iterator

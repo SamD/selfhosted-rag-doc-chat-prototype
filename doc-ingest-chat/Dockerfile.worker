@@ -11,8 +11,10 @@ FROM python:3.11.11-bookworm AS runner
 # Install poppler-utils (has apt now)
 RUN apt-get update && apt-get install -y \
     poppler-utils \
-    tesseract-ocr \
+    tesseract-ocr tesseract-ocr-eng tesseract-ocr-lat \
  && rm -rf /var/lib/apt/lists/*
+
+# tesseract --list-langs
 
 WORKDIR /app
 

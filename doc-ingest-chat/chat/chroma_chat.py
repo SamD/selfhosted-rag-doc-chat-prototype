@@ -3,11 +3,10 @@ Core chat logic for conversational retrieval and response.
 """
 #!/usr/bin/env python
 import re
+
 from config.settings import USE_OLLAMA
-from utils.llm_setup import get_vectorstore, get_retriever, get_chain_or_llama
-from utils.chat_utils import (
-    format_chunks_with_citations, replace_citation_labels, get_env_boolean
-)
+from utils.chat_utils import format_chunks_with_citations, get_env_boolean, replace_citation_labels
+from utils.llm_setup import get_chain_or_llama, get_retriever, get_vectorstore
 
 vectorstore = get_vectorstore()
 print("Vectorstore contains", vectorstore._collection.count(), "documents")
