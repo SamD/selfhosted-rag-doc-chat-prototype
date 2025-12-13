@@ -92,7 +92,8 @@ os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
 
 # LLM and Chat Configuration
 USE_OLLAMA = os.getenv("USE_OLLAMA", "0") == "1"
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "openchat")
+# OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "openchat")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "NeuralNet/openchat-3.6")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 
 
