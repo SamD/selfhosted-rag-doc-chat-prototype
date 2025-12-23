@@ -3,10 +3,14 @@
 Text processing functionality.
 """
 import hashlib
+import logging
 
 from config.settings import E5_MODEL_PATH, MAX_TOKENS
 from transformers import AutoTokenizer
+from utils.logging_config import setup_logging
 from utils.text_utils import is_bad_ocr
+
+log = setup_logging("text_processor.log")
 
 
 class TextProcessor:
@@ -26,7 +30,7 @@ class TextProcessor:
         last_valid_chunk = ""
         decode_now = True
 
-        print(f"{log_prefix}🧩 Starting chunk at token {start}")
+        log.debug(f"{log_prefix}🧩 Starting chunk at token {start}")
 
         for i in range(start, len(full_tokens)):
             chunk.append(full_tokens[i])
@@ -36,26 +40,26 @@ class TextProcessor:
 
             if decode_now:
                 decoded = tokenizer.decode(chunk, skip_special_tokens=True).strip()
-                print(f"{log_prefix}🔎 Decoded at token {i}: {len(decoded)} chars")
+                log.debug(f"{log_prefix}🔎 Decoded at token {i}: {len(decoded)} chars")
 
                 if len(decoded) > budget:
-                    print(f"{log_prefix}❌ Chunk at token {i} exceeded {budget} chars — backtracking")
+                    log.debug(f"{log_prefix}❌ Chunk at token {i} exceeded {budget} chars — backtracking")
 
                     # Backtrack until within budget
                     for j in range(i, start - 1, -1):
                         test_chunk = prefix_tokens + full_tokens[start:j]
                         decoded = tokenizer.decode(test_chunk, skip_special_tokens=True).strip()
                         if len(decoded) <= budget:
-                            print(f"{log_prefix}✅ Found valid chunk ending at token {j - 1} ({len(decoded)} chars)")
+                            log.debug(f"{log_prefix}✅ Found valid chunk ending at token {j - 1} ({len(decoded)} chars)")
                             return j - start, decoded
 
-                    print(f"{log_prefix}💥 Could not fit any tokens from position {start} under {budget}-char budget")
+                    log.warning(f"{log_prefix}💥 Could not fit any tokens from position {start} under {budget}-char budget")
                     return 0, ""
 
                 else:
                     last_valid_chunk = decoded
 
-        print(f"{log_prefix}✅ Final chunk: {len(last_valid_chunk)} chars, {end - start} tokens")
+        log.debug(f"{log_prefix}✅ Final chunk: {len(last_valid_chunk)} chars, {end - start} tokens")
         return end - start, last_valid_chunk
 
     @staticmethod
@@ -66,8 +70,8 @@ class TextProcessor:
         prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
         content_tokens = tokenizer.encode(text, add_special_tokens=False)
 
-        print(f"📄 Splitting file: {rel_path}, Page: {page_num}")
-        print(f"🔢 Total content tokens: {len(content_tokens)} | Prefix tokens: {len(prefix_tokens)}")
+        log.info(f"📄 Splitting file: {rel_path}, Page: {page_num}")
+        log.debug(f"🔢 Total content tokens: {len(content_tokens)} | Prefix tokens: {len(prefix_tokens)}")
 
         chunks = []
         i = 0
@@ -76,7 +80,7 @@ class TextProcessor:
             chunks.append(chunk_str)
             i += last
 
-        print(f"✅ Finished splitting {rel_path}, Page {page_num} → {len(chunks)} chunks")
+        log.info(f"✅ Finished splitting {rel_path}, Page {page_num} → {len(chunks)} chunks")
 
         metadata = [
             {
@@ -115,12 +119,12 @@ class TextProcessor:
         """Validate if a chunk is acceptable."""
         if not isinstance(chunk, str):
             return False
-        
+
         token_len = len(chunk)
         if token_len > MAX_TOKENS:
-            print(f"⚠️ Chunk exceeds {MAX_TOKENS} tokens ({token_len}) — dropping")
+            log.warning(f"⚠️ Chunk exceeds {MAX_TOKENS} tokens ({token_len}) — dropping")
             return False
-        
+
         return not is_bad_ocr(chunk, tokenizer) 
 
 # Expose static methods as module-level functions after class definition

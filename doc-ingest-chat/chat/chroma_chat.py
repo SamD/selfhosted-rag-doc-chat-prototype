@@ -7,9 +7,12 @@ import re
 from config.settings import USE_OLLAMA
 from utils.chat_utils import format_chunks_with_citations, get_env_boolean, replace_citation_labels
 from utils.llm_setup import get_chain_or_llama, get_retriever, get_vectorstore
+from utils.logging_config import setup_logging
+
+log = setup_logging("chroma_chat.log")
 
 vectorstore = get_vectorstore()
-print("Vectorstore contains", vectorstore._collection.count(), "documents")
+log.info(f"Vectorstore contains {vectorstore._collection.count()} documents")
 retriever = get_retriever(vectorstore)
 
 chain, llama_model = get_chain_or_llama(retriever)
@@ -53,19 +56,19 @@ class ChromaChat:
         else:
             output, docs = ChromaChat.simulate_conversational_chain(query, chat_history)
         for i, doc in enumerate(docs):
-            print(f"Expecting [source{i+1}] for: {doc.metadata.get('source_file')} | Page {doc.metadata.get('page')}")
-            print("\n🧪 Raw model output:\n", output)
-        print("\n📄 CONTEXT:\n" + "\n\n".join(format_chunks_with_citations(docs)))
-        print("\n⚙️ MODEL OUTPUT (raw):\n" + output)
+            log.debug(f"Expecting [source{i+1}] for: {doc.metadata.get('source_file')} | Page {doc.metadata.get('page')}")
+            log.debug(f"\n🧪 Raw model output:\n{output}")
+        log.debug("\n📄 CONTEXT:\n" + "\n\n".join(format_chunks_with_citations(docs)))
+        log.debug(f"\n⚙️ MODEL OUTPUT (raw):\n{output}")
         found_tags = set(re.findall(r"\[source\d+\]", output))
         expected_tags = {f"[source{i+1}]" for i in range(len(docs))}
         intersection = found_tags & expected_tags
         citation_tags_present = bool(intersection)
         for tag in expected_tags:
-            print(f"🔎 Checking for {tag} in model output: {'FOUND' if tag in found_tags else 'NOT FOUND'}")
+            log.debug(f"🔎 Checking for {tag} in model output: {'FOUND' if tag in found_tags else 'NOT FOUND'}")
         invalid_tags = found_tags - expected_tags
         if invalid_tags:
-            print(f"🚫 Model hallucinated unexpected citation tags: {sorted(invalid_tags)}")
+            log.warning(f"🚫 Model hallucinated unexpected citation tags: {sorted(invalid_tags)}")
             citation_tags_present = False
             debug_str = "❌ Invalid citation tags found — response rejected."
         else:
@@ -76,7 +79,7 @@ class ChromaChat:
         if citation_tags_present:
             output = replace_citation_labels(output, docs)
         else:
-            print("⚠️ Skipping citation replacement — no valid tags matched.")
+            log.warning("⚠️ Skipping citation replacement — no valid tags matched.")
         return (
             chat_history + [
                 {"role": "user", "content": query},

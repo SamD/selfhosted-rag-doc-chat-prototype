@@ -47,10 +47,15 @@ export COMPOSE_BAKE=true
 # CHROMA_DATA_DIR=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
 
 
-# Must be set
-export INGEST_FOLDER=
-export E5_MODEL_PATH=
-export LLAMA_MODEL_PATH=
+# curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
+# curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o outline_of_history_pt2.pdf
+
+
+export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+
+export E5_MODEL_PATH=/home/samueldoyle/AI/e5-large-v2
+
+export LLAMA_MODEL_PATH=/home/samueldoyle/AI/models/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
 
 export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
 

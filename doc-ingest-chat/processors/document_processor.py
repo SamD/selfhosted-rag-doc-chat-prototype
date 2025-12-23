@@ -16,7 +16,10 @@ from config.settings import COMPUTE_TYPE, DEVICE, MAX_OCR_DIM, MEDIA_BATCH_SIZE,
 from pdf2image import convert_from_path
 from PIL import Image
 from processors.text_processor import TextProcessor
+from utils.logging_config import setup_logging
 from utils.text_utils import is_bad_ocr
+
+log = setup_logging("document_processor.log")
 
 
 class DocumentProcessor:
@@ -38,7 +41,7 @@ class DocumentProcessor:
             return text
 
         except Exception as e:
-            print(f"[ERROR] extract_text_from_html failed for {full_path}: {e}")
+            log.error(f"[ERROR] extract_text_from_html failed for {full_path}: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -58,7 +61,7 @@ class DocumentProcessor:
                 raise ValueError("No extractable text found; likely a scanned PDF.")
             return full_text
         except Exception as e:
-            print(f"[OCR Fallback] pdfplumber failed: {e}")
+            log.info(f"[OCR Fallback] pdfplumber failed: {e}")
             return None
 
     @staticmethod
@@ -67,7 +70,7 @@ class DocumentProcessor:
         if not filepath.lower().endswith(SUPPORTED_MEDIA_EXT):
             raise ValueError(f"Unsupported file type: {filepath}")
 
-        print(f" 🎥 Processing media {filepath}")
+        log.info(f" 🎥 Processing media {filepath}")
 
         # Use Whisper directly; it internally extracts audio from video
         try:
@@ -77,7 +80,7 @@ class DocumentProcessor:
             result = model.transcribe(audio, batch_size=MEDIA_BATCH_SIZE)
             return result["segments"]
         except Exception as e:
-            print(f"Transcription failed for {filepath}: {e}")
+            log.error(f"Transcription failed for {filepath}: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -92,8 +95,8 @@ class DocumentProcessor:
             pil_image = pil_image.resize(new_size, Image.LANCZOS)
 
         np_image = np.array(pil_image)
-        print(f"PIL size: w: {w}, h: {h}")
-        print(f"NumPy shape: {np_image.shape}")
+        log.debug(f"PIL size: w: {w}, h: {h}")
+        log.debug(f"NumPy shape: {np_image.shape}")
 
         # Convert to grayscale
         np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
@@ -146,11 +149,11 @@ class DocumentProcessor:
                     try:
                         text = page.extract_text() or ""
                     except Exception as e:
-                        print(f"⚠️ pdfplumber failed on page {page_num} of {rel_path}: {e}")
+                        log.warning(f"⚠️ pdfplumber failed on page {page_num} of {rel_path}: {e}")
                         text = ""
 
                     if not text.strip() or is_bad_ocr(text, tokenizer):
-                        print(f"🔁 Falling back to OCR for page {page_num} of {rel_path}")
+                        log.info(f"🔁 Falling back to OCR for page {page_num} of {rel_path}")
 
                         try:
                             pill_image = \
@@ -160,7 +163,7 @@ class DocumentProcessor:
                             text, rel_path, page_num_ocr, engine, job_id = result
 
                             if not text or not isinstance(text, str) or is_bad_ocr(text, tokenizer):
-                                print(f"⚠️ OCR returned garbage for {rel_path} page {page_num + 1}")
+                                log.warning(f"⚠️ OCR returned garbage for {rel_path} page {page_num + 1}")
                                 continue
 
                             chunk_texts, metadata = TextProcessor.split_doc(text.strip(), rel_path, file_type, tokenizer,
@@ -169,7 +172,7 @@ class DocumentProcessor:
                             metadatas.extend(metadata)
 
                         except Exception as e:
-                            print(f"💥 OCR failed on {rel_path} page {page_num + 1}: {e}")
+                            log.error(f"💥 OCR failed on {rel_path} page {page_num + 1}: {e}", exc_info=True)
                             continue
                     else:
                         # Good text, use pdfplumber output
@@ -179,7 +182,7 @@ class DocumentProcessor:
                         metadatas.extend(metadata)
 
         except Exception as e:
-            print(f"💥 Failed to open PDF {rel_path} for per-page processing: {e}")
+            log.error(f"💥 Failed to open PDF {rel_path} for per-page processing: {e}", exc_info=True)
 
         return chunks, metadatas
 
@@ -195,7 +198,7 @@ class DocumentProcessor:
             for page_num, page in enumerate(pdf.pages):
                 text = page.extract_text()
                 if not text or not text.strip():
-                    print(f"⚠️ Empty or unreadable page {page_num} in {rel_path}")
+                    log.warning(f"⚠️ Empty or unreadable page {page_num} in {rel_path}")
                     continue
 
                 page_chunks, page_metadata = TextProcessor.split_doc(

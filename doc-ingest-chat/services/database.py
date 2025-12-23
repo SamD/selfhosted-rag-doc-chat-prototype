@@ -7,9 +7,12 @@ import chromadb
 from config.settings import CHROMA_COLLECTION, CHROMA_HOST, CHROMA_PORT, E5_MODEL_PATH, LLAMA_USE_GPU
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
+from utils.logging_config import setup_logging
+
+log = setup_logging("database_service.log")
 
 device = "cuda" if LLAMA_USE_GPU else "cpu"
-print(f"Device: {device}")
+log.info(f"Device: {device}")
 
 
 class DatabaseService:

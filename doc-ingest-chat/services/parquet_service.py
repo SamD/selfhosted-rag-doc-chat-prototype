@@ -7,6 +7,9 @@ from typing import Any, Dict, List
 import duckdb
 import pandas as pd
 from config.settings import DUCKDB_FILE
+from utils.logging_config import setup_logging
+
+log = setup_logging("parquet_service.log")
 
 
 class ParquetService:
@@ -66,9 +69,9 @@ class ParquetService:
             """)
             con.close()
 
-            print(f"✅ Appended {len(df)} entries to {path} for source_file {source_file}")
+            log.info(f"✅ Appended {len(df)} entries to {path} for source_file {source_file}")
         except Exception as e:
-            print(f"💥 Failed to write Parquet file {path}: {e}") 
+            log.error(f"💥 Failed to write Parquet file {path}: {e}", exc_info=True) 
 
 # Expose static methods as module-level functions after class definition
 write_to_parquet = ParquetService.write_to_parquet 

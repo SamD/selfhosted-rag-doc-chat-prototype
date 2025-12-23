@@ -323,7 +323,7 @@ def extract_text_from_html(full_path: str) -> str:
         return text
 
     except Exception as e:
-        print(f"[ERROR] extract_text_from_html failed for {full_path}: {e}")
+        log.error(f"[ERROR] extract_text_from_html failed for {full_path}: {e}", exc_info=True)
         return None
 
 
@@ -341,7 +341,7 @@ def extract_text_with_pdfplumber(path):
             raise ValueError("No extractable text found; likely a scanned PDF.")
         return full_text
     except Exception as e:
-        print(f"[OCR Fallback] pdfplumber failed: {e}")
+        log.info(f"[OCR Fallback] pdfplumber failed: {e}")
         return None
 
 
@@ -360,7 +360,7 @@ def extract_text_from_media(filepath):
         result = model.transcribe(audio, batch_size=batch_size)
         return result["segments"]
     except Exception as e:
-        print(f"Transcription failed for {filepath}: {e}")
+        log.error(f"Transcription failed for {filepath}: {e}", exc_info=True)
         return None
     finally:
         gc.collect()

@@ -8,6 +8,9 @@ from typing import List, Optional, Tuple
 
 import redis
 from config.settings import REDIS_HOST, REDIS_PORT
+from utils.logging_config import setup_logging
+
+log = setup_logging("redis_service.log")
 
 
 class RedisService:
@@ -75,19 +78,19 @@ class RedisService:
             if result == 1:
                 elapsed = time.time() - start_wait
                 if warned:
-                    print(f"✅ Queue backpressure resolved after {elapsed:.2f}s — pushed {len(entries)} entries to '{queue_name}' for {rel_path}")
+                    log.info(f"✅ Queue backpressure resolved after {elapsed:.2f}s — pushed {len(entries)} entries to '{queue_name}' for {rel_path}")
                 return  # success
 
             if not warned and (time.time() - start_wait) > warn_after:
                 qlen = self.client.llen(queue_name)
-                print(f"⏳ Queue '{queue_name}' length {qlen} exceeds limit ({max_queue_length}) — backpressure delay on {rel_path}")
+                log.warning(f"⏳ Queue '{queue_name}' length {qlen} exceeds limit ({max_queue_length}) — backpressure delay on {rel_path}")
                 warned = True
 
             time.sleep(poll_interval)
             total_wait_time += poll_interval
             if total_wait_time % 10 < poll_interval:  # log every 10s
                 qlen = self.client.llen(queue_name)
-                print(f"🔁 Still waiting to enqueue {rel_path} (queue: {queue_name}, length: {qlen}) [waited {total_wait_time:.1f}s]")
+                log.info(f"🔁 Still waiting to enqueue {rel_path} (queue: {queue_name}, length: {qlen}) [waited {total_wait_time:.1f}s]")
 
 
 def get_redis_client() -> redis.Redis:

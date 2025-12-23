@@ -9,6 +9,9 @@ import os
 import sys
 
 import psutil
+from logging_config import setup_logging
+
+log = setup_logging("auto_tune_llama.log")
 
 
 def get_cpu_ram_gb():
@@ -70,11 +73,11 @@ def validate_env_path(path):
     parent = os.path.dirname(abs_path)
 
     if not os.path.exists(parent):
-        print(f"❌ Error: Parent directory does not exist: {parent}")
+        log.error(f"❌ Error: Parent directory does not exist: {parent}")
         sys.exit(1)
 
     if os.path.isdir(abs_path):
-        print(f"❌ Error: Provided path is a directory, not a file: {abs_path}")
+        log.error(f"❌ Error: Provided path is a directory, not a file: {abs_path}")
         sys.exit(1)
 
     return abs_path
@@ -86,12 +89,12 @@ def write_to_env_file(config, env_path):
     if os.path.exists(env_path):
         backup_path = env_path + ".bak"
         os.rename(env_path, backup_path)
-        print(f"🔁 Backed up existing env file to: {backup_path}")
+        log.info(f"🔁 Backed up existing env file to: {backup_path}")
 
     with open(env_path, "w") as f:
         f.write(content + "\n")
 
-    print(f"✅ Wrote optimized LLaMA config to: {env_path}")
+    log.info(f"✅ Wrote optimized LLaMA config to: {env_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auto-tune LLaMA config and write to .env file")
