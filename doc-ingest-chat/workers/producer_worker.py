@@ -48,6 +48,7 @@ from pdf2image import convert_from_path
 from PIL import Image
 from processors.text_processor import TextProcessor, make_chunk_id, split_doc
 from transformers import AutoTokenizer
+from utils.metrics import FileMetrics
 from utils.file_utils import load_tracked, normalize_rel_path
 from utils.logging_config import setup_logging
 from utils.text_utils import is_gibberish, is_low_quality, is_valid_pdf, is_visibly_corrupt
@@ -369,6 +370,8 @@ def extract_text_from_media(filepath):
 
 
 def send_image_to_ocr(np_image, rel_path, page_num):
+    start_time = time.perf_counter()
+
     job_id = str(uuid.uuid4())
     reply_key = f"ocr_reply:{job_id}"
 
@@ -387,6 +390,8 @@ def send_image_to_ocr(np_image, rel_path, page_num):
     if not result:
         raise TimeoutError(f"OCR timeout for {rel_path} page {page_num}")
 
+    ocr_roundtrip_ms = (time.perf_counter() - start_time) * 1000.0
+
     _, data = result
     result = json.loads(data)
     return (
@@ -394,11 +399,12 @@ def send_image_to_ocr(np_image, rel_path, page_num):
         result.get("rel_path"),
         result.get("page_num"),
         result.get("engine"),
-        result.get("job_id")
+        result.get("job_id"),
+        ocr_roundtrip_ms
     )
 
 
-def fallback_ocr(full_path, rel_path=None, job_id=None):
+def fallback_ocr(full_path, rel_path=None, job_id=None, metrics=None):
     log.warning(f"🔍 Running OCR fallback for: {full_path}")
     chunks = []
 
@@ -432,7 +438,16 @@ def fallback_ocr(full_path, rel_path=None, job_id=None):
                 # Render single page image for OCR
                 log.info(f"🔁 Sending page {i + 1} to OCR")
                 result = send_image_to_ocr(np_image, rel_path, i + 1)
-                text, rel_path, page_num, engine, job_id = result
+                text, rel_path, page_num, engine, job_id, ocr_roundtrip_ms = result
+
+                # Track OCR operation in metrics if provided
+                if metrics:
+                    metrics.add_ocr_operation(
+                        page=page_num,
+                        ocr_roundtrip_time_ms=ocr_roundtrip_ms,
+                        engine=engine,
+                        success=not (engine and engine.startswith("notext"))
+                    )
 
                 if engine and engine.startswith("notext"):
                     log.warning(
@@ -588,58 +603,59 @@ def md5_from_int_list(int_list):
 
 
 def ingest_file(full_path, rel_path, job_id):
+    # Initialize metrics collection
+    metrics = FileMetrics(worker="producer", file=rel_path)
+    pages_processed = 0
+
     try:
         log.info(f"📁 FULL: {full_path}, REL: {rel_path}, JOB_ID: {job_id}")
 
-        if full_path.lower().endswith(".pdf"):
-            file_type = "pdf"
+        with metrics.timer("total_processing"):
+            if full_path.lower().endswith(".pdf"):
+                file_type = "pdf"
 
-            if not is_valid_pdf(full_path):
-                log.warning(f"⚠️ Invalid PDF {full_path}")
-                update_failed_files(rel_path)
-                # with open(FAILED_FILES, "a", encoding="utf-8") as f:
-                #     f.write(rel_path + "\n")
-                return 1
+                if not is_valid_pdf(full_path):
+                    log.warning(f"⚠️ Invalid PDF {full_path}")
+                    update_failed_files(rel_path)
+                    return 1
 
-            try:
-                # Try fast whole-doc extract first
-                # text = extract_text_with_pdfplumber(full_path)
-                # chunks, _ = split_doc(text, rel_path, file_type)
-                # chunks_with_engine = [
-                #     (c, "pdfplumber", None) for c in chunks
-                #     if not is_bad_ocr(c)
-                # ]
-                chunks, metadatas = process_pdf_by_page(full_path, rel_path, file_type)
-                chunks_with_engine = [
-                    (chunk, "pdfplumber", meta["page"]) for chunk, meta in zip(chunks, metadatas)
-                    if not is_bad_ocr(chunk)
-                ]
-                log.info(f"📄 Used full-doc pdfplumber extraction for {rel_path} ({len(chunks_with_engine)} chunks)")
-            except Exception:
-                log.info(f"🔁 Falling back to per-page extraction and OCR for {rel_path}")
-                chunks_with_engine = []
-                ocr_chunks = fallback_ocr(full_path, rel_path, job_id)
-                for chunk, engine, page in ocr_chunks:
-                    chunks_with_engine.append((chunk, engine, page))
+                try:
+                    # Try fast whole-doc extract first
+                    with metrics.timer("text_extraction"):
+                        chunks, metadatas = process_pdf_by_page(full_path, rel_path, file_type)
+                    chunks_with_engine = [
+                        (chunk, "pdfplumber", meta["page"]) for chunk, meta in zip(chunks, metadatas)
+                        if not is_bad_ocr(chunk)
+                    ]
+                    pages_processed = len(set(meta["page"] for meta in metadatas))
+                    log.info(f"📄 Used full-doc pdfplumber extraction for {rel_path} ({len(chunks_with_engine)} chunks)")
+                except Exception:
+                    log.info(f"🔁 Falling back to per-page extraction and OCR for {rel_path}")
+                    chunks_with_engine = []
+                    with metrics.timer("text_extraction"):
+                        ocr_chunks = fallback_ocr(full_path, rel_path, job_id, metrics=metrics)
+                    for chunk, engine, page in ocr_chunks:
+                        chunks_with_engine.append((chunk, engine, page))
+                    pages_processed = len(set(page for _, _, page in ocr_chunks))
 
-        elif full_path.lower().endswith((".html", ".htm")):
-            file_type = "html"
-            text = extract_text_from_html(full_path)
-            if not text or len(text.strip()) < 10:
-                log.warning(f"⚠️ Skipping {rel_path}, empty HTML content")
-                update_failed_files(rel_path)
-                # with open(FAILED_FILES, "a", encoding="utf-8") as f:
-                #     f.write(rel_path + "\n")
-                return 1
+            elif full_path.lower().endswith((".html", ".htm")):
+                file_type = "html"
+                with metrics.timer("text_extraction"):
+                    text = extract_text_from_html(full_path)
+                if not text or len(text.strip()) < 10:
+                    log.warning(f"⚠️ Skipping {rel_path}, empty HTML content")
+                    update_failed_files(rel_path)
+                    return 1
 
-            tokens = _DEFAULT_TOKENIZER.encode(text, add_special_tokens=False)
-            if len(tokens) < 5:
-                log.warning(f"⚠️ Skipping {rel_path}, HTML tokenized to only {len(tokens)} tokens")
-                update_failed_files(rel_path)
-                return 1
+                tokens = _DEFAULT_TOKENIZER.encode(text, add_special_tokens=False)
+                if len(tokens) < 5:
+                    log.warning(f"⚠️ Skipping {rel_path}, HTML tokenized to only {len(tokens)} tokens")
+                    update_failed_files(rel_path)
+                    return 1
 
-            chunks, _ = split_doc(text, rel_path, file_type, page_num=-1)
-            chunks_with_engine = [(c, "html", -1) for c in chunks]
+                chunks, _ = split_doc(text, rel_path, file_type, page_num=-1)
+                chunks_with_engine = [(c, "html", -1) for c in chunks]
+                pages_processed = 1
         # elif full_path.lower().endswith(SUPPORTED_MEDIA_EXT):
         #     file_type = "video"
         #     text = extract_text_from_media(full_path)
@@ -702,77 +718,66 @@ def ingest_file(full_path, rel_path, job_id):
             }
             chunk_entries.append(TextProcessor.normalize_metadata(entry))
 
-        # Atomic enqueue to Redis
-        try:
-            # Before pushing chunks
-            # wait_for_queue_space(redis_client, REDIS_INGEST_QUEUE, MAX_QUEUE_LENGTH)
-            # pipe = redis_client.pipeline(transaction=True)
-            # for entry in chunk_entries:
-            #     pipe.rpush(REDIS_INGEST_QUEUE, json.dumps(entry))
-            #
-            # pipe.rpush(REDIS_INGEST_QUEUE, json.dumps({
-            #     "type": "file_end",
-            #     "source_file": rel_path,
-            #     "expected_chunks": len(chunk_entries)
-            # }))
-            # pipe.execute()
-            #
-            # log.info(f"📤 Atomically enqueued {len(chunk_entries)} chunks for {rel_path}")
-            total_chunks = len(chunk_entries)
+            # Atomic enqueue to Redis
+            try:
+                total_chunks = len(chunk_entries)
 
-            if total_chunks == 0:
-                log.warning(f"⚠️ No chunks to enqueue for {rel_path}")
+                if total_chunks == 0:
+                    log.warning(f"⚠️ No chunks to enqueue for {rel_path}")
+                    return 1
+
+                # Calculate dynamic batch size
+                num_batches = math.ceil(total_chunks / MAX_CHROMA_BATCH_SIZE)
+                dynamic_batch_size = math.ceil(total_chunks / num_batches)
+
+                log.info(
+                    f"📤 Enqueuing {total_chunks} chunks in {num_batches} batches (batch size: {dynamic_batch_size}) for {rel_path}")
+
+                with metrics.timer("redis_enqueue"):
+                    next_queue = get_next_queue()
+                    for i in range(0, total_chunks, dynamic_batch_size):
+                        batch = chunk_entries[i:i + dynamic_batch_size]
+                        json_batch = [json.dumps(entry) for entry in batch]
+
+                        blocking_push_with_backpressure(
+                            rclient=redis_client,
+                            queue_name=next_queue,
+                            entries=json_batch,
+                            max_queue_length=50000,
+                            poll_interval=0.5,
+                            warn_after=10.0,
+                            rel_path=rel_path
+                        )
+
+                    # Send sentinel
+                    blocking_push_with_backpressure(
+                        rclient=redis_client,
+                        queue_name=next_queue,
+                        entries=[json.dumps({
+                            "type": "file_end",
+                            "source_file": rel_path,
+                            "expected_chunks": total_chunks
+                        })],
+                        max_queue_length=50000,
+                        poll_interval=0.5,
+                        warn_after=10.0,
+                        rel_path=rel_path
+                    )
+
+                log.info(f"📤 Done enqueuing {total_chunks} chunks for {rel_path}")
+
+                # Add metrics counters
+                metrics.add_counter("chunks_produced", total_chunks)
+                metrics.add_counter("pages_processed", pages_processed)
+
+            except Exception as e:
+                log.error(f"❌ Atomic enqueue failed for file {rel_path}: {e}")
+                update_failed_files(rel_path)
                 return 1
 
-            # Calculate dynamic batch size
-            num_batches = math.ceil(total_chunks / MAX_CHROMA_BATCH_SIZE)
-            dynamic_batch_size = math.ceil(total_chunks / num_batches)
-
-            log.info(
-                f"📤 Enqueuing {total_chunks} chunks in {num_batches} batches (batch size: {dynamic_batch_size}) for {rel_path}")
-
-            next_queue = get_next_queue()
-            for i in range(0, total_chunks, dynamic_batch_size):
-                batch = chunk_entries[i:i + dynamic_batch_size]
-                json_batch = [json.dumps(entry) for entry in batch]
-
-                blocking_push_with_backpressure(
-                    rclient=redis_client,
-                    # queue_name=REDIS_INGEST_QUEUE,
-                    queue_name=next_queue,
-                    entries=json_batch,
-                    max_queue_length=50000,
-                    poll_interval=0.5,
-                    warn_after=10.0,
-                    rel_path=rel_path
-                )
-
-            # Send sentinel
-            blocking_push_with_backpressure(
-                rclient=redis_client,
-                # queue_name=REDIS_INGEST_QUEUE,
-                queue_name=next_queue,
-                entries=[json.dumps({
-                    "type": "file_end",
-                    "source_file": rel_path,
-                    "expected_chunks": total_chunks
-                })],
-                max_queue_length=50000,
-                poll_interval=0.5,
-                warn_after=10.0,
-                rel_path=rel_path
-            )
-
-            log.info(f"📤 Done enqueuing {total_chunks} chunks for {rel_path}")
-
-        except Exception as e:
-            log.error(f"❌ Atomic enqueue failed for file {rel_path}: {e}")
-            update_failed_files(rel_path)
-            # with open(FAILED_FILES, "a", encoding="utf-8") as f:
-            #     f.write(rel_path + "\n")
-            return 1
-
-        return 0
+            # Emit metrics
+            metrics.emit(log)
+            return 0
 
     except Exception as e:
         log.error(f"💥 Error processing {rel_path}: {e}\n{traceback.format_exc()}")

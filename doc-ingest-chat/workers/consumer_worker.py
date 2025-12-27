@@ -19,6 +19,7 @@ from services.parquet_service import write_to_parquet
 from services.redis_service import get_redis_client
 from utils.file_utils import update_failed_files, update_ingested_files
 from utils.logging_config import setup_logging
+from utils.metrics import FileMetrics
 
 # from workers.queue_manager import QueueManager  # No need for queue manager in consumer
 
@@ -88,11 +89,15 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                 source_file = data["source_file"]
                 expected = data["expected_chunks"]
 
+                # Initialize metrics collection for this file
+                metrics = FileMetrics(worker="consumer", file=source_file, queue=queue_name)
+
                 log.info(f"📨 [{queue_name}] Received file_end for {source_file} (expecting {expected} chunks)")
 
-                chunks = buffer.get(source_file, [])
+                with metrics.timer("total_storage"):
+                    chunks = buffer.get(source_file, [])
 
-                log.info(f"🧩 [{queue_name}] Buffer for {source_file} contains {len(chunks)} chunks")
+                    log.info(f"🧩 [{queue_name}] Buffer for {source_file} contains {len(chunks)} chunks")
 
                 valid_chunks = []
                 for entry in chunks:
@@ -135,16 +140,19 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                         all_ids = [entry["id"] for entry in chunks]
 
                         # Split and ingest in safe batches
-                        for texts_batch, metas_batch, ids_batch in zip(
-                                chunked(all_texts, MAX_CHROMA_BATCH_SIZE),
-                                chunked(all_metadatas, MAX_CHROMA_BATCH_SIZE),
-                                chunked(all_ids, MAX_CHROMA_BATCH_SIZE),
-                        ):
-                            db.add_texts(
-                                texts_batch,
-                                metadatas=metas_batch,
-                                ids=ids_batch,
-                            )
+                        batches_count = 0
+                        with metrics.timer("chromadb_embedding"):
+                            for texts_batch, metas_batch, ids_batch in zip(
+                                    chunked(all_texts, MAX_CHROMA_BATCH_SIZE),
+                                    chunked(all_metadatas, MAX_CHROMA_BATCH_SIZE),
+                                    chunked(all_ids, MAX_CHROMA_BATCH_SIZE),
+                            ):
+                                db.add_texts(
+                                    texts_batch,
+                                    metadatas=metas_batch,
+                                    ids=ids_batch,
+                                )
+                                batches_count += 1
 
                         count = db._collection.count()
                         if count == 0:
@@ -156,7 +164,8 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                             log.info(f"📝 [{queue_name}] Archived {len(chunks)} chunks from {source_file} to chunks.parquet")
 
                         try:
-                            write_to_parquet(chunks, PARQUET_FILE, parq_lock)
+                            with metrics.timer("parquet_write"):
+                                write_to_parquet(chunks, PARQUET_FILE, parq_lock)
                             log.info(f"📝 Archived {len(chunks)} chunks from {source_file} to chunks.parquet")
                         except Exception as e:
                             log.info(f"💥 Failed to write Parquet file for {source_file}: {e}")
@@ -166,12 +175,19 @@ def consumer_worker(queue_name, shared_data, parq_lock):
 
                         update_ingested_files(source_file)
 
+                        # Add metrics counters
+                        metrics.add_counter("chunks_stored", len(chunks))
+                        metrics.add_counter("batches_processed", batches_count)
+
                     except Exception as e:
                         log.info(f"💥 [{queue_name}] Failed to write {source_file} to Chroma: {e}\n{traceback.format_exc()}")
                         db.delete(where={"source_file": source_file})
                         update_failed_files(source_file)
 
                     finally:
+                        # Emit metrics before cleaning up
+                        metrics.emit(log)
+
                         buffer.pop(source_file, None)
                         timestamps.pop(source_file, None)
 

@@ -123,3 +123,8 @@ TESSERACT_PSM = int(os.getenv("TESSERACT_PSM", "6"))
 TESSERACT_OEM = int(os.getenv("TESSERACT_OEM", "1"))
 TESSDATA_PREFIX = os.getenv("TESSDATA_PREFIX", "")
 
+# Metrics Configuration
+METRICS_ENABLED = os.getenv("METRICS_ENABLED", "true").lower() == "true"
+METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "metrics.jsonl")
+METRICS_LOG_TO_STDOUT = os.getenv("METRICS_LOG_TO_STDOUT", "true").lower() == "true"
+

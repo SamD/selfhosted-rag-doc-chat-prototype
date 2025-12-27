@@ -24,6 +24,7 @@ from PIL import Image
 from services.redis_service import get_redis_client
 from utils.logging_config import setup_logging, setup_pdf_logging
 from utils.text_utils import is_invalid_text
+from utils.metrics import JobMetrics
 
 log = setup_logging("ingest_ocr_worker.log", include_default_filters=True)
 
@@ -61,6 +62,8 @@ def save_bad_image(np_image, debug_image_path, log_prefix):
 
 def fallback_to_tesseract(np_image, rel_path, page_num):
     """Fallback to Tesseract OCR."""
+    import time
+
     log.info(f"↪️ Falling back to Tesseract for {rel_path} page {page_num}")
     env = os.environ.copy()
     if TESSDATA_PREFIX:
@@ -71,6 +74,7 @@ def fallback_to_tesseract(np_image, rel_path, page_num):
         config_parts.append("-c tessedit_script=Latin")
     config = " ".join(config_parts)
 
+    start_time = time.perf_counter()
     try:
         text = pytesseract.image_to_string(
             np_image,
@@ -85,11 +89,14 @@ def fallback_to_tesseract(np_image, rel_path, page_num):
             lang=TESSERACT_LANGS,
             config=config,
         ).strip()
+
+    tesseract_time_ms = (time.perf_counter() - start_time) * 1000.0
+
     if is_invalid_text(text):
         log.info(" ⚠️  Tesseract returned empty/short text")
-        return None, "notext_tesseract"
+        return None, "notext_tesseract", tesseract_time_ms
 
-    return text.strip(), "tesseract"
+    return text.strip(), "tesseract", tesseract_time_ms
 
 
 def ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu):
@@ -99,46 +106,64 @@ def ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu):
     log_prefix = f"[Doc {rel_path}] Page {page_num}]"
 
     try:
-        text, engine = fallback_to_tesseract(np_image, rel_path, page_num)
+        text, engine, tesseract_time_ms = fallback_to_tesseract(np_image, rel_path, page_num)
         if text:
             log.info(f"{log_prefix} ✅ Tesseract fallback success with {use_gpu} ({len(text.strip())} chars)")
-            return text, engine
+            return text, engine, tesseract_time_ms
         # else save bad or empty image
         log.info(f"⚠️ Tesseract fallback failed as well for {rel_path}, page {page_num} - [{use_gpu}]")
         save_bad_image(np_image, debug_image_path, log_prefix)
-        return None, "notext_" + engine
+        return None, "notext_" + engine, tesseract_time_ms
 
     finally:
         signal.alarm(0)
         del np_image
-        del text
+        if 'text' in locals():
+            del text
 
 
 def worker_task(job):
     """Process OCR job."""
+    import time
+
+    # Initialize metrics collection
+    job_id = job.get("job_id", "unknown")
+    metrics = JobMetrics(worker="ocr", job_id=job_id)
+
     try:
-        job_id = job["job_id"]
-        reply_key = job["reply_key"]
-        rel_path = job["rel_path"]
-        page_num = job["page_num"]
+        with metrics.timer("total_processing"):
+            reply_key = job["reply_key"]
+            rel_path = job["rel_path"]
+            page_num = job["page_num"]
 
-        shape = tuple(job["image_shape"])
-        dtype = job["image_dtype"]
-        np_image = np.frombuffer(base64.b64decode(job["image_base64"]), dtype=dtype).reshape(shape)
+            shape = tuple(job["image_shape"])
+            dtype = job["image_dtype"]
 
-        log.info(f"📥 Job: {rel_path}, page {page_num}, job_id {job_id}")
+            # Track image decode time
+            with metrics.timer("image_decode"):
+                np_image = np.frombuffer(base64.b64decode(job["image_base64"]), dtype=dtype).reshape(shape)
 
-        use_gpu = True
-        log.info(f"🚀 Using {'GPU' if use_gpu else 'CPU'} for {rel_path}, page {page_num}")
-        text, engine = ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu=use_gpu)
+            log.info(f"📥 Job: {rel_path}, page {page_num}, job_id {job_id}")
 
-        response = {
-            "text": text,
-            "rel_path": rel_path,
-            "page_num": page_num,
-            "engine": engine,
-            "job_id": job_id,
-        }
+            use_gpu = True
+            log.info(f"🚀 Using {'GPU' if use_gpu else 'CPU'} for {rel_path}, page {page_num}")
+            text, engine, tesseract_time_ms = ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu=use_gpu)
+
+            # Add metrics fields
+            metrics.add_field("tesseract_execution_time_ms", tesseract_time_ms)
+            metrics.add_field("engine", engine)
+            metrics.add_field("text_length", len(text) if text else 0)
+            metrics.add_field("file", rel_path)
+            metrics.add_field("page", page_num)
+            metrics.add_field("success", not (engine and engine.startswith("notext")))
+
+            response = {
+                "text": text,
+                "rel_path": rel_path,
+                "page_num": page_num,
+                "engine": engine,
+                "job_id": job_id,
+            }
 
     except Exception:
         log.info("❌ Unhandled OCR failure")
@@ -168,6 +193,9 @@ def worker_task(job):
             log.info("❌ No reply_key available — the producer will hang indefinitely!")
 
     finally:
+        # Emit metrics
+        metrics.emit(log)
+
         if reply_key:
             redis_client = get_redis_client()
             redis_client.lpush(reply_key, json.dumps(response))
