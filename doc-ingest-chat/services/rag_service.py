@@ -12,8 +12,4 @@ class RagService:
 
     def answer_query(self, query: str, chat_history: list[dict]) -> dict:
         updated_history, debug = respond(query, chat_history)
-        return {
-            "answer": updated_history[-1]["content"],
-            "chat_history": updated_history,
-            "debug": debug
-        }
+        return {"answer": updated_history[-1]["content"], "chat_history": updated_history, "debug": debug}

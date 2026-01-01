@@ -2,10 +2,10 @@
 """
 Text processing functionality.
 """
-import hashlib
-import logging
 
-from config.settings import E5_MODEL_PATH, MAX_TOKENS
+import hashlib
+
+from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
 from transformers import AutoTokenizer
 from utils.logging_config import setup_logging
 from utils.text_utils import is_bad_ocr
@@ -15,7 +15,7 @@ log = setup_logging("text_processor.log")
 
 class TextProcessor:
     """Text processing functionality as static methods."""
-    
+
     @staticmethod
     def make_chunk_id(rel_path: str, idx: int, chunk: str) -> str:
         """Generate a unique chunk ID."""
@@ -65,7 +65,7 @@ class TextProcessor:
     @staticmethod
     def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None):
         """Split document into chunks."""
-        tokenizer = tokenizer or AutoTokenizer.from_pretrained(E5_MODEL_PATH)
+        tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
 
         prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
         content_tokens = tokenizer.encode(text, add_special_tokens=False)
@@ -103,7 +103,7 @@ class TextProcessor:
             "source_file",  # Original file relative path
             "type",  # File type: pdf/html/video
             "hash",  # Content hash
-            "engine"  # OCR engine used: "easyocr" or "tesseract"
+            "engine",  # OCR engine used: "easyocr" or "tesseract"
         ]
 
         default_values = default_values or {}
@@ -125,10 +125,11 @@ class TextProcessor:
             log.warning(f"⚠️ Chunk exceeds {MAX_TOKENS} tokens ({token_len}) — dropping")
             return False
 
-        return not is_bad_ocr(chunk, tokenizer) 
+        return not is_bad_ocr(chunk, tokenizer)
+
 
 # Expose static methods as module-level functions after class definition
 split_doc = TextProcessor.split_doc
 make_chunk_id = TextProcessor.make_chunk_id
 normalize_metadata = TextProcessor.normalize_metadata
-validate_chunk = TextProcessor.validate_chunk 
+validate_chunk = TextProcessor.validate_chunk

@@ -2,6 +2,7 @@
 """
 Consumer Worker for processing chunks and storing them in ChromaDB.
 """
+
 import json
 import multiprocessing
 import os
@@ -12,7 +13,7 @@ import traceback
 from collections import defaultdict
 from itertools import cycle
 
-from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, MAX_TOKENS, PARQUET_FILE, QUEUE_NAMES
+from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, MAX_TOKENS, PARQUET_FILE, QUEUE_NAMES, USE_QDRANT
 from more_itertools import chunked
 from services.database import get_db
 from services.parquet_service import write_to_parquet
@@ -24,12 +25,12 @@ from utils.metrics import FileMetrics
 # from workers.queue_manager import QueueManager  # No need for queue manager in consumer
 
 
-
 queue_lock = multiprocessing.Lock()
 queue_cycle = cycle(QUEUE_NAMES)
 parquet_lock = multiprocessing.Lock()
 
 log = setup_logging("ingest_consumer.log", include_default_filters=True)
+
 
 def get_next_queue():
     global queue_lock
@@ -75,7 +76,7 @@ def consumer_worker(queue_name, shared_data, parq_lock):
             else:
                 consumer_worker._idle_counter = 0
 
-            if shared_data['shutdown_flag']:
+            if shared_data["shutdown_flag"]:
                 log.info("\n👋 SHUTDOWN_FLAG set exiting ...")
                 break
 
@@ -133,7 +134,7 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                                 "hash": entry["hash"],
                                 "chunk_index": entry.get("chunk_index", i),
                                 "id": entry["id"],
-                                "page": int(entry["page"]) if isinstance(entry.get("page"), (int, str)) and str(entry["page"]).isdigit() else -1
+                                "page": int(entry["page"]) if isinstance(entry.get("page"), (int, str)) and str(entry["page"]).isdigit() else -1,
                             }
                             for i, entry in enumerate(chunks)
                         ]
@@ -143,9 +144,9 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                         batches_count = 0
                         with metrics.timer("chromadb_embedding"):
                             for texts_batch, metas_batch, ids_batch in zip(
-                                    chunked(all_texts, MAX_CHROMA_BATCH_SIZE),
-                                    chunked(all_metadatas, MAX_CHROMA_BATCH_SIZE),
-                                    chunked(all_ids, MAX_CHROMA_BATCH_SIZE),
+                                chunked(all_texts, MAX_CHROMA_BATCH_SIZE),
+                                chunked(all_metadatas, MAX_CHROMA_BATCH_SIZE),
+                                chunked(all_ids, MAX_CHROMA_BATCH_SIZE),
                             ):
                                 db.add_texts(
                                     texts_batch,
@@ -154,10 +155,10 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                                 )
                                 batches_count += 1
 
-                        count = db._collection.count()
+                        count = db.get_collection_count()
                         if count == 0:
-                            raise RuntimeError(f"💥 Chroma persist failed — 0 documents after ingesting {source_file}")
-                        log.info(f"✅ [{queue_name}] Persisted {source_file} — Chroma doc count: {count}")
+                            raise RuntimeError(f"💥 Vector DB persist failed — 0 documents after ingesting {source_file}")
+                        log.info(f"✅ [{queue_name}] Persisted {source_file} — Vector DB doc count: {count}")
 
                         success_counter += 1
                         if success_counter % 10 == 0:
@@ -180,7 +181,8 @@ def consumer_worker(queue_name, shared_data, parq_lock):
                         metrics.add_counter("batches_processed", batches_count)
 
                     except Exception as e:
-                        log.info(f"💥 [{queue_name}] Failed to write {source_file} to Chroma: {e}\n{traceback.format_exc()}")
+                        db_type = "Qdrant" if USE_QDRANT else "ChromaDB"
+                        log.info(f"💥 [{queue_name}] Failed to write {source_file} to {db_type}: {e}\n{traceback.format_exc()}")
                         db.delete(where={"source_file": source_file})
                         update_failed_files(source_file)
 
@@ -215,14 +217,17 @@ def consumer_worker(queue_name, shared_data, parq_lock):
 
 
 CHILD_PROCESSES = []
+
+
 def make_sigint_handler(processes, ppid, shared_data):
     """Create signal handler for graceful shutdown."""
+
     def handler(signum, frame):
         if os.getpid() != ppid:
             # Prevent child processes from handling this
             return
 
-        shared_data['shutdown_flag'] = True
+        shared_data["shutdown_flag"] = True
         log.info(f"[Parent {os.getpid()}] SIGINT received. Sending to children...")
 
         for p in processes:
@@ -235,19 +240,16 @@ def make_sigint_handler(processes, ppid, shared_data):
     return handler
 
 
-
 def main():
     parent_pid = os.getpid()
 
-
     with multiprocessing.Manager() as manager:
-        shared_dict = manager.dict({'shutdown_flag': False})
+        shared_dict = manager.dict({"shutdown_flag": False})
         signal.signal(signal.SIGINT, make_sigint_handler(CHILD_PROCESSES, parent_pid, shared_dict))
-
 
         for i in range(len(QUEUE_NAMES)):
             next_queue = get_next_queue()
-            p = multiprocessing.Process(target=consumer_worker, args=(next_queue,shared_dict,parquet_lock))
+            p = multiprocessing.Process(target=consumer_worker, args=(next_queue, shared_dict, parquet_lock))
             p.start()
             CHILD_PROCESSES.append(p)
         log.info(f"🚀 Started {len(QUEUE_NAMES)} consumer workers for queues: {QUEUE_NAMES}")

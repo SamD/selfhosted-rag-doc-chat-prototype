@@ -2,6 +2,7 @@
 """
 Data models for the document ingestion system.
 """
+
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -9,6 +10,7 @@ from typing import List, Optional
 @dataclass
 class ChunkEntry:
     """Represents a text chunk with metadata."""
+
     chunk: str
     id: str
     source_file: str
@@ -22,6 +24,7 @@ class ChunkEntry:
 @dataclass
 class OCRJob:
     """Represents an OCR job."""
+
     job_id: str
     rel_path: str
     page_num: int
@@ -34,6 +37,7 @@ class OCRJob:
 @dataclass
 class OCRResponse:
     """Represents an OCR response."""
+
     text: Optional[str]
     rel_path: str
     page_num: int
@@ -44,6 +48,7 @@ class OCRResponse:
 @dataclass
 class FileEndMessage:
     """Represents a file end message."""
+
     type: str = "file_end"
     source_file: str = ""
     expected_chunks: int = 0
@@ -52,6 +57,7 @@ class FileEndMessage:
 @dataclass
 class ProcessingResult:
     """Represents a processing result."""
+
     success: bool
     message: str
     chunks_processed: int = 0
@@ -59,4 +65,4 @@ class ProcessingResult:
 
     def __post_init__(self):
         if self.errors is None:
-            self.errors = [] 
+            self.errors = []

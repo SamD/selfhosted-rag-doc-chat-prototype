@@ -2,6 +2,7 @@
 """
 Prompt templates for chat models.
 """
+
 from langchain_core.prompts import ChatPromptTemplate
 
 SHARED_CHAT_PROMPT = ChatPromptTemplate.from_template("""
@@ -51,4 +52,4 @@ User's question:
 {question}
 
 Answer:
-""") 
+""")

@@ -17,15 +17,18 @@ log = setup_logging("auto_tune_llama.log")
 def get_cpu_ram_gb():
     return psutil.virtual_memory().total / 1e9
 
+
 def get_gpu_info():
     try:
         import torch
+
         if torch.cuda.is_available():
             mem = torch.cuda.get_device_properties(0).total_memory
             return mem / 1e9  # in GB
     except ImportError:
         pass
     return None
+
 
 def suggest_llama_config():
     ram_gb = get_cpu_ram_gb()
@@ -68,6 +71,7 @@ def suggest_llama_config():
     config["LLAMA_N_THREADS"] = psutil.cpu_count(logical=False)
     return config
 
+
 def validate_env_path(path):
     abs_path = os.path.abspath(path)
     parent = os.path.dirname(abs_path)
@@ -82,6 +86,7 @@ def validate_env_path(path):
 
     return abs_path
 
+
 def write_to_env_file(config, env_path):
     lines = [f"{key}={value}" for key, value in config.items()]
     content = "\n".join(lines)
@@ -95,6 +100,7 @@ def write_to_env_file(config, env_path):
         f.write(content + "\n")
 
     log.info(f"✅ Wrote optimized LLaMA config to: {env_path}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auto-tune LLaMA config and write to .env file")

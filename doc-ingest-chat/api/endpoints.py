@@ -1,6 +1,7 @@
 """
 API endpoints for chat, health, and status using FastAPI.
 """
+
 import logging
 from typing import Any, Dict
 
@@ -39,20 +40,13 @@ def get_status(service: RagService = Depends(get_rag_service)):
     try:
         # Get collection count from the service
         collection_info = service.get_collection_info()
-        return StatusResponse(
-            status="operational",
-            collection_count=collection_info.get("count", 0),
-            model_info=collection_info.get("model_info", {})
-        )
+        return StatusResponse(status="operational", collection_count=collection_info.get("count", 0), model_info=collection_info.get("model_info", {}))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get status: {str(e)}")
 
 
 @router.post("/query", response_model=QueryResponse)
-def query_handler(
-        req: QueryRequest,
-        service: RagService = Depends(get_rag_service)
-):
+def query_handler(req: QueryRequest, service: RagService = Depends(get_rag_service)):
     """Process a query and return a response with citations."""
     try:
         log.info(f"Received query: {req.query}")

@@ -2,6 +2,7 @@
 """
 File utility functions.
 """
+
 import fcntl
 import hashlib
 import json
@@ -14,7 +15,7 @@ from config.settings import FAILED_FILES, INGESTED_FILE
 
 class FileUtils:
     """File utility functions as static methods."""
-    
+
     @staticmethod
     def normalize_rel_path(p: str) -> str:
         """Normalize a relative path."""
@@ -73,7 +74,7 @@ class FileUtils:
           A string representing the MD5 hash in hexadecimal format.
         """
         # Convert the list of integers to a JSON string and encode it to bytes
-        json_string = json.dumps(int_list, sort_keys=True).encode('utf-8')
+        json_string = json.dumps(int_list, sort_keys=True).encode("utf-8")
 
         # Create an MD5 hash object
         md5_hash = hashlib.md5()
@@ -82,9 +83,10 @@ class FileUtils:
         md5_hash.update(json_string)
 
         # Return the hexadecimal representation of the hash
-        return md5_hash.hexdigest() 
+        return md5_hash.hexdigest()
+
 
 normalize_rel_path = FileUtils.normalize_rel_path
 update_ingested_files = FileUtils.update_ingested_files
-update_failed_files = FileUtils.update_failed_files 
-load_tracked = FileUtils.load_tracked 
+update_failed_files = FileUtils.update_failed_files
+load_tracked = FileUtils.load_tracked

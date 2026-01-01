@@ -97,8 +97,8 @@ Set the following in your environment or a `.env` file:
 Alternatively you can export them directly in the [run-compose.sh](./doc-ingest-chat/run-compose.sh) , you can
 see an example in the file
 
-    LLAMA_MODEL_PATH=/path/to/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
-    E5_MODEL_PATH=/path/to/e5-large-v2
+    LLM_PATH=/path/to/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
+    EMBEDDING_MODEL_PATH=/path/to/e5-large-v2
     INGEST_FOLDER=/absolute/path/to/your/docs
 
 All other environment variables and defaults are defined in [ingest-svc.env](./doc-ingest-chat/ingest-svc.env)

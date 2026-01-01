@@ -2,6 +2,7 @@
 """
 OCR Worker for processing images and extracting text.
 """
+
 import base64
 import json
 import os
@@ -23,10 +24,11 @@ from config.settings import (
 from PIL import Image
 from services.redis_service import get_redis_client
 from utils.logging_config import setup_logging, setup_pdf_logging
-from utils.text_utils import is_invalid_text
 from utils.metrics import JobMetrics
+from utils.text_utils import is_invalid_text
 
 log = setup_logging("ingest_ocr_worker.log", include_default_filters=True)
+
 
 def safe_image_save(pil_image, path, format=None):
     """
@@ -101,7 +103,7 @@ def fallback_to_tesseract(np_image, rel_path, page_num):
 
 def ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu):
     """Process image with OCR fallback."""
-    doc_id = os.path.basename(rel_path).replace('/', '_').replace('\\', '_')
+    doc_id = os.path.basename(rel_path).replace("/", "_").replace("\\", "_")
     debug_image_path = os.path.join(DEBUG_IMAGE_DIR, f"{doc_id}_page_{page_num}.png")
     log_prefix = f"[Doc {rel_path}] Page {page_num}]"
 
@@ -118,13 +120,12 @@ def ocr_image_with_fallback(np_image, rel_path, page_num, use_gpu):
     finally:
         signal.alarm(0)
         del np_image
-        if 'text' in locals():
+        if "text" in locals():
             del text
 
 
 def worker_task(job):
     """Process OCR job."""
-    import time
 
     # Initialize metrics collection
     job_id = job.get("job_id", "unknown")
@@ -174,19 +175,13 @@ def worker_task(job):
         page_num = -1
         reply_key = None
 
-        if 'job' in locals():
+        if "job" in locals():
             job_id = job.get("job_id", "unknown")
             rel_path = job.get("rel_path", "unknown")
             page_num = job.get("page_num", -1)
             reply_key = job.get("reply_key")
 
-        response = {
-            "text": "",
-            "rel_path": rel_path,
-            "page_num": page_num,
-            "engine": "error",
-            "job_id": job_id
-        }
+        response = {"text": "", "rel_path": rel_path, "page_num": page_num, "engine": "error", "job_id": job_id}
 
         # ❌ DO NOT lpush here
         if not reply_key:
@@ -226,10 +221,10 @@ def main():
     """Main OCR worker function."""
     # Set up logging
     setup_pdf_logging()
-    
+
     # Set PIL image max pixels
     Image.MAX_IMAGE_PIXELS = 500_000_000
-    
+
     lock = Lock()
     try:
         num_workers = min(2, os.cpu_count() or 1)
@@ -244,4 +239,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

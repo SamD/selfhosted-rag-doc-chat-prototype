@@ -2,6 +2,7 @@
 """
 Document processing functionality.
 """
+
 import base64
 import json
 import re
@@ -24,7 +25,7 @@ log = setup_logging("document_processor.log")
 
 class DocumentProcessor:
     """Document processing functionality as static methods."""
-    
+
     @staticmethod
     def extract_text_from_html(full_path: str) -> Optional[str]:
         """Extract text from HTML file."""
@@ -37,7 +38,7 @@ class DocumentProcessor:
             soup = BeautifulSoup(html, "html5lib")  # Most forgiving parser
 
             text = soup.get_text(separator="\n", strip=True)
-            text = re.sub(r'\n\s*\n+', '\n\n', text)  # Collapse extra blank lines
+            text = re.sub(r"\n\s*\n+", "\n\n", text)  # Collapse extra blank lines
             return text
 
         except Exception as e:
@@ -49,15 +50,16 @@ class DocumentProcessor:
         """Extract text from PDF using pdfplumber."""
         try:
             import pdfplumber
+
             with pdfplumber.open(path) as pdf:
-                full_text = ''
+                full_text = ""
                 for page in pdf.pages:
                     text = page.extract_text()
                     if text:
-                        full_text += text + '\n'
+                        full_text += text + "\n"
                     if len(full_text.strip()) < 10:
                         raise ValueError("Extracted text too short; likely not useful.")
-            if full_text.strip() == '':
+            if full_text.strip() == "":
                 raise ValueError("No extractable text found; likely a scanned PDF.")
             return full_text
         except Exception as e:
@@ -75,6 +77,7 @@ class DocumentProcessor:
         # Use Whisper directly; it internally extracts audio from video
         try:
             import whisperx
+
             audio = whisperx.load_audio(filepath)
             model = whisperx.load_model("large-v2", DEVICE, compute_type=COMPUTE_TYPE)
             result = model.transcribe(audio, batch_size=MEDIA_BATCH_SIZE)
@@ -104,8 +107,7 @@ class DocumentProcessor:
         return np_image
 
     @staticmethod
-    def send_image_to_ocr(np_image: np.ndarray, rel_path: str, page_num: int, redis_client) -> Tuple[
-        Optional[str], str, int, str, str]:
+    def send_image_to_ocr(np_image: np.ndarray, rel_path: str, page_num: int, redis_client) -> Tuple[Optional[str], str, int, str, str]:
         """Send image to OCR service."""
         job_id = str(uuid.uuid4())
         reply_key = f"ocr_reply:{job_id}"
@@ -127,23 +129,17 @@ class DocumentProcessor:
 
         _, data = result
         result = json.loads(data)
-        return (
-            result.get("text"),
-            result.get("rel_path"),
-            result.get("page_num"),
-            result.get("engine"),
-            result.get("job_id")
-        )
+        return (result.get("text"), result.get("rel_path"), result.get("page_num"), result.get("engine"), result.get("job_id"))
 
     @staticmethod
-    def process_pdf_by_page(full_path: str, rel_path: str, file_type: str, redis_client, tokenizer) -> Tuple[
-        List[str], List[dict]]:
+    def process_pdf_by_page(full_path: str, rel_path: str, file_type: str, redis_client, tokenizer) -> Tuple[List[str], List[dict]]:
         """Process PDF by page with OCR fallback."""
         chunks = []
         metadatas = []
 
         try:
             import pdfplumber
+
             with pdfplumber.open(full_path) as pdf:
                 for page_num, page in enumerate(pdf.pages):
                     try:
@@ -156,8 +152,7 @@ class DocumentProcessor:
                         log.info(f"🔁 Falling back to OCR for page {page_num} of {rel_path}")
 
                         try:
-                            pill_image = \
-                            convert_from_path(full_path, dpi=300, first_page=page_num + 1, last_page=page_num + 1)[0]
+                            pill_image = convert_from_path(full_path, dpi=300, first_page=page_num + 1, last_page=page_num + 1)[0]
                             np_image = DocumentProcessor.preprocess_image(pill_image)
                             result = DocumentProcessor.send_image_to_ocr(np_image, rel_path, page_num + 1, redis_client)
                             text, rel_path, page_num_ocr, engine, job_id = result
@@ -166,8 +161,7 @@ class DocumentProcessor:
                                 log.warning(f"⚠️ OCR returned garbage for {rel_path} page {page_num + 1}")
                                 continue
 
-                            chunk_texts, metadata = TextProcessor.split_doc(text.strip(), rel_path, file_type, tokenizer,
-                                                                          page_num=page_num + 1)
+                            chunk_texts, metadata = TextProcessor.split_doc(text.strip(), rel_path, file_type, tokenizer, page_num=page_num + 1)
                             chunks.extend(chunk_texts)
                             metadatas.extend(metadata)
 
@@ -176,8 +170,7 @@ class DocumentProcessor:
                             continue
                     else:
                         # Good text, use pdfplumber output
-                        chunk_texts, metadata = TextProcessor.split_doc(text.strip(), rel_path, file_type, tokenizer,
-                                                                      page_num=page_num + 1)
+                        chunk_texts, metadata = TextProcessor.split_doc(text.strip(), rel_path, file_type, tokenizer, page_num=page_num + 1)
                         chunks.extend(chunk_texts)
                         metadatas.extend(metadata)
 
@@ -187,13 +180,13 @@ class DocumentProcessor:
         return chunks, metadatas
 
     @staticmethod
-    def process_pdf_by_page_nofallback(full_path: str, rel_path: str, file_type: str, tokenizer) -> Tuple[
-        List[str], List[dict]]:
+    def process_pdf_by_page_nofallback(full_path: str, rel_path: str, file_type: str, tokenizer) -> Tuple[List[str], List[dict]]:
         """Process PDF by page without OCR fallback."""
         chunks = []
         metadatas = []
 
         import pdfplumber
+
         with pdfplumber.open(full_path) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 text = page.extract_text()
@@ -201,17 +194,12 @@ class DocumentProcessor:
                     log.warning(f"⚠️ Empty or unreadable page {page_num} in {rel_path}")
                     continue
 
-                page_chunks, page_metadata = TextProcessor.split_doc(
-                    text,
-                    rel_path,
-                    file_type,
-                    tokenizer,
-                    page_num=page_num
-                )
+                page_chunks, page_metadata = TextProcessor.split_doc(text, rel_path, file_type, tokenizer, page_num=page_num)
                 chunks.extend(page_chunks)
                 metadatas.extend(page_metadata)
 
         return chunks, metadatas
+
 
 # Expose static methods as module-level functions after class definition
 extract_text_from_html = DocumentProcessor.extract_text_from_html

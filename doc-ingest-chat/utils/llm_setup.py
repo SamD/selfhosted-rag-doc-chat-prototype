@@ -2,6 +2,7 @@
 """
 LLM and chain setup for chat system.
 """
+
 from config.llama_strategy import LlamaParamStrategy
 from config.settings import OLLAMA_MODEL, OLLAMA_URL, RETRIEVER_TOP_K, USE_OLLAMA
 from langchain.chains import ConversationalRetrievalChain
@@ -22,18 +23,13 @@ def get_retriever(vectorstore):
 def get_chain_or_llama(retriever):
     if USE_OLLAMA:
         llm = ChatOllama(base_url=OLLAMA_URL, model=OLLAMA_MODEL)
-        chain = ConversationalRetrievalChain.from_llm(
-            llm=llm,
-            retriever=retriever,
-            return_source_documents=True,
-            prompt=SHARED_CHAT_PROMPT
-        )
+        chain = ConversationalRetrievalChain.from_llm(llm=llm, retriever=retriever, return_source_documents=True, prompt=SHARED_CHAT_PROMPT)
         return chain, None
     else:
         llama_model = Llama(**LlamaParamStrategy().get_params())
 
         # llama_model = Llama(
-        #     model_path=LLAMA_MODEL_PATH,
+        #     model_path=LLM_PATH,
         #     n_ctx=LLAMA_N_CTX,
         #     n_gpu_layers=LLAMA_N_GPU_LAYERS,
         #     n_threads=LLAMA_N_THREADS,
@@ -48,4 +44,4 @@ def get_chain_or_llama(retriever):
         #     verbose=LLAMA_VERBOSE,
         #     seed=LLAMA_SEED,
         # )
-        return None, llama_model 
+        return None, llama_model

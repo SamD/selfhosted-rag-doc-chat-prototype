@@ -1,5 +1,71 @@
 version: '3.8'
 
+x-common-consumer-gpu: &common-consumer-gpu
+  hostname: consumer_worker
+  build:
+    context: .
+    dockerfile: Dockerfile.worker
+  command: ["python", "run_consumer.py"]
+  env_file:
+    - ingest-svc.env
+  environment:
+    - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+    - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+    - LLM_PATH=${LLM_PATH}
+    - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+    - LLAMA_USE_GPU=true
+  restart: unless-stopped
+  volumes:
+    - .:/app
+    - ${INGEST_FOLDER}:${INGEST_FOLDER}
+    - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+    - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+    - ${LLM_PATH}:${LLM_PATH}
+  healthcheck:
+    test: ["CMD", "pgrep", "-f", "run_consumer.py"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+  deploy:
+    resources:
+      limits:
+        memory: 12G  # Maximum memory the container can use
+      reservations:
+        memory: 4G  # Guaranteed memory allocation
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [ gpu ]
+
+x-common-consumer-cpu: &common-consumer-cpu
+  hostname: consumer_worker
+  build:
+    context: .
+    dockerfile: Dockerfile.worker
+  command: ["python", "run_consumer.py"]
+  env_file:
+    - ingest-svc.env
+  environment:
+    - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+    - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+    - LLM_PATH=${LLM_PATH}
+    - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+    - LLAMA_USE_GPU=false
+  restart: unless-stopped
+  volumes:
+    - .:/app
+    - ${INGEST_FOLDER}:${INGEST_FOLDER}
+    - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+    - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+    - ${LLM_PATH}:${LLM_PATH}
+  healthcheck:
+    test: ["CMD", "pgrep", "-f", "run_consumer.py"]
+    interval: 30s
+    timeout: 10s
+    retries: 3
+    start_period: 20s
+
 services:
   redis:
     image: redis:7
@@ -17,14 +83,18 @@ services:
 # config options can viewed at: https://github.com/chroma-core/chroma/blob/main/rust/frontend/sample_configs/single_node_full.yaml
   chromadb:
     image: chromadb/chroma:latest
-#    build:
+    hostname: vector-db
+    profiles:
+      - chroma
+      - cuda-chroma
+      - cpu-chroma
+    #    build:
 #      context: .
 #      dockerfile: ./Chroma-Dockerfile
 #    env_file:
 #      - ingest-svc.env
     environment:
-      - "${CHROMA_HOST_ADDR:-0.0.0.0}:0.0.0.0"
-      - "${CHROMA_HOST_PORT:-9001}:8000"
+      - CHROMA_SERVER_HOST=${VECTOR_DB_HOST:-0.0.0.0}
       - IS_PERSISTENT=TRUE
       - PERSIST_DIRECTORY=/chroma/chroma
       - ANONYMIZED_TELEMETRY=FALSE
@@ -32,89 +102,80 @@ services:
       - CHROMA_TIMEOUT_KEEP_ALIVE=30
       - CHROMA_LOG_LEVEL=DEBUG
     ports:
-      - "${CHROMA_HOST_PORT:-9001}:8000"
+      - "${VECTOR_DB_PORT:-9001}:8000"
     volumes:
-      - "${CHROMA_DATA_DIR}:/data"
+      - "${VECTOR_DB_DATA_DIR:-${CHROMA_DATA_DIR}}:/data"
+    networks:
+      default:
+        aliases:
+          - vector-db
     restart: unless-stopped
     depends_on:
       - redis
 
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    profiles:
+      - qdrant
+      - cuda-qdrant
+      - cpu-qdrant
+    hostname: vector-db
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
+      - QDRANT__LOG_LEVEL=DEBUG
+      - QDRANT__TELEMETRY_DISABLED=true
+    ports:
+      - "${VECTOR_DB_PORT:-9002}:6333"
+      - "${VECTOR_DB_GRPC_PORT:-9003}:6334"
+    volumes:
+      - "${VECTOR_DB_DATA_DIR:-${QDRANT_DATA_DIR}}:/qdrant/storage"
+    networks:
+      default:
+        aliases:
+          - vector-db  # Same alias as ChromaDB
+    restart: unless-stopped
+    depends_on:
+      - redis
+
+
   consumer_worker_gpu:
+    <<: *common-consumer-gpu
     container_name: consumer_worker_gpu
-    hostname: consumer_worker
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
     profiles:
-      - cuda
-    command: ["python", "run_consumer.py"]
-    env_file:
-      - ingest-svc.env
-    environment:
-      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
-      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
-      - LLAMA_USE_GPU=true
+      - cuda-qdrant
+    depends_on:
+      - redis
+      - qdrant
+
+  consumer_worker_gpu_chroma:
+    <<: *common-consumer-gpu
+    container_name: consumer_worker_gpu_chroma
+    profiles:
+      - cuda-chroma
     depends_on:
       - redis
       - chromadb
-    restart: unless-stopped
-    volumes:
-      - .:/app
-      - ${INGEST_FOLDER}:${INGEST_FOLDER}
-      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
-#    working_dir: /app/doc-ingest-chat
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "run_consumer.py"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all # or specify a number, e.g., 1, or specific device_ids: ['0', '1']
-              capabilities: [ gpu ] # This is mandatory for GPU devices
-  
+
   consumer_worker_cpu:
+    <<: *common-consumer-cpu
     container_name: consumer_worker_cpu
-    hostname: consumer_worker
-    build:
-      context: .
-      dockerfile: Dockerfile.worker
     profiles:
-      - cpu
-    command: ["python", "run_consumer.py"]
-    env_file:
-      - ingest-svc.env
-    environment:
-      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
-      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
-      - LLAMA_USE_GPU=false
+      - cpu-qdrant
+    depends_on:
+      - redis
+      - qdrant
+
+  consumer_worker_cpu_chroma:
+    <<: *common-consumer-cpu
+    container_name: consumer_worker_cpu_chroma
+    profiles:
+      - cpu-chroma
     depends_on:
       - redis
       - chromadb
-    restart: unless-stopped
-    volumes:
-      - .:/app
-      - ${INGEST_FOLDER}:${INGEST_FOLDER}
-      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
-    #    working_dir: /app/doc-ingest-chat
-    healthcheck:
-      test: ["CMD", "pgrep", "-f", "run_consumer.py"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
 
   ocr_worker:
     container_name: ocr_worker
@@ -130,8 +191,8 @@ services:
       - ingest-svc.env
     environment:
       - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
       - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
       - LLAMA_USE_GPU=false
 #    depends_on:
@@ -142,8 +203,8 @@ services:
       - .:/app
       - ${INGEST_FOLDER}:${INGEST_FOLDER}
       - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
 #    working_dir: /app/doc-ingest-chat
     healthcheck:
       test: ["CMD", "pgrep", "-f", "run_ocr_worker.py"]
@@ -166,8 +227,8 @@ services:
       - ingest-svc.env
     environment:
       - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
       - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
       - LLAMA_USE_GPU=false
     depends_on:
@@ -178,8 +239,8 @@ services:
       - .:/app
       - ${INGEST_FOLDER}:${INGEST_FOLDER}
       - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
 #    working_dir: /app/doc-ingest-chat
     healthcheck:
       test: ["CMD", "pgrep", "-f", "run_producer.py"]
@@ -189,22 +250,22 @@ services:
       start_period: 20s
 
 
-  api_gpu:
+  api_gpu_qdrant:
     container_name: api_gpu
     hostname: api
     build:
       context: .
       dockerfile: Dockerfile.worker
     profiles:
-      - cuda
+      - cuda-qdrant
 #    working_dir: /app/doc-ingest-chat
     command: ["python", "apimain.py"]
     env_file:
       - ingest-svc.env
     environment:
       - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
       - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
       - LLAMA_USE_GPU=true
       - PYTHONUNBUFFERED=1
@@ -213,34 +274,82 @@ services:
       - .:/app
       - ${INGEST_FOLDER}:${INGEST_FOLDER}
       - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
     ports:
       - "8000:8000"
     deploy:
       resources:
+        limits:
+          memory: 16G  # Maximum memory the container can use
         reservations:
+          memory: 8G  # Guaranteed memory allocation
           devices:
             - driver: nvidia
               count: all # or specify a number, e.g., 1, or specific device_ids: ['0', '1']
               capabilities: [ gpu ] # This is mandatory for GPU devices
+    depends_on:
+      - redis
+      - qdrant
 
-  api_cpu:
+  api_gpu_chroma:
+    container_name: api_gpu_chroma
+    hostname: api
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cuda-chroma
+#    working_dir: /app/doc-ingest-chat
+    command: ["python", "apimain.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=true
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
+    ports:
+      - "8000:8000"
+    deploy:
+      resources:
+        limits:
+          memory: 16G  # Maximum memory the container can use
+        reservations:
+          memory: 8G  # Guaranteed memory allocation
+          devices:
+            - driver: nvidia
+              count: all # or specify a number, e.g., 1, or specific device_ids: ['0', '1']
+              capabilities: [ gpu ] # This is mandatory for GPU devices
+    depends_on:
+      - redis
+      - chromadb
+
+  api_cpu_qdrant:
     container_name: api_cpu
     hostname: api
     build:
       context: .
       dockerfile: Dockerfile.worker
     profiles:
-      - cpu
+      - cpu-qdrant
     #    working_dir: /app/doc-ingest-chat
     command: ["python", "apimain.py"]
     env_file:
       - ingest-svc.env
     environment:
       - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
-      - E5_MODEL_PATH=${E5_MODEL_PATH}
-      - LLAMA_MODEL_PATH=${LLAMA_MODEL_PATH}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
       - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
       - LLAMA_USE_GPU=false
       - PYTHONUNBUFFERED=1
@@ -249,10 +358,45 @@ services:
       - .:/app
       - ${INGEST_FOLDER}:${INGEST_FOLDER}
       - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
-      - ${E5_MODEL_PATH}:${E5_MODEL_PATH}
-      - ${LLAMA_MODEL_PATH}:${LLAMA_MODEL_PATH}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
     ports:
       - "8000:8000"
+    depends_on:
+      - redis
+      - qdrant
+
+  api_cpu_chroma:
+    container_name: api_cpu_chroma
+    hostname: api
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles:
+      - cpu-chroma
+    #    working_dir: /app/doc-ingest-chat
+    command: ["python", "apimain.py"]
+    env_file:
+      - ingest-svc.env
+    environment:
+      - INGEST_FOLDER=${INGEST_FOLDER:-/app/Docs}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
+      - CHROMA_DATA_DIR=${CHROMA_DATA_DIR:-${INGEST_FOLDER}/chroma_db}
+      - LLAMA_USE_GPU=false
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    volumes:
+      - .:/app
+      - ${INGEST_FOLDER}:${INGEST_FOLDER}
+      - ${DEBUG_IMAGE_DIR}:${DEBUG_IMAGE_DIR}
+      - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}
+      - ${LLM_PATH}:${LLM_PATH}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - chromadb
 
   frontend:
     build:

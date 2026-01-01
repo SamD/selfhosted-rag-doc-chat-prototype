@@ -4,10 +4,10 @@ set -euo pipefail
 #######################################
 # ✅ REQUIRED ENVIRONMENT VARIABLES  #
 #######################################
-# LLAMA_MODEL_PATH
+# LLM_PATH
 #   - Must be a .gguf file that exists
 #
-# E5_MODEL_PATH
+# EMBEDDING_MODEL_PATH
 #   - Must be a directory containing config.json or tokenizer_config.json
 #
 # INGEST_FOLDER
@@ -33,15 +33,15 @@ export COMPOSE_BAKE=true
 # export INGEST_FOLDER=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
 
 # Model Paths
-# E5_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
+# EMBEDDING_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
 # Only tested with e5-large-v2
 # https://huggingface.co/intfloat/e5-large-v2/blob/main/model.safetensors
-# export E5_MODEL_PATH=/home/myname/AI/models/e5-large-v2
+# export EMBEDDING_MODEL_PATH=/home/myname/AI/models/e5-large-v2
 
-# LLAMA_MODEL_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
+# LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
 # Only tested with Meta-LLama
 # https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/blob/main/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
-# export LLAMA_MODEL_PATH=/home/myname/AI/models/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
+# export LLM_PATH=/home/myname/AI/models/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
 
 # This is the path chroma will use for its files
 # CHROMA_DATA_DIR=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
@@ -52,19 +52,37 @@ export COMPOSE_BAKE=true
 
 
 export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
-
-export E5_MODEL_PATH=/home/samueldoyle/AI/e5-large-v2
-
-export LLAMA_MODEL_PATH=/home/samueldoyle/AI/models/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
+export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI/e5-large-v2
+export LLM_PATH=/home/samueldoyle/AI/models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
 
 export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
+export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
 
 COMPOSE_FILE="ingest-dockercompose.yaml"
 
 if [[ -z "${GPU_CPU_PROFILE:-}" ]]; then
+  # default to gpu
   GPU_CPU_PROFILE="cuda"
 fi
-COMPOSE_FILE_OPTS="--profile $GPU_CPU_PROFILE --profile with-frontend"
+
+if [[ -z "${VECTOR_DB_PROFILE:-}" ]]; then
+  # default to qdrant instead of chroma
+  VECTOR_DB_PROFILE="qdrant"
+fi
+
+# Export VECTOR_DB_PROFILE so containers can see it
+export VECTOR_DB_PROFILE
+
+# Combine GPU_CPU_PROFILE and VECTOR_DB_PROFILE for services that need combined profile
+# (e.g., consumer_worker needs "cuda-qdrant" not separate "cuda" and "qdrant")
+COMBINED_PROFILE="${GPU_CPU_PROFILE}-${VECTOR_DB_PROFILE}"
+
+# Profiles needed:
+# - COMBINED_PROFILE: for consumer_worker, api services (e.g., cuda-qdrant)
+# - GPU_CPU_PROFILE: for ocr_worker, producer_worker (e.g., cuda)
+# - VECTOR_DB_PROFILE: for vector db services (e.g., qdrant)
+# - with-frontend: for frontend service
+COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --profile $VECTOR_DB_PROFILE --profile with-frontend"
 
 #: "${INGEST_FOLDER:-}" || INGEST_FOLDER="${SCRIPT_DIR}/Docs"
 #if [[ -z "${INGEST_FOLDER:-}" ]]; then
@@ -74,8 +92,8 @@ COMPOSE_FILE_OPTS="--profile $GPU_CPU_PROFILE --profile with-frontend"
 echo "✅ INGEST_FOLDER: $INGEST_FOLDER"
 
 REQUIRED_VARS=(
-  "LLAMA_MODEL_PATH:gguf"
-  "E5_MODEL_PATH:e5"
+  "LLM_PATH:gguf"
+  "EMBEDDING_MODEL_PATH:e5"
   "INGEST_FOLDER:dir"
 )
 

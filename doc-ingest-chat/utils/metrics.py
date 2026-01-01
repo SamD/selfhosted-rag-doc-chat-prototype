@@ -5,11 +5,12 @@ Performance metrics collection for the document ingestion pipeline.
 Provides lightweight timing instrumentation with structured JSON logging.
 Zero external dependencies - uses only stdlib (time, json, logging, datetime).
 """
-import time
+
 import json
 import logging
+import time
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, Optional
 
 
 class Timer:
@@ -101,12 +102,7 @@ class FileMetrics:
         if "ocr_operations" not in self.metrics:
             self.metrics["ocr_operations"] = []
 
-        self.metrics["ocr_operations"].append({
-            "page": page,
-            "ocr_roundtrip_time_ms": ocr_roundtrip_time_ms,
-            "engine": engine,
-            "success": success
-        })
+        self.metrics["ocr_operations"].append({"page": page, "ocr_roundtrip_time_ms": ocr_roundtrip_time_ms, "engine": engine, "success": success})
 
     def _finalize_metrics(self):
         """Convert timer objects to millisecond values."""
@@ -127,25 +123,16 @@ class FileMetrics:
         """
         try:
             # Import settings here to avoid circular imports
-            from config.settings import METRICS_ENABLED, METRICS_LOG_TO_STDOUT, METRICS_LOG_FILE
+            from config.settings import METRICS_ENABLED, METRICS_LOG_FILE, METRICS_LOG_TO_STDOUT
 
             if not METRICS_ENABLED:
                 return
 
             # Map worker names to event names
-            event_names = {
-                "producer": "file_processing_complete",
-                "consumer": "file_storage_complete"
-            }
+            event_names = {"producer": "file_processing_complete", "consumer": "file_storage_complete"}
             event_name = event_names.get(self.worker, f"file_{self.worker}_complete")
 
-            event = {
-                "event": event_name,
-                "timestamp": datetime.utcnow().isoformat(),
-                "worker": self.worker,
-                "file": self.file,
-                "metrics": self._finalize_metrics()
-            }
+            event = {"event": event_name, "timestamp": datetime.utcnow().isoformat(), "worker": self.worker, "file": self.file, "metrics": self._finalize_metrics()}
 
             # Add extra fields at top level
             event.update(self.extra_fields)
@@ -157,8 +144,8 @@ class FileMetrics:
             # Optionally write to metrics file
             if METRICS_LOG_FILE:
                 try:
-                    with open(METRICS_LOG_FILE, 'a') as f:
-                        f.write(json.dumps(event) + '\n')
+                    with open(METRICS_LOG_FILE, "a") as f:
+                        f.write(json.dumps(event) + "\n")
                 except Exception as e:
                     logger.debug(f"Failed to write metrics to file: {e}")
 
@@ -243,18 +230,12 @@ class JobMetrics:
     def emit(self, logger: logging.Logger):
         """Emit structured JSON log event."""
         try:
-            from config.settings import METRICS_ENABLED, METRICS_LOG_TO_STDOUT, METRICS_LOG_FILE
+            from config.settings import METRICS_ENABLED, METRICS_LOG_FILE, METRICS_LOG_TO_STDOUT
 
             if not METRICS_ENABLED:
                 return
 
-            event = {
-                "event": "ocr_job_complete",
-                "timestamp": datetime.utcnow().isoformat(),
-                "worker": self.worker,
-                "job_id": self.job_id,
-                "metrics": self._finalize_metrics()
-            }
+            event = {"event": "ocr_job_complete", "timestamp": datetime.utcnow().isoformat(), "worker": self.worker, "job_id": self.job_id, "metrics": self._finalize_metrics()}
 
             # Add extra fields at top level
             event.update(self.extra_fields)
@@ -264,8 +245,8 @@ class JobMetrics:
 
             if METRICS_LOG_FILE:
                 try:
-                    with open(METRICS_LOG_FILE, 'a') as f:
-                        f.write(json.dumps(event) + '\n')
+                    with open(METRICS_LOG_FILE, "a") as f:
+                        f.write(json.dumps(event) + "\n")
                 except Exception as e:
                     logger.debug(f"Failed to write metrics to file: {e}")
 

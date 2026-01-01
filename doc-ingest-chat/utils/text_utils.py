@@ -2,6 +2,7 @@
 """
 Text processing utility functions.
 """
+
 import re
 import string
 import unicodedata
@@ -13,7 +14,7 @@ from ftfy import fix_text
 
 class TextUtils:
     """Text processing utility functions as static methods."""
-    
+
     @staticmethod
     def fix_mojibake(text: str) -> str:
         """Use ftfy to fix common mojibake/encoding issues before checks."""
@@ -37,7 +38,7 @@ class TextUtils:
         When ALLOW_LATIN_EXTENDED is True, do not treat Latin ligatures/diacritics
         like 'œ' as corruption.
         """
-        pattern = r'[âã¢£™žÂÃ]' if ALLOW_LATIN_EXTENDED else r'[âã¢£™žœÂÃ]'
+        pattern = r"[âã¢£™žÂÃ]" if ALLOW_LATIN_EXTENDED else r"[âã¢£™žœÂÃ]"
         return re.search(pattern, text) is not None
 
     @staticmethod
@@ -52,7 +53,7 @@ class TextUtils:
         # Normalize and clean text first
         text = TextUtils.fix_mojibake(text)
         normalized = unicodedata.normalize("NFC" if ALLOW_LATIN_EXTENDED else "NFKD", text)
-        printable = ''.join(c for c in normalized if c.isprintable())
+        printable = "".join(c for c in normalized if c.isprintable())
         total = len(printable)
         if total == 0:
             return True
@@ -62,18 +63,18 @@ class TextUtils:
             noise_denominator = max(1, total)
             non_alpha = 0
             for c in printable:
-                if unicodedata.category(c) == 'Mn':
+                if unicodedata.category(c) == "Mn":
                     continue
-                if not (c.isalpha() or c in (' ', '\n', '\t', '-', '–', '—', '·', '.', ',', ';', ':', '(', ')', '[', ']', "'", '"')):
+                if not (c.isalpha() or c in (" ", "\n", "\t", "-", "–", "—", "·", ".", ",", ";", ":", "(", ")", "[", "]", "'", '"')):
                     non_alpha += 1
             ratio = non_alpha / noise_denominator
             return ratio > 0.75  # more tolerant threshold for Latin script
         non_alpha = 0
         for c in printable:
-            if ALLOW_LATIN_EXTENDED and unicodedata.category(c) == 'Mn':
+            if ALLOW_LATIN_EXTENDED and unicodedata.category(c) == "Mn":
                 # Ignore combining diacritical marks
                 continue
-            if not (c.isalpha() or c in (' ', '\n')):
+            if not (c.isalpha() or c in (" ", "\n")):
                 non_alpha += 1
         ratio = non_alpha / total
         return ratio > 0.6
@@ -99,13 +100,7 @@ class TextUtils:
     @staticmethod
     def is_bad_ocr(text: str, tokenizer) -> bool:
         """Check if OCR text is of poor quality."""
-        return (
-            not text
-            or not text.strip()
-            or TextUtils.is_gibberish(text)
-            or TextUtils.is_visibly_corrupt(text)
-            or TextUtils.is_low_quality(text, tokenizer)
-        )
+        return not text or not text.strip() or TextUtils.is_gibberish(text) or TextUtils.is_visibly_corrupt(text) or TextUtils.is_low_quality(text, tokenizer)
 
     @staticmethod
     def is_invalid_text(text: str) -> bool:
@@ -142,6 +137,7 @@ class TextUtils:
 
             # Import here to avoid circular imports
             import pdfplumber
+
             with pdfplumber.open(path) as pdf:
                 if not pdf.pages:
                     raise ValueError("PDF has no pages")
@@ -150,11 +146,12 @@ class TextUtils:
             return True
 
         except Exception:
-            return False 
+            return False
 
-is_invalid_text = TextUtils.is_invalid_text 
+
+is_invalid_text = TextUtils.is_invalid_text
 is_gibberish = TextUtils.is_gibberish
 is_visibly_corrupt = TextUtils.is_visibly_corrupt
 is_low_quality = TextUtils.is_low_quality
 is_valid_pdf = TextUtils.is_valid_pdf
-is_bad_ocr = TextUtils.is_bad_ocr 
+is_bad_ocr = TextUtils.is_bad_ocr

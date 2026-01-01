@@ -5,9 +5,11 @@ Configuration settings for the document ingestion system.
 - When running standalone, default values are used for all environment variables.
 - When running in Docker Compose, values from ingest-svc.env will override the defaults.
 """
+
 import os
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
 
 def _abs_path(path, base=PROJECT_ROOT):
     if not path:
@@ -17,6 +19,7 @@ def _abs_path(path, base=PROJECT_ROOT):
     if not base:
         raise ValueError("Base directory must be provided for relative paths.")
     return os.path.join(base, path)
+
 
 LLAMA_USE_GPU = os.getenv("LLAMA_USE_GPU", "true").lower() == "true"
 
@@ -32,8 +35,8 @@ INGEST_FOLDER = _abs_path(os.getenv("INGEST_FOLDER"))
 CHROMA_DATA_DIR = _abs_path(os.getenv("CHROMA_DATA_DIR"))
 
 # Model Paths
-E5_MODEL_PATH = _abs_path(os.getenv("E5_MODEL_PATH"))
-LLAMA_MODEL_PATH = _abs_path(os.getenv("LLAMA_MODEL_PATH"))
+EMBEDDING_MODEL_PATH = _abs_path(os.getenv("EMBEDDING_MODEL_PATH"))
+LLM_PATH = _abs_path(os.getenv("LLM_PATH"))
 
 # File Paths
 FAILED_FILES = _abs_path(os.getenv("FAILED_FILES", "failed_files.txt"))
@@ -52,10 +55,23 @@ REDIS_INGEST_QUEUE = os.getenv("REDIS_INGEST_QUEUE", "chunk_ingest_queue")
 # Queue Configuration
 QUEUE_NAMES = os.getenv("QUEUE_NAMES", "chunk_ingest_queue:0,chunk_ingest_queue:1").split(",")
 
-# ChromaDB Configuration
-CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "9001"))
-CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "chroma_collection")
+# Vector Database Configuration (ChromaDB or Qdrant)
+# VECTOR_DB_PROFILE: Set by run-compose.sh, determines which database to use
+VECTOR_DB_PROFILE = os.getenv("VECTOR_DB_PROFILE", "qdrant").lower()
+USE_QDRANT = VECTOR_DB_PROFILE == "qdrant"
+
+# Set default port based on profile
+_default_vector_port = "6333" if USE_QDRANT else "8000"
+
+# Unified vector database settings (uses "vector-db" alias for both)
+VECTOR_DB_HOST = os.getenv("VECTOR_DB_HOST", "vector-db")
+VECTOR_DB_PORT = int(os.getenv("VECTOR_DB_PORT", _default_vector_port))
+VECTOR_DB_COLLECTION = os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection")
+
+# Backward compatibility aliases
+CHROMA_HOST = VECTOR_DB_HOST
+CHROMA_PORT = VECTOR_DB_PORT
+CHROMA_COLLECTION = VECTOR_DB_COLLECTION
 
 
 CHUNK_TIMEOUT = int(os.getenv("CHUNK_TIMEOUT", "300"))  # seconds before we consider a buffer stale
@@ -78,7 +94,6 @@ MEDIA_BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", "8"))  # reduce if low on G
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")  # change to "int8" if low on GPU mem (may reduce accuracy)
 
 
-
 # Queue Management
 MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "25"))
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "0.5"))
@@ -88,7 +103,7 @@ MAX_CHROMA_BATCH_SIZE_LIMIT = int(os.getenv("MAX_CHROMA_BATCH_SIZE_LIMIT", "5461
 # PAD_RESERVE = 32  # Reserve space for padding/special tokens
 
 # Ensure debug directory exists
-os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True) 
+os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
 
 # LLM and Chat Configuration
 USE_OLLAMA = os.getenv("USE_OLLAMA", "0") == "1"
@@ -127,4 +142,3 @@ TESSDATA_PREFIX = os.getenv("TESSDATA_PREFIX", "")
 METRICS_ENABLED = os.getenv("METRICS_ENABLED", "true").lower() == "true"
 METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "metrics.jsonl")
 METRICS_LOG_TO_STDOUT = os.getenv("METRICS_LOG_TO_STDOUT", "true").lower() == "true"
-
