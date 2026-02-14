@@ -3,7 +3,7 @@
 Parquet service for data storage operations.
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import duckdb
 import pandas as pd
@@ -17,7 +17,7 @@ class ParquetService:
     """Parquet service for data storage operations as static methods."""
 
     @staticmethod
-    def write_to_parquet(entries: List[Dict[str, Any]], path: str, lock=None):
+    def write_to_parquet(entries: List[Dict[str, Any]], path: str, lock: Optional[Any] = None) -> None:
         """Write entries to parquet file."""
         if not entries:
             return
@@ -27,6 +27,29 @@ class ParquetService:
                 ParquetService._do_write(entries, path)
         else:
             ParquetService._do_write(entries, path)
+
+    @staticmethod
+    def ensure_schema() -> None:
+        # Use a persistent DB instead of in-memory table
+        con = duckdb.connect(DUCKDB_FILE)
+        """Call this once at start-up or before the first write."""
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS parquet_chunks (
+              id VARCHAR PRIMARY KEY,  -- Crucial for upserts
+              chunk TEXT,
+              source_file VARCHAR,
+              type VARCHAR,
+              chunk_index INTEGER,
+              engine VARCHAR,
+              hash VARCHAR,
+              page INTEGER
+            )
+            """)
+        # Create the table if it doesn't exist
+        # con.execute("""
+        #         CREATE TABLE IF NOT EXISTS parquet_chunks AS SELECT * FROM df LIMIT 0
+        #     """)
+
 
     @staticmethod
     def _do_write(entries: List[Dict[str, Any]], path: str):
@@ -47,14 +70,6 @@ class ParquetService:
             # Register the new data
             con.register("df", df)
 
-            # Create the table if it doesn't exist
-            con.execute("""
-                CREATE TABLE IF NOT EXISTS parquet_chunks AS SELECT * FROM df LIMIT 0
-            """)
-
-            # Append new data
-            con.execute("INSERT INTO parquet_chunks SELECT * FROM df")
-
             # Write the ENTIRE DB to Parquet (overwrite only once)
             con.execute(f"""
                 COPY parquet_chunks TO '{path}' (FORMAT PARQUET)
@@ -68,3 +83,4 @@ class ParquetService:
 
 # Expose static methods as module-level functions after class definition
 write_to_parquet = ParquetService.write_to_parquet
+init_schema = ParquetService.ensure_schema

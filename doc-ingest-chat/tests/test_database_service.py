@@ -28,12 +28,14 @@ def test_qdrant_collection_creation_when_missing(mock_logging):
     os.environ["VECTOR_DB_PROFILE"] = "qdrant"
     os.environ.pop("VECTOR_DB_PORT", None)  # Use default
 
-    # Reload settings
+    # Reload settings then database so VECTOR_DB_COLLECTION binding is refreshed
     import importlib
 
+    import services.database as database_module
     from config import settings
 
     importlib.reload(settings)
+    importlib.reload(database_module)
 
     # Mock QdrantClient - create a proper UnexpectedResponse exception
     mock_client = Mock()
@@ -51,10 +53,8 @@ def test_qdrant_collection_creation_when_missing(mock_logging):
     mock_embeddings = Mock()
     mock_embeddings.embed_query.return_value = [0.1] * 1024  # e5-large-v2 dimension
 
-    with patch("services.database.QdrantClient", return_value=mock_client), patch("services.database.DatabaseService._get_embeddings", return_value=mock_embeddings), patch("services.database.QdrantVectorStore") as mock_qdrant_store:
-        from services.database import DatabaseService
-
-        DatabaseService.get_qdrant()
+    with patch.object(database_module, "QdrantClient", return_value=mock_client), patch.object(database_module.DatabaseService, "_get_embeddings", return_value=mock_embeddings), patch.object(database_module, "QdrantVectorStore") as mock_qdrant_store:
+        database_module.DatabaseService.get_qdrant()
 
         # Verify collection creation was attempted
         mock_client.get_collection.assert_called_once_with("test_collection")
@@ -78,12 +78,14 @@ def test_qdrant_collection_reuse_when_exists(mock_logging):
     os.environ["VECTOR_DB_PROFILE"] = "qdrant"
     os.environ.pop("VECTOR_DB_PORT", None)
 
-    # Reload settings
+    # Reload settings then database so VECTOR_DB_COLLECTION binding is refreshed
     import importlib
 
+    import services.database as database_module
     from config import settings
 
     importlib.reload(settings)
+    importlib.reload(database_module)
 
     # Mock QdrantClient with existing collection
     mock_client = Mock()
@@ -93,10 +95,8 @@ def test_qdrant_collection_reuse_when_exists(mock_logging):
     # Mock embeddings
     mock_embeddings = Mock()
 
-    with patch("services.database.QdrantClient", return_value=mock_client), patch("services.database.DatabaseService._get_embeddings", return_value=mock_embeddings), patch("services.database.QdrantVectorStore") as mock_qdrant_store:
-        from services.database import DatabaseService
-
-        DatabaseService.get_qdrant()
+    with patch.object(database_module, "QdrantClient", return_value=mock_client), patch.object(database_module.DatabaseService, "_get_embeddings", return_value=mock_embeddings), patch.object(database_module, "QdrantVectorStore") as mock_qdrant_store:
+        database_module.DatabaseService.get_qdrant()
 
         # Verify collection was checked
         mock_client.get_collection.assert_called_once_with("test_collection")
