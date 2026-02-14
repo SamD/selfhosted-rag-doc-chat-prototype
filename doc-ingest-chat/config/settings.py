@@ -7,11 +7,12 @@ Configuration settings for the document ingestion system.
 """
 
 import os
+from typing import Optional
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
-def _abs_path(path, base=PROJECT_ROOT):
+def _abs_path(path: Optional[str], base: Optional[str] = PROJECT_ROOT) -> str:
     if not path:
         raise ValueError("Missing required path for ingestion.")
     if os.path.isabs(path):
@@ -67,6 +68,11 @@ _default_vector_port = "6333" if USE_QDRANT else "8000"
 VECTOR_DB_HOST = os.getenv("VECTOR_DB_HOST", "vector-db")
 VECTOR_DB_PORT = int(os.getenv("VECTOR_DB_PORT", _default_vector_port))
 VECTOR_DB_COLLECTION = os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection")
+
+# these are QDRANT specific
+QDRANT_RETRIEVER_K = int(os.getenv("QDRANT_RETRIEVER_K", 10))
+QDRANT_DENSE_WEIGHT = float(os.getenv("QDRANT_DENSE_WEIGHT", 0.3))
+QDRANT_SPARSE_WEIGHT = float(os.getenv("QDRANT_SPARSE_WEIGHT", 0.7))
 
 # Backward compatibility aliases
 CHROMA_HOST = VECTOR_DB_HOST

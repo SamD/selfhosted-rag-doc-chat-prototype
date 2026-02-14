@@ -12,11 +12,12 @@ import time
 import traceback
 from collections import defaultdict
 from itertools import cycle
+from typing import Any, Callable, List
 
 from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, MAX_TOKENS, PARQUET_FILE, QUEUE_NAMES, USE_QDRANT
 from more_itertools import chunked
 from services.database import get_db
-from services.parquet_service import write_to_parquet
+from services.parquet_service import init_schema, write_to_parquet
 from services.redis_service import get_redis_client
 from utils.file_utils import update_failed_files, update_ingested_files
 from utils.logging_config import setup_logging
@@ -32,7 +33,7 @@ parquet_lock = multiprocessing.Lock()
 log = setup_logging("ingest_consumer.log", include_default_filters=True)
 
 
-def get_next_queue():
+def get_next_queue() -> str:
     global queue_lock
     global queue_cycle
 
@@ -40,12 +41,12 @@ def get_next_queue():
         return next(queue_cycle)
 
 
-def current_time():
+def current_time() -> int:
     """Get current timestamp."""
     return int(time.time())
 
 
-def consumer_worker(queue_name, shared_data, parq_lock):
+def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
     """Main consumer worker function."""
     try:
         r = get_redis_client()
@@ -219,10 +220,10 @@ def consumer_worker(queue_name, shared_data, parq_lock):
 CHILD_PROCESSES = []
 
 
-def make_sigint_handler(processes, ppid, shared_data):
+def make_sigint_handler(processes: List[multiprocessing.Process], ppid: int, shared_data: Any) -> Callable[[int, Any], None]:
     """Create signal handler for graceful shutdown."""
 
-    def handler(signum, frame):
+    def handler(signum: int, frame: Any) -> None:
         if os.getpid() != ppid:
             # Prevent child processes from handling this
             return
@@ -240,8 +241,11 @@ def make_sigint_handler(processes, ppid, shared_data):
     return handler
 
 
-def main():
+def main() -> None:
     parent_pid = os.getpid()
+
+    # ensure duckdb schema created
+    init_schema()
 
     with multiprocessing.Manager() as manager:
         shared_dict = manager.dict({"shutdown_flag": False})

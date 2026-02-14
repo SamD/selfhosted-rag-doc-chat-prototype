@@ -7,7 +7,7 @@ import base64
 import json
 import re
 import uuid
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -107,7 +107,7 @@ class DocumentProcessor:
         return np_image
 
     @staticmethod
-    def send_image_to_ocr(np_image: np.ndarray, rel_path: str, page_num: int, redis_client) -> Tuple[Optional[str], str, int, str, str]:
+    def send_image_to_ocr(np_image: np.ndarray, rel_path: str, page_num: int, redis_client: Any) -> Tuple[Optional[str], str, int, str, str]:
         """Send image to OCR service."""
         job_id = str(uuid.uuid4())
         reply_key = f"ocr_reply:{job_id}"
@@ -132,7 +132,7 @@ class DocumentProcessor:
         return (result.get("text"), result.get("rel_path"), result.get("page_num"), result.get("engine"), result.get("job_id"))
 
     @staticmethod
-    def process_pdf_by_page(full_path: str, rel_path: str, file_type: str, redis_client, tokenizer) -> Tuple[List[str], List[dict]]:
+    def process_pdf_by_page(full_path: str, rel_path: str, file_type: str, redis_client: Any, tokenizer: Any) -> Tuple[List[str], List[dict]]:
         """Process PDF by page with OCR fallback."""
         chunks = []
         metadatas = []
@@ -180,7 +180,7 @@ class DocumentProcessor:
         return chunks, metadatas
 
     @staticmethod
-    def process_pdf_by_page_nofallback(full_path: str, rel_path: str, file_type: str, tokenizer) -> Tuple[List[str], List[dict]]:
+    def process_pdf_by_page_nofallback(full_path: str, rel_path: str, file_type: str, tokenizer: Any) -> Tuple[List[str], List[dict]]:
         """Process PDF by page without OCR fallback."""
         chunks = []
         metadatas = []
