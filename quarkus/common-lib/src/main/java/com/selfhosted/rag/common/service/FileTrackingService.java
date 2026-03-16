@@ -38,6 +38,14 @@ public class FileTrackingService {
         appendToFile(config.getIngestedFile(), normalizeRelPath(file));
     }
 
+    public void updateIngestedFiles(String file, String overridePath) {
+        appendToFile(overridePath, normalizeRelPath(file));
+    }
+
+    public void updateTrackedFiles(String file, String overridePath) {
+        appendToFile(overridePath, normalizeRelPath(file));
+    }
+
     public void updateFailedFiles(String file) {
         appendToFile(config.getFailedFiles(), normalizeRelPath(file));
     }

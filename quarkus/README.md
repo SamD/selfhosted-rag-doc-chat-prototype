@@ -6,32 +6,50 @@ This is a Quarkus-based port of the Python `doc-ingest-chat` system. It replicat
 
 ### 1. Individual Maven Commands (Local Development)
 
-To run the system locally without Docker, ensure you have Redis and Qdrant running, then start each service in its own terminal:
+To run the system locally without Docker for the applications, you still need Redis and Qdrant. Start them using Docker with volume mounts for persistence:
 
-1.  **Build everything:**
+1.  **Start Infrastructure:**
+    ```bash
+    # Create a directory for local persistence if it doesn't exist
+    mkdir -p ./local_storage/redis ./local_storage/qdrant
+
+    # Start Redis with persistence
+    docker run -d --name rag-redis \
+      -p 6380:6379 \
+      -v $(pwd)/local_storage/redis:/data \
+      redis:7-alpine redis-server --save 60 1
+
+    # Start Qdrant with persistence
+    docker run -d --name rag-qdrant \
+      -p 6333:6333 -p 6334:6334 \
+      -v $(pwd)/local_storage/qdrant:/qdrant/storage \
+      qdrant/qdrant:latest
+    ```
+
+2.  **Build everything:**
     ```bash
     mvn clean install -DskipTests
     ```
 
-2.  **Start Persistence App:**
+3.  **Start Persistence App (Handles Qdrant & DuckDB/Parquet):**
     ```bash
     cd persistence-app
     mvn quarkus:dev
     ```
 
-3.  **Start OCR Fallback App:**
+4.  **Start OCR Fallback App:**
     ```bash
     cd ocr-fallback-app
     mvn quarkus:dev
     ```
 
-4.  **Start Ingestion App:**
+5.  **Start Ingestion App:**
     ```bash
     cd ingestion-app
     mvn quarkus:dev -DINGEST_FOLDER=/path/to/your/docs -DEMBEDDING_MODEL_PATH=/path/to/models/intfloat/e5-large-v2
     ```
 
-5.  **Start Front-End API:**
+6.  **Start Front-End API:**
     ```bash
     cd front-end
     mvn quarkus:dev -DEMBEDDING_MODEL_PATH=/path/to/models/intfloat/e5-large-v2
@@ -78,7 +96,7 @@ The system consists of several specialized modules:
 
 *   **`common-lib`**: Shared models, configurations, and utilities.
 *   **`ingestion-app`**: Scans directories, performs text extraction/OCR, and enqueues chunks to Redis.
-*   **`persistence-app`**: Consumes chunks from Redis and stores them in the Qdrant vector database.
+*   **`persistence-app`**: Consumes chunks from Redis, stores them in the Qdrant vector database, and archives metadata to **DuckDB** and **Parquet** files (mirroring Python parity).
 *   **`ocr-fallback-app`**: Specialized worker for CPU/GPU-based OCR fallback.
 *   **`front-end`**: REST API for chat retrieval and response generation using LangChain4j.
 

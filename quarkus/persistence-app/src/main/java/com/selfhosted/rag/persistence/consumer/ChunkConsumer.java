@@ -5,6 +5,7 @@ import com.selfhosted.rag.common.config.AppConfig;
 import com.selfhosted.rag.common.model.ChunkEntry;
 import com.selfhosted.rag.common.model.FileEndMessage;
 import com.selfhosted.rag.common.service.FileTrackingService;
+import com.selfhosted.rag.persistence.service.DuckDbService;
 import com.selfhosted.rag.persistence.service.VectorStoreService;
 import io.quarkus.redis.client.RedisClient;
 import io.quarkus.runtime.Startup;
@@ -49,6 +50,9 @@ public class ChunkConsumer {
     FileTrackingService fileTrackingService;
 
     @Inject
+    DuckDbService duckDbService;
+
+    @Inject
     ManagedExecutor managedExecutor;
 
     private final Map<String, List<ChunkEntry>> buffer = new ConcurrentHashMap<>();
@@ -61,6 +65,8 @@ public class ChunkConsumer {
             System.out.println("⚠️ Consumer workers are disabled via configuration");
             return;
         }
+
+        duckDbService.ensureSchema();
 
         List<String> queues = appConfig.getQueueNamesList();
         System.out.println("🚀 Starting " + queues.size() + " consumer workers for: " + queues);
@@ -120,13 +126,16 @@ public class ChunkConsumer {
         List<ChunkEntry> chunks = buffer.remove(sourceFile);
         timestamps.remove(sourceFile);
 
+        System.out.println("🏁 [" + queueName + "] Finalizing " + sourceFile + " (" + (chunks != null ? chunks.size() : 0) + "/" + msg.getExpected_chunks() + " chunks)");
+
         if (chunks == null || chunks.size() != msg.getExpected_chunks()) {
-            System.err.println("❌ [" + queueName + "] Incomplete chunks for " + sourceFile);
+            System.err.println("❌ [" + queueName + "] Incomplete chunks for " + sourceFile + ", skipping persist");
             fileTrackingService.updateFailedFiles(sourceFile);
             return;
         }
 
         try {
+            // 1. Persist to Vector Store
             List<String> texts = chunks.stream().map(ChunkEntry::getChunk).collect(Collectors.toList());
             List<Map<String, Object>> metadatas = chunks.stream().map(c -> {
                 Map<String, Object> m = new HashMap<>();
@@ -141,8 +150,14 @@ public class ChunkConsumer {
             List<String> ids = chunks.stream().map(ChunkEntry::getId).collect(Collectors.toList());
 
             vectorStoreService.addTexts(texts, metadatas, ids);
-            fileTrackingService.updateIngestedFiles(sourceFile);
-            System.out.println("✅ [" + queueName + "] Persisted " + sourceFile + " to vector DB");
+            System.out.println("✅ [" + queueName + "] Persisted " + chunks.size() + " chunks to Vector DB for " + sourceFile);
+
+            // 2. Persist to DuckDB/Parquet (Mirroring Python)
+            duckDbService.writeToParquet(chunks, appConfig.getParquetFile());
+
+            // 3. Update tracking
+            fileTrackingService.updateIngestedFiles(sourceFile, appConfig.getIngestedFile());
+            fileTrackingService.updateTrackedFiles(sourceFile, appConfig.getTrackFile());
 
         } catch (Exception e) {
             System.err.println("💥 [" + queueName + "] Failed to persist " + sourceFile + ": " + e.getMessage());
@@ -153,9 +168,9 @@ public class ChunkConsumer {
     private void checkBufferTimeouts() {
         long now = System.currentTimeMillis();
         long timeoutMs = appConfig.getChunkTimeout() * 1000L;
-        
-        timestamps.forEach((file, firstSeen) -> {
-            if (now - firstSeen > timeoutMs) {
+
+        timestamps.forEach((file, timestamp) -> {
+            if (now - timestamp > timeoutMs) {
                 System.out.println("⌛ TTL expired for " + file + ", discarding buffer");
                 buffer.remove(file);
                 timestamps.remove(file);

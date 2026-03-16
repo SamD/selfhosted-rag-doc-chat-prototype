@@ -6,7 +6,7 @@ services:
       - "${REDIS_PORT:-6380}:6379"
     command: redis-server --save 60 1 --loglevel warning
     volumes:
-      - redis_data:/data
+      - ./local_storage/redis:/data
     restart: unless-stopped
 
   vector-db:
@@ -20,7 +20,7 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
     volumes:
-      - ./qdrant_storage:/qdrant/storage
+      - ./local_storage/qdrant:/qdrant/storage
     restart: unless-stopped
 
   front-end:
@@ -84,6 +84,12 @@ services:
       - REDIS_PORT=6379
       - VECTOR_DB_HOST=vector-db
       - VECTOR_DB_PORT=6333
+      - DUCKDB_FILE=/data/persistence/chunks.duckdb
+      - PARQUET_FILE=/data/persistence/chunks.parquet
+      - INGESTED_FILE=/data/persistence/ingested_files.txt
+      - TRACK_FILE=/data/persistence/ingested_files.txt
+    volumes:
+      - ./local_storage/persistence:/data/persistence
     depends_on:
       - redis
       - vector-db
