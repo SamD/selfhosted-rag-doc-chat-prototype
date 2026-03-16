@@ -6,17 +6,10 @@ import java.util.Map;
 /**
  * Represents a chat query request.
  */
-public class QueryRequest {
-    private String query;
-    private List<Map<String, Object>> chat_history;
-
-    public QueryRequest() {}
-
-    public QueryRequest(String query, List<Map<String, Object>> chat_history) {
-        this.query = query;
-        this.chat_history = chat_history;
-    }
-
+public record QueryRequest(
+    String query,
+    List<Map<String, Object>> chat_history
+) {
     public static Builder builder() {
         return new Builder();
     }
@@ -31,21 +24,5 @@ public class QueryRequest {
         public QueryRequest build() {
             return new QueryRequest(query, chat_history);
         }
-    }
-
-    public String getQuery() {
-        return query;
-    }
-
-    public void setQuery(String query) {
-        this.query = query;
-    }
-
-    public List<Map<String, Object>> getChat_history() {
-        return chat_history;
-    }
-
-    public void setChat_history(List<Map<String, Object>> chat_history) {
-        this.chat_history = chat_history;
     }
 }

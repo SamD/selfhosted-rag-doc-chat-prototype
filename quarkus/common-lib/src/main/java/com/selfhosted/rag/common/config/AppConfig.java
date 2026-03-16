@@ -4,7 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Configuration settings for the document ingestion system.
@@ -83,6 +82,9 @@ public class AppConfig {
     @ConfigProperty(name = "INGEST_FOLDER", defaultValue = "/data/ingest")
     String ingestFolder;
 
+    @ConfigProperty(name = "CHROMA_DATA_DIR", defaultValue = "/data/chroma")
+    String chromaDataDir;
+
     @ConfigProperty(name = "SUPPORTED_EXTENSIONS", defaultValue = ".pdf,.html,.htm")
     String supportedExtensions;
 
@@ -128,7 +130,7 @@ public class AppConfig {
     @ConfigProperty(name = "TESSERACT_USE_SCRIPT_LATIN", defaultValue = "true")
     boolean tesseractUseScriptLatin;
 
-    @ConfigProperty(name = "TESSDATA_PREFIX", defaultValue = "")
+    @ConfigProperty(name = "TESSDATA_PREFIX", defaultValue = "/usr/share/tessdata")
     String tessdataPrefix;
 
     @ConfigProperty(name = "DEVICE", defaultValue = "cuda")
@@ -200,16 +202,26 @@ public class AppConfig {
     @ConfigProperty(name = "MAX_CHROMA_BATCH_SIZE_LIMIT", defaultValue = "5461")
     int maxBatchSizeLimit;
 
+    @ConfigProperty(name = "METRICS_ENABLED", defaultValue = "true")
+    boolean metricsEnabled;
+
+    @ConfigProperty(name = "METRICS_LOG_FILE", defaultValue = "metrics.jsonl")
+    String metricsLogFile;
+
+    @ConfigProperty(name = "METRICS_LOG_TO_STDOUT", defaultValue = "true")
+    boolean metricsLogToStdout;
+
     // Getters
 
+    public String getRedisHost() { return redisHost; }
+    public int getRedisPort() { return redisPort; }
     public String getOcrJobQueue() { return ocrJobQueue; }
     public String getIngestQueue() { return ingestQueue; }
-    public List<String> getQueueNamesList() { return Arrays.asList(queueNames.split(",")); }
+    public String getQueueNames() { return queueNames; }
     public int getMaxQueueLength() { return maxQueueLength; }
     public double getPollInterval() { return pollInterval; }
     public double getWaitWarnThreshold() { return waitWarnThreshold; }
     public String getVectorDbProfile() { return vectorDbProfile; }
-    public boolean isUseQdrant() { return "qdrant".equalsIgnoreCase(vectorDbProfile); }
     public String getVectorDbHost() { return vectorDbHost; }
     public int getVectorDbPort() { return vectorDbPort; }
     public String getVectorDbCollection() { return vectorDbCollection; }
@@ -223,19 +235,17 @@ public class AppConfig {
     public String getEmbeddingModelPath() { return embeddingModelPath; }
     public String getLlmPath() { return llmPath; }
     public boolean isUseGpu() { return useGpu; }
-
     public String getIngestFolder() { return ingestFolder; }
-    public List<String> getSupportedExtensionsList() { return Arrays.asList(supportedExtensions.split(",")); }
-    public List<String> getSupportedMediaExtensionsList() { return Arrays.asList(supportedMediaExtensions.split(",")); }
+    public String getChromaDataDir() { return chromaDataDir; }
+    public String getSupportedExtensions() { return supportedExtensions; }
+    public String getSupportedMediaExtensions() { return supportedMediaExtensions; }
     public String getFailedFiles() { return failedFiles; }
     public String getIngestedFile() { return ingestedFile; }
     public String getTrackFile() { return trackFile; }
     public String getParquetFile() { return parquetFile; }
     public String getDuckdbFile() { return duckdbFile; }
-
     public boolean isAllowLatinExtended() { return allowLatinExtended; }
     public double getLatinScriptMinRatio() { return latinScriptMinRatio; }
-
     public String getOcrDebugImageDir() { return ocrDebugImageDir; }
     public int getMaxOcrDim() { return maxOcrDim; }
     public String getTesseractLangs() { return tesseractLangs; }
@@ -243,19 +253,15 @@ public class AppConfig {
     public int getTesseractOem() { return tesseractOem; }
     public boolean isTesseractUseScriptLatin() { return tesseractUseScriptLatin; }
     public String getTessdataPrefix() { return tessdataPrefix; }
-
     public String getMediaDevice() { return mediaDevice; }
     public int getMediaBatchSize() { return mediaBatchSize; }
     public String getMediaComputeType() { return mediaComputeType; }
-
     public boolean isUseOllama() { return useOllama; }
     public boolean isConsumerEnabled() { return consumerEnabled; }
     public boolean isProducerEnabled() { return producerEnabled; }
     public String getOllamaModel() { return ollamaModel; }
     public String getOllamaUrl() { return ollamaUrl; }
-
     public int getRetrieverTopK() { return retrieverTopK; }
-
     public int getLlamaNCtx() { return llamaNCtx; }
     public int getLlamaNGpuLayers() { return llamaNGpuLayers; }
     public int getLlamaNThreads() { return llamaNThreads; }
@@ -269,6 +275,15 @@ public class AppConfig {
     public String getLlamaChatFormat() { return llamaChatFormat; }
     public boolean isLlamaVerbose() { return llamaVerbose; }
     public int getLlamaSeed() { return llamaSeed; }
-
     public int getMaxBatchSizeLimit() { return maxBatchSizeLimit; }
+    public boolean isMetricsEnabled() { return metricsEnabled; }
+    public String getMetricsLogFile() { return metricsLogFile; }
+    public boolean isMetricsLogToStdout() { return metricsLogToStdout; }
+
+    // Derived helpers
+
+    public List<String> getQueueNamesList() { return Arrays.asList(queueNames.split(",")); }
+    public boolean isUseQdrant() { return "qdrant".equalsIgnoreCase(vectorDbProfile); }
+    public List<String> getSupportedExtensionsList() { return Arrays.asList(supportedExtensions.split(",")); }
+    public List<String> getSupportedMediaExtensionsList() { return Arrays.asList(supportedMediaExtensions.split(",")); }
 }

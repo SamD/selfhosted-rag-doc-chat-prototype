@@ -68,24 +68,24 @@ public class OcrDispatcher {
 
     private void processJob(String json) throws IOException {
         OcrJob job = objectMapper.readValue(json, OcrJob.class);
-        System.out.println("📥 Job: " + job.getRel_path() + ", page " + job.getPage_num() + ", job_id " + job.getJob_id());
+        System.out.println("📥 Job: " + job.rel_path() + ", page " + job.page_num() + ", job_id " + job.job_id());
         
-        String text = ocrService.extractTextFromBase64Image(job.getImage_base64());
+        String text = ocrService.extractTextFromBase64Image(job.image_base64());
         
         OcrResponse ocrResponse = OcrResponse.builder()
                 .text(text)
-                .rel_path(job.getRel_path())
-                .page_num(job.getPage_num())
+                .rel_path(job.rel_path())
+                .page_num(job.page_num())
                 .engine("tesseract-quarkus")
-                .job_id(job.getJob_id())
+                .job_id(job.job_id())
                 .build();
         
         String responseJson = objectMapper.writeValueAsString(ocrResponse);
         
-        if (job.getReply_key() != null) {
-            redisClient.lpush(Arrays.asList(job.getReply_key(), responseJson));
-            redisClient.expire(job.getReply_key(), "300");
-            System.out.println("📤 Response sent to " + job.getReply_key());
+        if (job.reply_key() != null) {
+            redisClient.lpush(Arrays.asList(job.reply_key(), responseJson));
+            redisClient.expire(job.reply_key(), "300");
+            System.out.println("📤 Response sent to " + job.reply_key());
         }
     }
 }
