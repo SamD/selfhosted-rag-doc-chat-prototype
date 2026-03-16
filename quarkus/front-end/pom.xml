@@ -15,6 +15,10 @@
     <description>REST API for RAG queries (maps to Python api/endpoints.py, services/rag_service.py)</description>
 
     <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
         <!-- Common Library -->
         <dependency>
             <groupId>com.selfhosted.rag</groupId>

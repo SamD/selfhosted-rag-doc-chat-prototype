@@ -50,8 +50,8 @@ public class ChatResource {
     @POST
     @Path("/query")
     public QueryResponse query(QueryRequest req) {
-        System.out.println("Received query: " + req.query());
-        Map<String, Object> result = ragService.answerQuery(req.query(), req.chat_history());
+        System.out.println("Received query: " + req.getQuery());
+        Map<String, Object> result = ragService.answerQuery(req.getQuery(), req.getChat_history());
         
         return QueryResponse.builder()
                 .answer((String) result.get("answer"))

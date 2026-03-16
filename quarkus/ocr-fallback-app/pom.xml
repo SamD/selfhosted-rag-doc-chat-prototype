@@ -15,6 +15,10 @@
     <description>Tesseract OCR processing service (maps to Python workers/ocr_worker.py)</description>
 
     <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
         <!-- Common Library -->
         <dependency>
             <groupId>com.selfhosted.rag</groupId>

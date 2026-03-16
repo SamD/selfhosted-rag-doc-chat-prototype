@@ -15,6 +15,10 @@
     <description>Vector DB consumer with Qdrant integration (maps to Python workers/consumer_worker.py, services/database.py)</description>
 
     <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
         <!-- Common Library -->
         <dependency>
             <groupId>com.selfhosted.rag</groupId>

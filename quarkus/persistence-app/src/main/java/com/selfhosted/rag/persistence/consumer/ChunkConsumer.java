@@ -109,36 +109,36 @@ public class ChunkConsumer {
     }
 
     private void handleChunk(ChunkEntry chunk, String queueName) {
-        String sourceFile = chunk.source_file();
+        String sourceFile = chunk.getSource_file();
         buffer.computeIfAbsent(sourceFile, k -> new ArrayList<>()).add(chunk);
         timestamps.put(sourceFile, System.currentTimeMillis());
-        System.out.println("📥 [" + queueName + "] Received chunk " + chunk.id() + " from " + sourceFile);
+        System.out.println("📥 [" + queueName + "] Received chunk " + chunk.getId() + " from " + sourceFile);
     }
 
     private void handleFileEnd(FileEndMessage msg, String queueName) {
-        String sourceFile = msg.source_file();
+        String sourceFile = msg.getSource_file();
         List<ChunkEntry> chunks = buffer.remove(sourceFile);
         timestamps.remove(sourceFile);
 
-        if (chunks == null || chunks.size() != msg.expected_chunks()) {
+        if (chunks == null || chunks.size() != msg.getExpected_chunks()) {
             System.err.println("❌ [" + queueName + "] Incomplete chunks for " + sourceFile);
             fileTrackingService.updateFailedFiles(sourceFile);
             return;
         }
 
         try {
-            List<String> texts = chunks.stream().map(ChunkEntry::chunk).collect(Collectors.toList());
+            List<String> texts = chunks.stream().map(ChunkEntry::getChunk).collect(Collectors.toList());
             List<Map<String, Object>> metadatas = chunks.stream().map(c -> {
                 Map<String, Object> m = new HashMap<>();
-                m.put("source_file", c.source_file());
-                m.put("type", c.type());
-                m.put("hash", c.hash());
-                m.put("engine", c.engine());
-                m.put("page", c.page());
-                m.put("chunk_index", c.chunk_index());
+                m.put("source_file", c.getSource_file());
+                m.put("type", c.getType());
+                m.put("hash", c.getHash());
+                m.put("engine", c.getEngine());
+                m.put("page", c.getPage());
+                m.put("chunk_index", c.getChunk_index());
                 return m;
             }).collect(Collectors.toList());
-            List<String> ids = chunks.stream().map(ChunkEntry::id).collect(Collectors.toList());
+            List<String> ids = chunks.stream().map(ChunkEntry::getId).collect(Collectors.toList());
 
             vectorStoreService.addTexts(texts, metadatas, ids);
             fileTrackingService.updateIngestedFiles(sourceFile);

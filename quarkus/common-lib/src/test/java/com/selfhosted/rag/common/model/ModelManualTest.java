@@ -16,9 +16,9 @@ public class ModelManualTest {
                 .page_num(1)
                 .build();
 
-        assertThat(job.job_id()).isEqualTo("test-id");
-        assertThat(job.rel_path()).isEqualTo("path/to/file");
-        assertThat(job.page_num()).isEqualTo(1);
+        assertThat(job.getJob_id()).isEqualTo("test-id");
+        assertThat(job.getRel_path()).isEqualTo("path/to/file");
+        assertThat(job.getPage_num()).isEqualTo(1);
     }
 
     @Test
@@ -28,8 +28,8 @@ public class ModelManualTest {
                 .id("chunk-1")
                 .build();
 
-        assertThat(entry.chunk()).isEqualTo("some text");
-        assertThat(entry.id()).isEqualTo("chunk-1");
+        assertThat(entry.getChunk()).isEqualTo("some text");
+        assertThat(entry.getId()).isEqualTo("chunk-1");
     }
 
     @Test
@@ -39,8 +39,8 @@ public class ModelManualTest {
                 .chat_history(List.of(Map.of("role", "user", "content", "hello")))
                 .build();
 
-        assertThat(request.query()).isEqualTo("what is rag?");
-        assertThat(request.chat_history()).hasSize(1);
+        assertThat(request.getQuery()).isEqualTo("what is rag?");
+        assertThat(request.getChat_history()).hasSize(1);
     }
 
     @Test
@@ -49,8 +49,8 @@ public class ModelManualTest {
                 .source_file("doc.pdf")
                 .build();
 
-        assertThat(message.source_file()).isEqualTo("doc.pdf");
-        assertThat(message.type()).isEqualTo("file_end"); // default value
-        assertThat(message.expected_chunks()).isEqualTo(0); // default value
+        assertThat(message.getSource_file()).isEqualTo("doc.pdf");
+        assertThat(message.getType()).isEqualTo("file_end"); // default value
+        assertThat(message.getExpected_chunks()).isEqualTo(0); // default value
     }
 }

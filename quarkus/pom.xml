@@ -20,8 +20,8 @@
     </modules>
 
     <properties>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Quarkus version -->
@@ -34,11 +34,20 @@
         <pdfbox.version>3.0.3</pdfbox.version>
         <jsoup.version>1.18.1</jsoup.version>
         <tess4j.version>5.13.0</tess4j.version>
-        <lombok.version>1.18.36</lombok.version>
+        <lombok.version>1.18.38</lombok.version>
+        <maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!-- Lombok -->
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+                <scope>provided</scope>
+            </dependency>
+
             <!-- Quarkus BOM -->
             <dependency>
                 <groupId>io.quarkus.platform</groupId>
@@ -124,9 +133,22 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.13.0</version>
+                    <version>${maven.compiler.plugin.version}</version>
                     <configuration>
-                        <release>21</release>
+                        <source>25</source>
+                        <target>25</target>
+                        <release>25</release>
+                        <parameters>true</parameters>
+                        <compilerArgs>
+                            <arg>--enable-preview</arg>
+                        </compilerArgs>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -143,7 +165,7 @@
                             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                             <maven.home>${maven.home}</maven.home>
                         </systemPropertyVariables>
-                        <argLine>-Dnet.bytebuddy.experimental=true</argLine>
+                        <argLine>-Dnet.bytebuddy.experimental=true --enable-preview</argLine>
                     </configuration>
                 </plugin>
             </plugins>

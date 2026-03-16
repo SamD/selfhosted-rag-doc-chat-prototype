@@ -1,6 +1,7 @@
 package com.selfhosted.rag.common.config;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import lombok.Getter;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.util.Arrays;
 import java.util.List;
@@ -11,6 +12,7 @@ import java.util.List;
  * Maps to Python: config/settings.py
  */
 @ApplicationScoped
+@Getter
 public class AppConfig {
 
     @ConfigProperty(name = "REDIS_HOST", defaultValue = "localhost")
@@ -210,75 +212,6 @@ public class AppConfig {
 
     @ConfigProperty(name = "METRICS_LOG_TO_STDOUT", defaultValue = "true")
     boolean metricsLogToStdout;
-
-    // Getters
-
-    public String getRedisHost() { return redisHost; }
-    public int getRedisPort() { return redisPort; }
-    public String getOcrJobQueue() { return ocrJobQueue; }
-    public String getIngestQueue() { return ingestQueue; }
-    public String getQueueNames() { return queueNames; }
-    public int getMaxQueueLength() { return maxQueueLength; }
-    public double getPollInterval() { return pollInterval; }
-    public double getWaitWarnThreshold() { return waitWarnThreshold; }
-    public String getVectorDbProfile() { return vectorDbProfile; }
-    public String getVectorDbHost() { return vectorDbHost; }
-    public int getVectorDbPort() { return vectorDbPort; }
-    public String getVectorDbCollection() { return vectorDbCollection; }
-    public int getQdrantRetrieverK() { return qdrantRetrieverK; }
-    public double getQdrantDenseWeight() { return qdrantDenseWeight; }
-    public double getQdrantSparseWeight() { return qdrantSparseWeight; }
-    public int getChunkTimeout() { return chunkTimeout; }
-    public int getMaxChunks() { return maxChunks; }
-    public int getMaxBatchSize() { return maxBatchSize; }
-    public int getMaxTokens() { return maxTokens; }
-    public String getEmbeddingModelPath() { return embeddingModelPath; }
-    public String getLlmPath() { return llmPath; }
-    public boolean isUseGpu() { return useGpu; }
-    public String getIngestFolder() { return ingestFolder; }
-    public String getChromaDataDir() { return chromaDataDir; }
-    public String getSupportedExtensions() { return supportedExtensions; }
-    public String getSupportedMediaExtensions() { return supportedMediaExtensions; }
-    public String getFailedFiles() { return failedFiles; }
-    public String getIngestedFile() { return ingestedFile; }
-    public String getTrackFile() { return trackFile; }
-    public String getParquetFile() { return parquetFile; }
-    public String getDuckdbFile() { return duckdbFile; }
-    public boolean isAllowLatinExtended() { return allowLatinExtended; }
-    public double getLatinScriptMinRatio() { return latinScriptMinRatio; }
-    public String getOcrDebugImageDir() { return ocrDebugImageDir; }
-    public int getMaxOcrDim() { return maxOcrDim; }
-    public String getTesseractLangs() { return tesseractLangs; }
-    public int getTesseractPsm() { return tesseractPsm; }
-    public int getTesseractOem() { return tesseractOem; }
-    public boolean isTesseractUseScriptLatin() { return tesseractUseScriptLatin; }
-    public String getTessdataPrefix() { return tessdataPrefix; }
-    public String getMediaDevice() { return mediaDevice; }
-    public int getMediaBatchSize() { return mediaBatchSize; }
-    public String getMediaComputeType() { return mediaComputeType; }
-    public boolean isUseOllama() { return useOllama; }
-    public boolean isConsumerEnabled() { return consumerEnabled; }
-    public boolean isProducerEnabled() { return producerEnabled; }
-    public String getOllamaModel() { return ollamaModel; }
-    public String getOllamaUrl() { return ollamaUrl; }
-    public int getRetrieverTopK() { return retrieverTopK; }
-    public int getLlamaNCtx() { return llamaNCtx; }
-    public int getLlamaNGpuLayers() { return llamaNGpuLayers; }
-    public int getLlamaNThreads() { return llamaNThreads; }
-    public int getLlamaNBatch() { return llamaNBatch; }
-    public boolean isLlamaF16Kv() { return llamaF16Kv; }
-    public double getLlamaTemperature() { return llamaTemperature; }
-    public int getLlamaTopK() { return llamaTopK; }
-    public double getLlamaTopP() { return llamaTopP; }
-    public double getLlamaRepeatPenalty() { return llamaRepeatPenalty; }
-    public int getLlamaMaxTokens() { return llamaMaxTokens; }
-    public String getLlamaChatFormat() { return llamaChatFormat; }
-    public boolean isLlamaVerbose() { return llamaVerbose; }
-    public int getLlamaSeed() { return llamaSeed; }
-    public int getMaxBatchSizeLimit() { return maxBatchSizeLimit; }
-    public boolean isMetricsEnabled() { return metricsEnabled; }
-    public String getMetricsLogFile() { return metricsLogFile; }
-    public boolean isMetricsLogToStdout() { return metricsLogToStdout; }
 
     // Derived helpers
 

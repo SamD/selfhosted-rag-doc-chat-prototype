@@ -77,7 +77,7 @@ public class OcrClientService {
             if (response != null && response.size() == 2) {
                 String responseJson = response.get(1).toString();
                 OcrResponse ocrResponse = objectMapper.readValue(responseJson, OcrResponse.class);
-                return ocrResponse.text();
+                return ocrResponse.getText();
             } else {
                 System.err.println("OCR timeout or error for " + relPath + " page " + pageNum);
                 return null;
