@@ -1,0 +1,31 @@
+FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
+WORKDIR /build
+
+# Copy parent pom
+COPY pom.xml .
+# Copy all modules pom.xml
+COPY common-lib/pom.xml common-lib/
+COPY front-end/pom.xml front-end/
+COPY ingestion-app/pom.xml ingestion-app/
+COPY ocr-fallback-app/pom.xml ocr-fallback-app/
+COPY persistence-app/pom.xml persistence-app/
+
+# Cache dependencies
+RUN mvn dependency:go-offline -pl common-lib,front-end -am
+
+# Copy source code
+COPY common-lib/src common-lib/src
+COPY front-end/src front-end/src
+
+# Build front-end and its dependency common-lib
+RUN mvn package -DskipTests -pl common-lib,front-end -am
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /deployments
+COPY --from=build /build/front-end/target/quarkus-app/lib/ /deployments/lib/
+COPY --from=build /build/front-end/target/quarkus-app/*.jar /deployments/
+COPY --from=build /build/front-end/target/quarkus-app/app/ /deployments/app/
+COPY --from=build /build/front-end/target/quarkus-app/quarkus/ /deployments/quarkus/
+
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/deployments/quarkus-run.jar"]

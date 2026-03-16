@@ -1,0 +1,127 @@
+services:
+  redis:
+    image: redis:7-alpine
+    hostname: redis
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  vector-db:
+    image: qdrant/qdrant:latest
+    hostname: vector-db
+    ports:
+      - "${VECTOR_DB_PORT:-6333}:6333"
+      - "${VECTOR_DB_GRPC_PORT:-6334}:6334"
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  front-end:
+    build:
+      context: .
+      dockerfile: front-end/Dockerfile.jvm
+    hostname: api
+    ports:
+      - "8000:8080"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - VECTOR_DB_HOST=vector-db
+      - VECTOR_DB_PORT=6333
+      - EMBEDDING_MODEL_PATH=/models/embedding
+      - LLM_PATH=/models/llm
+    volumes:
+      - ${EMBEDDING_MODEL_PATH}:/models/embedding:ro
+      - ${LLM_PATH}:/models/llm:ro
+    depends_on:
+      - redis
+      - vector-db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ingestion-app:
+    build:
+      context: .
+      dockerfile: ingestion-app/Dockerfile.jvm
+    hostname: ingestion
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - INGEST_FOLDER=/ingest
+      - EMBEDDING_MODEL_PATH=/models/embedding
+      - DEBUG_IMAGE_DIR=/tmp/ocr_debug
+    volumes:
+      - ${INGEST_FOLDER}:/ingest
+      - ${EMBEDDING_MODEL_PATH}:/models/embedding:ro
+      - ${DEBUG_IMAGE_DIR:-/tmp/ocr_debug}:/tmp/ocr_debug
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  persistence-app:
+    build:
+      context: .
+      dockerfile: persistence-app/Dockerfile.jvm
+    hostname: persistence
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - VECTOR_DB_HOST=vector-db
+      - VECTOR_DB_PORT=6333
+    depends_on:
+      - redis
+      - vector-db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ocr-fallback-app:
+    build:
+      context: .
+      dockerfile: ocr-fallback-app/Dockerfile.jvm
+    hostname: ocr-fallback
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/q/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ui-frontend:
+    build:
+      context: ../astro-frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "4321:4321"
+    environment:
+      - PUBLIC_API_URL=http://localhost:8000
+    profiles:
+      - with-ui
+    restart: unless-stopped
+
+volumes:
+  redis_data:
