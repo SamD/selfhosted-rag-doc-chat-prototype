@@ -20,6 +20,7 @@
 
 ### Intellij ###
 .idea/
+*.iml
 
 ### Node ###
 # Logs
@@ -157,3 +158,95 @@ env/
 */bin/
 */lib/
 *.env
+
+.factorypath
+
+# Adding Java, Quarkus, Maven
+
+# ─── Compiled output ─────────────────────────────────────────────────────────
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+
+# ─── Maven ────────────────────────────────────────────────────────────────────
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# ─── Quarkus ──────────────────────────────────────────────────────────────────
+# Generated sources (REST client stubs, Panache, etc.)
+.quarkus/
+src/main/generated/
+
+# GraalVM native image artifacts
+*.so
+*.dylib
+*.dll
+*-runner
+*-runner.jar
+
+# Quarkus dev mode hot-reload state
+.quarkus-dev-*
+
+# ─── Lombok ───────────────────────────────────────────────────────────────────
+# lombok.config is intentionally tracked — only exclude generated output
+# Nothing extra needed; Lombok generates .class files covered by target/ above
+
+# ─── IDEs ─────────────────────────────────────────────────────────────────────
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# Eclipse / STS
+.classpath
+.project
+.settings/
+.springBeans
+*.launch
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# NetBeans
+nbproject/
+nb-configuration.xml
+
+# ─── OS artifacts ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ─── Logs & temp ─────────────────────────────────────────────────────────────
+*.log
+logs/
+*.tmp
+*.bak
+*.swp
+*~
+
+# ─── Environment / secrets ────────────────────────────────────────────────────
+.env
+.env.*
+application-local.properties
+application-local.yml
+application-local.yaml
+**/src/main/resources/application-dev.properties
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+# Keep Dockerfiles tracked; ignore local compose overrides
+docker-compose.override.yml
+
+# ─── Test coverage ────────────────────────────────────────────────────────────
+jacoco.exec
+coverage/
+
+.gemini/
+gha-creds-*.json
+
