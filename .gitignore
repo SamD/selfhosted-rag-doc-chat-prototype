@@ -249,4 +249,4 @@ coverage/
 
 .gemini/
 gha-creds-*.json
-
+Docs/

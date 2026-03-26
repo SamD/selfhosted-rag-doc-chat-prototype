@@ -1,0 +1,728 @@
+name: doc-ingest-chat
+services:
+  api_gpu_qdrant:
+    profiles:
+      - cuda-qdrant
+    build:
+      context: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+      dockerfile: Dockerfile.worker
+      args:
+        TARGET_TYPE: cuda
+    command:
+      - python
+      - apimain.py
+    container_name: api_gpu
+    depends_on:
+      qdrant:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: "34359738368"
+        reservations:
+          memory: "17179869184"
+          devices:
+            - capabilities:
+                - gpu
+                - utility
+                - compute
+              driver: nvidia
+              count: -1
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      EMBEDDING_MODEL_PATH: /home/samueldoyle/AI_LOCAL/e5-large-v2
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGEST_FOLDER: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      LLAMA_USE_GPU: "true"
+      LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: all
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      PYTHONUNBUFFERED: "1"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      VECTOR_DB_PROFILE: qdrant
+      WAIT_WARN_THRESHOLD: "10"
+    hostname: api
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 8000
+        published: "8000"
+        protocol: tcp
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "2147483648"
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+        target: /app
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/.env
+        target: /app/.env
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        target: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        bind: {}
+      - type: bind
+        source: /tmp/ocr_debug
+        target: /tmp/ocr_debug
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        target: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+  consumer_worker_gpu:
+    profiles:
+      - cuda-qdrant
+    build:
+      context: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+      dockerfile: Dockerfile.worker
+      args:
+        TARGET_TYPE: cuda
+    command:
+      - python
+      - run_consumer.py
+    container_name: consumer_worker_gpu
+    depends_on:
+      qdrant:
+        condition: service_started
+        required: true
+      redis:
+        condition: service_started
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: "34359738368"
+        reservations:
+          memory: "17179869184"
+          devices:
+            - capabilities:
+                - gpu
+                - utility
+                - compute
+              driver: nvidia
+              count: -1
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      EMBEDDING_MODEL_PATH: /home/samueldoyle/AI_LOCAL/e5-large-v2
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGEST_FOLDER: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      LLAMA_USE_GPU: "true"
+      LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: all
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      PYTHONUNBUFFERED: "1"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      VECTOR_DB_PROFILE: qdrant
+      WAIT_WARN_THRESHOLD: "10"
+    hostname: consumer_worker
+    networks:
+      default: null
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "2147483648"
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+        target: /app
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/.env
+        target: /app/.env
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        target: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        bind: {}
+      - type: bind
+        source: /tmp/ocr_debug
+        target: /tmp/ocr_debug
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        target: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+  frontend:
+    profiles:
+      - with-frontend
+    build:
+      context: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/astro-frontend
+      dockerfile: Dockerfile.frontend
+      target: dev
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      NODE_ENV: development
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      WAIT_WARN_THRESHOLD: "10"
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 4321
+        published: "4321"
+        protocol: tcp
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/astro-frontend
+        target: /app
+        bind: {}
+  ocr_worker:
+    profiles:
+      - cuda
+    build:
+      context: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+      dockerfile: Dockerfile.worker
+      args:
+        TARGET_TYPE: cuda
+    command:
+      - python
+      - run_ocr_worker.py
+    container_name: ocr_worker
+    deploy:
+      resources:
+        limits:
+          memory: "34359738368"
+        reservations:
+          memory: "17179869184"
+          devices:
+            - capabilities:
+                - gpu
+                - utility
+                - compute
+              driver: nvidia
+              count: -1
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      EMBEDDING_MODEL_PATH: /home/samueldoyle/AI_LOCAL/e5-large-v2
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGEST_FOLDER: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      LLAMA_USE_GPU: "true"
+      LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: all
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      PYTHONUNBUFFERED: "1"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      VECTOR_DB_PROFILE: qdrant
+      WAIT_WARN_THRESHOLD: "10"
+    hostname: ocr_worker
+    healthcheck:
+      test:
+        - CMD
+        - pgrep
+        - -f
+        - run_ocr_worker.py
+      timeout: 10s
+      interval: 30s
+      retries: 3
+      start_period: 20s
+    networks:
+      default: null
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "2147483648"
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+        target: /app
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/.env
+        target: /app/.env
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        target: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        bind: {}
+      - type: bind
+        source: /tmp/ocr_debug
+        target: /tmp/ocr_debug
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        target: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+  producer_worker:
+    profiles:
+      - cuda
+    build:
+      context: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+      dockerfile: Dockerfile.worker
+      args:
+        TARGET_TYPE: cuda
+    command:
+      - python
+      - run_producer.py
+    container_name: producer_worker
+    depends_on:
+      ocr_worker:
+        condition: service_healthy
+        required: true
+    deploy:
+      resources:
+        limits:
+          memory: "34359738368"
+        reservations:
+          memory: "17179869184"
+          devices:
+            - capabilities:
+                - gpu
+                - utility
+                - compute
+              driver: nvidia
+              count: -1
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      EMBEDDING_MODEL_PATH: /home/samueldoyle/AI_LOCAL/e5-large-v2
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGEST_FOLDER: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      LLAMA_USE_GPU: "true"
+      LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: all
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      PYTHONUNBUFFERED: "1"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      VECTOR_DB_PROFILE: qdrant
+      WAIT_WARN_THRESHOLD: "10"
+    hostname: producer_worker
+    networks:
+      default: null
+    restart: unless-stopped
+    runtime: nvidia
+    shm_size: "2147483648"
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat
+        target: /app
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/.env
+        target: /app/.env
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        target: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+        bind: {}
+      - type: bind
+        source: /tmp/ocr_debug
+        target: /tmp/ocr_debug
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        target: /home/samueldoyle/AI_LOCAL/e5-large-v2
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+  qdrant:
+    profiles:
+      - qdrant
+      - cuda-qdrant
+      - cpu-qdrant
+    depends_on:
+      redis:
+        condition: service_started
+        required: true
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      QDRANT__LOG_LEVEL: DEBUG
+      QDRANT__SERVICE__GRPC_PORT: "6334"
+      QDRANT__SERVICE__HTTP_PORT: "6333"
+      QDRANT__STORAGE__STORAGE_PATH: /qdrant/storage
+      QDRANT__TELEMETRY_DISABLED: "true"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      WAIT_WARN_THRESHOLD: "10"
+    hostname: vector-db
+    image: qdrant/qdrant:latest
+    networks:
+      default:
+        aliases:
+          - vector-db
+    ports:
+      - mode: ingress
+        target: 6333
+        published: "9002"
+        protocol: tcp
+      - mode: ingress
+        target: 6334
+        published: "9003"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/Docs/qdrant_data
+        target: /qdrant/storage
+        bind: {}
+  redis:
+    command:
+      - --port
+      - "6380"
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    environment:
+      CHUNK_TIMEOUT: "300"
+      COMPUTE_TYPE: float16
+      DEBUG_IMAGE_DIR: /tmp/ocr_debug
+      DEVICE: cuda
+      DUCKDB_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.duckdb
+      FAILED_FILES: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/failed_files.txt
+      INGESTED_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      LLAMA_CHAT_FORMAT: chatml
+      LLAMA_MAX_TOKENS: "256"
+      LLAMA_N_BATCH: "128"
+      LLAMA_N_GPU_LAYERS: "35"
+      LLAMA_REPEAT_PENALTY: "1.5"
+      LLAMA_TEMPERATURE: "0.2"
+      LLAMA_TOP_K: "20"
+      LLAMA_TOP_P: "0.95"
+      MAX_CHROMA_BATCH_SIZE: "75"
+      MAX_CHROMA_BATCH_SIZE_LIMIT: "5461"
+      MAX_CHUNKS: "20000"
+      MAX_OCR_DIM: "3000"
+      MAX_QUEUE_LENGTH: "25"
+      MAX_TOKENS: "512"
+      MEDIA_BATCH_SIZE: "8"
+      METRICS_ENABLED: "true"
+      METRICS_LOG_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/metrics.jsonl
+      METRICS_LOG_TO_STDOUT: "true"
+      OLLAMA_MODEL: NeuralNet/openchat-3.6
+      PARQUET_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/chunks.parquet
+      POLL_INTERVAL: "0.5"
+      QUEUE_NAMES: chunk_ingest_queue:0,chunk_ingest_queue:1,chunk_ingest_queue:2,chunk_ingest_queue:3
+      REDIS_HOST: redis
+      REDIS_INGEST_QUEUE: chunk_ingest_queue
+      REDIS_OCR_JOB_QUEUE: ocr_processing_job
+      REDIS_PORT: "6380"
+      RETRIEVER_TOP_K: "5"
+      SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
+      TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
+      USE_OLLAMA: "0"
+      VECTOR_DB_COLLECTION: vector_base_collection
+      VECTOR_DB_HOST: vector-db
+      WAIT_WARN_THRESHOLD: "10"
+    image: redis:7
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 6380
+        published: "6380"
+        protocol: tcp
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: redis_data
+        target: /data
+        volume: {}
+networks:
+  default:
+    name: doc-ingest-chat_default
+volumes:
+  redis_data:
+    name: doc-ingest-chat_redis_data
+x-base-service:
+  env_file:
+    - .env
+  restart: unless-stopped
+  volumes:
+    - .:/app
+    - ./.env:/app/.env
+    - /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs:/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+    - /tmp/ocr_debug:/tmp/ocr_debug
+    - /home/samueldoyle/AI_LOCAL/e5-large-v2:/home/samueldoyle/AI_LOCAL/e5-large-v2:ro
+    - /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf:/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf:ro
+x-cpu-params:
+  build:
+    args:
+      TARGET_TYPE: cpu
+    context: .
+    dockerfile: Dockerfile.worker
+  environment:
+    - LLAMA_USE_GPU=false
+    - PYTHONUNBUFFERED=1
+    - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
+    - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+    - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+    - VECTOR_DB_PROFILE=qdrant
+x-gpu-params:
+  build:
+    args:
+      TARGET_TYPE: cuda
+    context: .
+    dockerfile: Dockerfile.worker
+  deploy:
+    resources:
+      limits:
+        memory: 32G
+      reservations:
+        devices:
+          - capabilities:
+              - gpu
+              - utility
+              - compute
+            count: all
+            driver: nvidia
+        memory: 16G
+  environment:
+    - LLAMA_USE_GPU=true
+    - PYTHONUNBUFFERED=1
+    - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
+    - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+    - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+    - VECTOR_DB_PROFILE=qdrant
+    - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+  runtime: nvidia
+  shm_size: 2gb
