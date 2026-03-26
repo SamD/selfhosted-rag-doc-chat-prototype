@@ -46,17 +46,21 @@ export COMPOSE_BAKE=true
 # This is the path chroma will use for its files
 # CHROMA_DATA_DIR=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
 
-
 # curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
 # curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o outline_of_history_pt2.pdf
 
+# export INGEST_FOLDER=${INGEST_FOLDER:-/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs}
+# export EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH:-/home/samueldoyle/AI_LOCAL/e5-large-v2}
+# export LLM_PATH=${LLM_PATH:-/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf}
 
-export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
-export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI/e5-large-v2
-export LLM_PATH=/home/samueldoyle/AI/models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+export LLAMA_TEMPERATURE='0.1'
 
 export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
 export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+
+# redis host name since this docker-compose service
+export REDIS_HOST=redis
+export REDIS_PORT=6380
 
 COMPOSE_FILE="ingest-dockercompose.yaml"
 
@@ -192,9 +196,11 @@ echo "🚀 Launching Docker Compose with profiles: $COMPOSE_FILE_OPTS"
 
 if command -v docker-compose &> /dev/null; then
   echo "💡 Using docker-compose (v2.36.2)"
+  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
   exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 elif docker compose version &> /dev/null; then
   echo "💡 Using docker compose"
+  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
   exec docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 else
   echo "❌ ERROR: Neither docker-compose nor docker compose found"

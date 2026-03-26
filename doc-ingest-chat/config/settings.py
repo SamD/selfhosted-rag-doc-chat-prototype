@@ -1,150 +1,112 @@
 #!/usr/bin/env python3
-"""
-Configuration settings for the document ingestion system.
-
-- When running standalone, default values are used for all environment variables.
-- When running in Docker Compose, values from ingest-svc.env will override the defaults.
-"""
-
 import os
+import sys
 from typing import Optional
+from dotenv import load_dotenv
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
+# FORCE LOAD the env file from the root if it exists
+# This ensures shell exports/env_file values are available to sub-processes
+env_path = os.path.join(PROJECT_ROOT, ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path, override=True)
 
-def _abs_path(path: Optional[str], base: Optional[str] = PROJECT_ROOT) -> str:
+def _abs_path(key: str, default: Optional[str] = None) -> str:
+    path = os.getenv(key, default)
     if not path:
-        raise ValueError("Missing required path for ingestion.")
+        return ""
     if os.path.isabs(path):
         return path
-    if not base:
-        raise ValueError("Base directory must be provided for relative paths.")
-    return os.path.join(base, path)
+    return os.path.normpath(os.path.join(PROJECT_ROOT, path))
 
+_SETTINGS = {
+    "LLAMA_USE_GPU": lambda: os.getenv("LLAMA_USE_GPU", "true").lower() == "true",
+    "ALLOW_LATIN_EXTENDED": lambda: os.getenv("ALLOW_LATIN_EXTENDED", "true").lower() == "true",
+    "LATIN_SCRIPT_MIN_RATIO": lambda: float(os.getenv("LATIN_SCRIPT_MIN_RATIO", "0.7")),
 
-LLAMA_USE_GPU = os.getenv("LLAMA_USE_GPU", "true").lower() == "true"
+    "INGEST_FOLDER": lambda: _abs_path("INGEST_FOLDER"),
+    "CHROMA_DATA_DIR": lambda: _abs_path("CHROMA_DATA_DIR"),
+    "EMBEDDING_MODEL_PATH": lambda: _abs_path("EMBEDDING_MODEL_PATH"),
+    "LLM_PATH": lambda: _abs_path("LLM_PATH"),
+    "FAILED_FILES": lambda: _abs_path("FAILED_FILES", "failed_files.txt"),
+    "INGESTED_FILE": lambda: _abs_path("INGESTED_FILE", "ingested_files.txt"),
+    "TRACK_FILE": lambda: _abs_path("TRACK_FILE", "ingested_files.txt"),
+    "PARQUET_FILE": lambda: _abs_path("PARQUET_FILE", "chunks.parquet"),
+    "DUCKDB_FILE": lambda: _abs_path("DUCKDB_FILE", "chunks.duckdb"),
 
-# Text acceptance configuration
-# When true, treat Latin extended characters (diacritics, ligatures like œ) as valid text
-# in OCR quality checks. Can be overridden via environment variable.
-ALLOW_LATIN_EXTENDED = os.getenv("ALLOW_LATIN_EXTENDED", "true").lower() == "true"
-# Minimum fraction of letters that must be Latin to treat text as Latin script content
-LATIN_SCRIPT_MIN_RATIO = float(os.getenv("LATIN_SCRIPT_MIN_RATIO", "0.7"))
+    # Redis - Fixed default to 6380 to match your Docker/Export setup
+    "REDIS_HOST": lambda: os.getenv("REDIS_HOST", "redis"),
+    "REDIS_PORT": lambda: int(os.getenv("REDIS_PORT", "6380")),
+    "REDIS_OCR_JOB_QUEUE": lambda: os.getenv("REDIS_OCR_JOB_QUEUE", "ocr_processing_job"),
+    "REDIS_INGEST_QUEUE": lambda: os.getenv("REDIS_INGEST_QUEUE", "chunk_ingest_queue"),
+    "QUEUE_NAMES": lambda: os.getenv("QUEUE_NAMES", "chunk_ingest_queue:0,chunk_ingest_queue:1").split(","),
 
-# File Processing Configuration
-INGEST_FOLDER = _abs_path(os.getenv("INGEST_FOLDER"))
-CHROMA_DATA_DIR = _abs_path(os.getenv("CHROMA_DATA_DIR"))
+    "VECTOR_DB_PROFILE": lambda: os.getenv("VECTOR_DB_PROFILE", "qdrant").lower(),
+    "USE_QDRANT": lambda: os.getenv("VECTOR_DB_PROFILE", "qdrant").lower() == "qdrant",
+    "VECTOR_DB_HOST": lambda: os.getenv("VECTOR_DB_HOST", "vector-db"),
+    "VECTOR_DB_PORT": lambda: int(os.getenv("VECTOR_DB_PORT", "6333" if os.getenv("VECTOR_DB_PROFILE", "qdrant").lower() == "qdrant" else "8000")),
+    "VECTOR_DB_COLLECTION": lambda: os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection"),
+    "QDRANT_RETRIEVER_K": lambda: int(os.getenv("QDRANT_RETRIEVER_K", 10)),
+    "QDRANT_DENSE_WEIGHT": lambda: float(os.getenv("QDRANT_DENSE_WEIGHT", 0.3)),
+    "QDRANT_SPARSE_WEIGHT": lambda: float(os.getenv("QDRANT_SPARSE_WEIGHT", 0.7)),
+    "CHROMA_HOST": lambda: os.getenv("VECTOR_DB_HOST", "vector-db"),
+    "CHROMA_PORT": lambda: int(os.getenv("VECTOR_DB_PORT", "8000")),
+    "CHROMA_COLLECTION": lambda: os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection"),
 
-# Model Paths
-EMBEDDING_MODEL_PATH = _abs_path(os.getenv("EMBEDDING_MODEL_PATH"))
-LLM_PATH = _abs_path(os.getenv("LLM_PATH"))
+    "CHUNK_TIMEOUT": lambda: int(os.getenv("CHUNK_TIMEOUT", "600")),
+    "MAX_CHUNKS": lambda: int(os.getenv("MAX_CHUNKS", "20000")),
+    "MAX_CHROMA_BATCH_SIZE": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE", "75")),
+    "MAX_TOKENS": lambda: int(os.getenv("MAX_TOKENS", "1024")),
 
-# File Paths
-FAILED_FILES = _abs_path(os.getenv("FAILED_FILES", "failed_files.txt"))
-INGESTED_FILE = _abs_path(os.getenv("INGESTED_FILE", "ingested_files.txt"))
-TRACK_FILE = _abs_path(os.getenv("TRACK_FILE", "ingested_files.txt"))
-PARQUET_FILE = _abs_path(os.getenv("PARQUET_FILE", "chunks.parquet"))
-DUCKDB_FILE = _abs_path(os.getenv("DUCKDB_FILE", "chunks.duckdb"))
+    "DEBUG_IMAGE_DIR": lambda: os.getenv("DEBUG_IMAGE_DIR", "/tmp/ocr_debug"),
+    "MAX_OCR_DIM": lambda: int(os.getenv("MAX_OCR_DIM", "3000")),
+    "TESSERACT_LANGS": lambda: os.getenv("TESSERACT_LANGS", "eng+lat"),
+    "TESSERACT_USE_SCRIPT_LATIN": lambda: os.getenv("TESSERACT_USE_SCRIPT_LATIN", "true").lower() == "true",
+    "TESSERACT_PSM": lambda: int(os.getenv("TESSERACT_PSM", "6")),
+    "TESSERACT_OEM": lambda: int(os.getenv("TESSERACT_OEM", "1")),
+    "TESSDATA_PREFIX": lambda: os.getenv("TESSDATA_PREFIX", ""),
 
+    "SUPPORTED_MEDIA_EXT": lambda: tuple(os.getenv("SUPPORTED_MEDIA_EXT", ".mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv").split(",")),
+    "ALL_SUPPORTED_EXT": lambda: (".pdf", ".html", ".htm") + tuple(os.getenv("SUPPORTED_MEDIA_EXT", ".mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv").split(",")),
+    "DEVICE": lambda: os.getenv("DEVICE", "cuda"),
+    "MEDIA_BATCH_SIZE": lambda: int(os.getenv("MEDIA_BATCH_SIZE", "8")),
+    "COMPUTE_TYPE": lambda: os.getenv("COMPUTE_TYPE", "float16"),
 
-# Redis Configuration
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6380"))
-REDIS_OCR_JOB_QUEUE = os.getenv("REDIS_OCR_JOB_QUEUE", "ocr_processing_job")
-REDIS_INGEST_QUEUE = os.getenv("REDIS_INGEST_QUEUE", "chunk_ingest_queue")
+    "MAX_QUEUE_LENGTH": lambda: int(os.getenv("MAX_QUEUE_LENGTH", "25")),
+    "POLL_INTERVAL": lambda: float(os.getenv("POLL_INTERVAL", "0.5")),
+    "WAIT_WARN_THRESHOLD": lambda: float(os.getenv("WAIT_WARN_THRESHOLD", "10")),
+    "MAX_CHROMA_BATCH_SIZE_LIMIT": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE_LIMIT", "5461")),
 
-# Queue Configuration
-QUEUE_NAMES = os.getenv("QUEUE_NAMES", "chunk_ingest_queue:0,chunk_ingest_queue:1").split(",")
+    "USE_OLLAMA": lambda: os.getenv("USE_OLLAMA", "0") == "1",
+    "OLLAMA_MODEL": lambda: os.getenv("OLLAMA_MODEL", "NeuralNet/openchat-3.6"),
+    "OLLAMA_URL": lambda: os.getenv("OLLAMA_URL", "http://localhost:11434"),
+    "RETRIEVER_TOP_K": lambda: int(os.getenv("RETRIEVER_TOP_K", "20")),
+    "LLAMA_N_CTX": lambda: int(os.getenv("LLAMA_N_CTX", "32768")),
+    "LLAMA_N_GPU_LAYERS": lambda: int(os.getenv("LLAMA_N_GPU_LAYERS", "35")),
+    "LLAMA_N_THREADS": lambda: int(os.getenv("LLAMA_N_THREADS", "24")),
+    "LLAMA_N_BATCH": lambda: int(os.getenv("LLAMA_N_BATCH", "512")),
+    "LLAMA_F16_KV": lambda: os.getenv("LLAMA_F16_KV", "True").lower() == "true",
+    "LLAMA_TEMPERATURE": lambda: float(os.getenv("LLAMA_TEMPERATURE", "0.3")),
+    "LLAMA_TOP_K": lambda: int(os.getenv("LLAMA_TOP_K", "25")),
+    "LLAMA_TOP_P": lambda: float(os.getenv("LLAMA_TOP_P", "0.85")),
+    "LLAMA_REPEAT_PENALTY": lambda: float(os.getenv("LLAMA_REPEAT_PENALTY", "1.2")),
+    "LLAMA_MAX_TOKENS": lambda: int(os.getenv("LLAMA_MAX_TOKENS", "512")),
+    "LLAMA_CHAT_FORMAT": lambda: os.getenv("LLAMA_CHAT_FORMAT", "chatml"),
+    "LLAMA_VERBOSE": lambda: os.getenv("LLAMA_VERBOSE", "False").lower() == "true",
+    "LLAMA_SEED": lambda: int(os.getenv("LLAMA_SEED", "42")),
 
-# Vector Database Configuration (ChromaDB or Qdrant)
-# VECTOR_DB_PROFILE: Set by run-compose.sh, determines which database to use
-VECTOR_DB_PROFILE = os.getenv("VECTOR_DB_PROFILE", "qdrant").lower()
-USE_QDRANT = VECTOR_DB_PROFILE == "qdrant"
+    "METRICS_ENABLED": lambda: os.getenv("METRICS_ENABLED", "true").lower() == "true",
+    "METRICS_LOG_FILE": lambda: os.getenv("METRICS_LOG_FILE", "metrics.jsonl"),
+    "METRICS_LOG_TO_STDOUT": lambda: os.getenv("METRICS_LOG_TO_STDOUT", "true").lower() == "true",
+}
 
-# Set default port based on profile
-_default_vector_port = "6333" if USE_QDRANT else "8000"
+def __getattr__(name):
+    if name in _SETTINGS:
+        return _SETTINGS[name]()
+    raise AttributeError(f"module {__name__} has no attribute {name}")
 
-# Unified vector database settings (uses "vector-db" alias for both)
-VECTOR_DB_HOST = os.getenv("VECTOR_DB_HOST", "vector-db")
-VECTOR_DB_PORT = int(os.getenv("VECTOR_DB_PORT", _default_vector_port))
-VECTOR_DB_COLLECTION = os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection")
-
-# these are QDRANT specific
-QDRANT_RETRIEVER_K = int(os.getenv("QDRANT_RETRIEVER_K", 10))
-QDRANT_DENSE_WEIGHT = float(os.getenv("QDRANT_DENSE_WEIGHT", 0.3))
-QDRANT_SPARSE_WEIGHT = float(os.getenv("QDRANT_SPARSE_WEIGHT", 0.7))
-
-# Backward compatibility aliases
-CHROMA_HOST = VECTOR_DB_HOST
-CHROMA_PORT = VECTOR_DB_PORT
-CHROMA_COLLECTION = VECTOR_DB_COLLECTION
-
-
-CHUNK_TIMEOUT = int(os.getenv("CHUNK_TIMEOUT", "300"))  # seconds before we consider a buffer stale
-MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "20000"))
-MAX_CHROMA_BATCH_SIZE = int(os.getenv("MAX_CHROMA_BATCH_SIZE", "75"))
-MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
-
-# OCR Configuration
-DEBUG_IMAGE_DIR = os.getenv("DEBUG_IMAGE_DIR", "/tmp/ocr_debug")
-MAX_OCR_DIM = int(os.getenv("MAX_OCR_DIM", "3000"))
-# Image.MAX_IMAGE_PIXELS = 500_000_000  # Set in utils when PIL is imported
-
-# Media Processing Configuration
-SUPPORTED_MEDIA_EXT = tuple(os.getenv("SUPPORTED_MEDIA_EXT", ".mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv").split(","))
-ALL_SUPPORTED_EXT = (".pdf", ".html", ".htm") + SUPPORTED_MEDIA_EXT
-
-# Whisper Configuration
-DEVICE = os.getenv("DEVICE", "cuda")
-MEDIA_BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", "8"))  # reduce if low on GPU mem
-COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")  # change to "int8" if low on GPU mem (may reduce accuracy)
-
-
-# Queue Management
-MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "25"))
-POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "0.5"))
-WAIT_WARN_THRESHOLD = float(os.getenv("WAIT_WARN_THRESHOLD", "10"))
-MAX_CHROMA_BATCH_SIZE_LIMIT = int(os.getenv("MAX_CHROMA_BATCH_SIZE_LIMIT", "5461"))
-
-# PAD_RESERVE = 32  # Reserve space for padding/special tokens
-
-# Ensure debug directory exists
-os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
-
-# LLM and Chat Configuration
-USE_OLLAMA = os.getenv("USE_OLLAMA", "0") == "1"
-# OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "openchat")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "NeuralNet/openchat-3.6")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-
-
-# Retrieve the top k most relevant chunks (based on vector similarity) from the database for a given query.
-RETRIEVER_TOP_K = int(os.getenv("RETRIEVER_TOP_K", "20"))
-
-LLAMA_N_CTX = int(os.getenv("LLAMA_N_CTX", "32768"))
-LLAMA_N_GPU_LAYERS = int(os.getenv("LLAMA_N_GPU_LAYERS", "35"))
-LLAMA_N_THREADS = int(os.getenv("LLAMA_N_THREADS", "24"))
-LLAMA_N_BATCH = int(os.getenv("LLAMA_N_BATCH", "512"))
-LLAMA_F16_KV = os.getenv("LLAMA_F16_KV", "True").lower() == "true"
-LLAMA_TEMPERATURE = float(os.getenv("LLAMA_TEMPERATURE", "0.3"))
-# When generating each token, restrict sampling to the top k most likely next tokens (based on probability distribution).
-LLAMA_TOP_K = int(os.getenv("LLAMA_TOP_K", "25"))
-LLAMA_TOP_P = float(os.getenv("LLAMA_TOP_P", "0.85"))
-LLAMA_REPEAT_PENALTY = float(os.getenv("LLAMA_REPEAT_PENALTY", "1.2"))
-# LLAMA_MAX_TOKENS = int(os.getenv("LLAMA_MAX_TOKENS", "4096"))
-LLAMA_MAX_TOKENS = int(os.getenv("LLAMA_MAX_TOKENS", "512"))
-LLAMA_CHAT_FORMAT = os.getenv("LLAMA_CHAT_FORMAT", "chatml")
-LLAMA_VERBOSE = os.getenv("LLAMA_VERBOSE", "False").lower() == "true"
-LLAMA_SEED = int(os.getenv("LLAMA_SEED", "42"))
-
-# Tesseract OCR configuration
-TESSERACT_LANGS = os.getenv("TESSERACT_LANGS", "eng+lat")
-TESSERACT_USE_SCRIPT_LATIN = os.getenv("TESSERACT_USE_SCRIPT_LATIN", "true").lower() == "true"
-TESSERACT_PSM = int(os.getenv("TESSERACT_PSM", "6"))
-TESSERACT_OEM = int(os.getenv("TESSERACT_OEM", "1"))
-TESSDATA_PREFIX = os.getenv("TESSDATA_PREFIX", "")
-
-# Metrics Configuration
-METRICS_ENABLED = os.getenv("METRICS_ENABLED", "true").lower() == "true"
-METRICS_LOG_FILE = os.getenv("METRICS_LOG_FILE", "metrics.jsonl")
-METRICS_LOG_TO_STDOUT = os.getenv("METRICS_LOG_TO_STDOUT", "true").lower() == "true"
+# Critical: Resolve path before creating directory
+_debug_dir = os.getenv("DEBUG_IMAGE_DIR", "/tmp/ocr_debug")
+if not os.path.exists(_debug_dir):
+    os.makedirs(_debug_dir, exist_ok=True)

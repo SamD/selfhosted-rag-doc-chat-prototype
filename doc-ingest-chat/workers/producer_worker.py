@@ -491,7 +491,7 @@ def process_pdf_by_page(full_path, rel_path, file_type):
                         pill_image = convert_from_path(full_path, dpi=300, first_page=page_num + 1, last_page=page_num + 1)[0]
                         np_image = preprocess_image(pill_image)
                         result = send_image_to_ocr(np_image, rel_path, page_num + 1)
-                        text, rel_path, page_num_ocr, engine, job_id = result
+                        text, rel_path, page_num_ocr, engine, job_id, _ = result
 
                         if not text or not isinstance(text, str) or is_bad_ocr(text):
                             log.warning(f"⚠️ OCR returned garbage for {rel_path} page {page_num + 1}")
