@@ -23,8 +23,8 @@ _llama = _default_llama if _default_llama.exists() else _tmp_llama
 
 os.environ.setdefault("INGEST_FOLDER", str(_ingest))
 os.environ.setdefault("CHROMA_DATA_DIR", str(_chroma))
-os.environ.setdefault("E5_MODEL_PATH", str(_e5))
-os.environ.setdefault("LLAMA_MODEL_PATH", str(_llama))
+os.environ.setdefault("EMBEDDING_MODEL_PATH", str(_e5))
+os.environ.setdefault("LLM_PATH", str(_llama))
 
 # Explicit defaults used in tests
 os.environ.setdefault("ALLOW_LATIN_EXTENDED", "true")

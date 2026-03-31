@@ -1,0 +1,67 @@
+from unittest.mock import MagicMock, patch
+
+import pytest
+from services.job_service import STATUS_ENQUEUED, STATUS_PROCESSING
+from workers.producer_graph import run_ingest_graph
+
+
+@pytest.fixture
+def mock_state():
+    return {
+        "job_id": "test-job",
+        "full_path": "/tmp/test.pdf",
+        "rel_path": "test.pdf",
+        "file_type": "pdf",
+        "total_chunks_sent": 0,
+        "queue_name": "q1",
+        "requires_ocr": False,
+        "status": STATUS_PROCESSING,
+        "error": None,
+        "metrics": None,
+        "pages_processed": 0
+    }
+
+def test_scan_file_node_success(mock_state):
+    from workers.producer_graph import scan_file_node
+    
+    with patch("os.path.exists", return_value=True), \
+         patch("workers.producer_graph.update_job_status"), \
+         patch("workers.producer_graph.get_next_queue", return_value="q1"):
+        
+        state = scan_file_node(mock_state)
+        assert state["file_type"] == "pdf"
+        assert state["queue_name"] == "q1"
+
+@patch("workers.producer_graph.process_pdf_by_page")
+def test_pdf_extract_node_success(mock_process, mock_state):
+    from workers.producer_graph import pdf_extract_node
+    
+    # We patch stream_chunks_to_redis because it's called inside the callback
+    with patch("workers.producer_graph.stream_chunks_to_redis", return_value=1) as mock_stream:
+        def side_effect(path, rel, ftype, chunk_callback, metrics=None):
+            chunk_callback([("text", "engine", 1)])
+            
+        mock_process.side_effect = side_effect
+        
+        with patch("workers.producer_graph.is_valid_pdf", return_value=True):
+            state = pdf_extract_node(mock_state)
+            assert state["total_chunks_sent"] == 1
+            assert state["pages_processed"] == 1
+            mock_stream.assert_called_once()
+
+@patch("workers.producer_graph.get_redis_client")
+@patch("workers.producer_graph.blocking_push_with_backpressure")
+def test_send_sentinel_node(mock_push, mock_redis, mock_state):
+    from workers.producer_graph import send_sentinel_node
+    
+    state = send_sentinel_node(mock_state)
+    assert state["status"] == STATUS_ENQUEUED
+    mock_push.assert_called_once()
+
+def test_run_ingest_graph_integration():
+    job_tuple = ("job1", "src", "rel")
+    with patch("workers.producer_graph.get_producer_app") as mock_get:
+        mock_app = MagicMock()
+        mock_app.invoke.return_value = {"status": STATUS_ENQUEUED}
+        mock_get.return_value = mock_app
+        assert run_ingest_graph(job_tuple) is True

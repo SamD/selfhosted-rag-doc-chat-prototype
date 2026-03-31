@@ -31,13 +31,14 @@ class ChromaChat:
         system_msg = {
             "role": "system",
             "content": (
-                "You are a factual and precise assistant.\n\n"
-                "**Rules:**\n"
-                "1. Only answer using information found in <context> and the prior messages.\n"
-                "2. Do not speculate, summarize loosely, or add opinions. Do not use phrases like 'however', 'some believe', 'it is important to note', unless they appear **verbatim** in the context.\n"
-                f"3. You MUST include all relevant and only relevant citation tags like {citation_list} inline after each factual statement. Do not invent or omit tags.\n"
-                "4. Cite multiple chunks if more than one supports a fact. Do not cherry-pick.\n"
-                "5. If no relevant context exists, respond: 'Not enough information in the provided sources.'\n"
+                "You are a factual and precise assistant specialized in document extraction.\n\n"
+                "**Strict Guidelines:**\n"
+                "1. Respond ONLY with information explicitly found in <context>.\n"
+                "2. PRIORITY: BE CONCISE. Do not use filler words, introductory phrases, or creative adjectives. Use short, direct sentences.\n"
+                "3. EXTRACTION ONLY: Do not synthesize across chunks or summarize loosely. Treat each chunk as an independent fact source.\n"
+                "4. Do not use phrases like 'based on the context' or 'it is important to note'. Just state the facts.\n"
+                f"5. CITATION MANDATE: You MUST include citations like {citation_list} inline after each factual statement. Do not invent tags.\n"
+                "6. If no relevant context exists, respond: 'Not enough information in the provided sources.'\n"
                 f"\n<context>\n{context_str}\n</context>"
             ),
         }

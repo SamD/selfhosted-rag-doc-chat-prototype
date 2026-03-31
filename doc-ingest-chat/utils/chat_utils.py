@@ -25,33 +25,34 @@ def replace_citation_labels(output: str, docs: list[Document]) -> str:
     Replaces [source1], [source2], ... or (source1), (source2), ... with human-readable citations
     like [filename.pdf, page X], and appends a deduplicated source summary at the end.
     """
-    seen = OrderedDict()
+    # Use OrderedDict to maintain discovery order for filenames
+    seen_files = OrderedDict()
 
     for i, doc in enumerate(docs):
         source_num = i + 1
-        # Handle both [sourceX] and (sourceX) formats
         bracket_label = f"[source{source_num}]"
         paren_label = f"(source{source_num})"
 
         source = doc.metadata.get("source_file", "unknown")
         page = doc.metadata.get("page", "N/A")
 
+        # Inline citation (precise with page)
         if str(page).isdigit() and int(page) >= 0:
             resolved = f"[{source}, page {page}]"
         else:
             resolved = f"[{source}]"
 
-        # Save first occurrence for deduped summary
-        if resolved not in seen:
-            seen[resolved] = True
+        # Record file for unique list at bottom (de-duplicated by name)
+        if source not in seen_files:
+            seen_files[source] = True
 
-        # Replace both [sourceX] and (sourceX) with resolved label
+        # Replace tags in content
         output = output.replace(bracket_label, resolved)
         output = output.replace(paren_label, resolved)
 
-    # Append deduplicated list of sources at the end
-    if seen:
-        output += "\n\n---\n**Sources:** " + ", ".join(seen.keys())
+    # Append deduplicated list of unique source files at the end
+    if seen_files:
+        output += "\n\n---\n**Sources:** " + ", ".join(seen_files.keys())
 
     return output.strip()
 

@@ -52,8 +52,8 @@ export COMPOSE_BAKE=true
 
 
 export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
-export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI/e5-large-v2
-export LLM_PATH=/home/samueldoyle/AI/models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
+export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
 
 export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
 export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data

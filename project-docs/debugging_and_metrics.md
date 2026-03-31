@@ -20,57 +20,84 @@ If the queues remain full or never drain, check consumer logs. Each chunk is pus
 
 ### DuckDB Inspection
 
-To explore or debug ingested data:
+To explore or debug ingested data and track job status:
+
+```bash
+# Connect to DuckDB shell
+duckdb Docs/chunks.duckdb
+```
+
+#### Monitoring Ingestion Progress
+
+The system tracks the lifecycle of every file in the `file_ingestion_jobs` table.
 
 ```sql
--- Connect to DuckDB shell
-duckdb /path/to/chunks.duckdb
+-- View counts of files by status
+SELECT status, COUNT(*) FROM file_ingestion_jobs GROUP BY status;
 
+-- List all failed files and their error messages
+SELECT file_path, error_message, updated_at 
+FROM file_ingestion_jobs 
+WHERE status = 'failed'
+ORDER BY updated_at DESC;
+
+-- List files that are currently being processed or enqueued
+SELECT file_path, status, updated_at 
+FROM file_ingestion_jobs 
+WHERE status IN ('processing', 'chunking', 'enqueuing', 'enqueued')
+ORDER BY updated_at DESC;
+
+-- List successfully completed files
+SELECT file_path, updated_at 
+FROM file_ingestion_jobs 
+WHERE status = 'completed'
+ORDER BY updated_at DESC;
+```
+
+#### Inspecting Ingested Chunks
+
+The actual text data is stored in the `parquet_chunks` table.
+
+```sql
 -- View chunk counts by engine type
-SELECT engine, COUNT(*) FROM chunks GROUP BY engine;
+SELECT engine, COUNT(*) FROM parquet_chunks GROUP BY engine;
 
 -- Check if specific content (e.g. "Bretton") exists
-SELECT * FROM chunks WHERE text ILIKE '%bretton%';
+SELECT * FROM parquet_chunks WHERE chunk ILIKE '%bretton%';
 
 -- View per-file chunk totals
-SELECT source_file, COUNT(*) FROM chunks GROUP BY source_file ORDER BY COUNT(*) DESC;
+SELECT source_file, COUNT(*) FROM parquet_chunks GROUP BY source_file ORDER BY COUNT(*) DESC;
 ```
 
 #### Advanced Queries for Troubleshooting
 
 ```sql
 -- Show all chunk rows from files with 'Bretton' OR 'Woods' in them
-SELECT * FROM chunks WHERE text ILIKE '%bretton%' OR text ILIKE '%woods%';
+SELECT * FROM parquet_chunks WHERE chunk ILIKE '%bretton%' OR chunk ILIKE '%woods%';
 
 -- Find chunk counts for files that likely mention monetary systems
-SELECT source_file, COUNT(*) FROM chunks 
-WHERE text ILIKE '%currency%' OR text ILIKE '%exchange rate%' OR text ILIKE '%gold standard%'
+SELECT source_file, COUNT(*) FROM parquet_chunks 
+WHERE chunk ILIKE '%currency%' OR chunk ILIKE '%exchange rate%' OR chunk ILIKE '%gold standard%'
 GROUP BY source_file ORDER BY COUNT(*) DESC;
 
 -- Check for empty or too-short text chunks
-SELECT * FROM chunks WHERE length(text) < 10;
+SELECT * FROM parquet_chunks WHERE length(chunk) < 10;
 
 -- Check chunk length distribution to detect overly small or excessively large chunks
-SELECT length(text) AS token_count, COUNT(*) 
-FROM chunks 
+SELECT length(chunk) AS token_count, COUNT(*) 
+FROM parquet_chunks 
 GROUP BY token_count 
 ORDER BY token_count DESC;
 
 -- Find chunks with unusual or null metadata (e.g., missing engine label)
 SELECT * 
-FROM chunks 
+FROM parquet_chunks 
 WHERE engine IS NULL OR engine = '';
 
--- Count how many chunks exist per unique document file
-SELECT source_file, COUNT(*) 
-FROM chunks 
-GROUP BY source_file 
-ORDER BY COUNT(*) DESC;
-
 -- Detect duplicate chunk texts (possible over-splitting or OCR duplication)
-SELECT text, COUNT(*)
-FROM chunks
-GROUP BY text
+SELECT chunk, COUNT(*)
+FROM parquet_chunks
+GROUP BY chunk
 HAVING COUNT(*) > 1
 ORDER BY COUNT(*) DESC
 LIMIT 10;

@@ -82,7 +82,7 @@ CHROMA_COLLECTION = VECTOR_DB_COLLECTION
 
 CHUNK_TIMEOUT = int(os.getenv("CHUNK_TIMEOUT", "300"))  # seconds before we consider a buffer stale
 MAX_CHUNKS = int(os.getenv("MAX_CHUNKS", "20000"))
-MAX_CHROMA_BATCH_SIZE = int(os.getenv("MAX_CHROMA_BATCH_SIZE", "75"))
+MAX_CHROMA_BATCH_SIZE = int(os.getenv("MAX_CHROMA_BATCH_SIZE", "500"))
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 
 # OCR Configuration
@@ -101,7 +101,7 @@ COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")  # change to "int8" if low o
 
 
 # Queue Management
-MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "25"))
+MAX_QUEUE_LENGTH = int(os.getenv("MAX_QUEUE_LENGTH", "500"))
 POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "0.5"))
 WAIT_WARN_THRESHOLD = float(os.getenv("WAIT_WARN_THRESHOLD", "10"))
 MAX_CHROMA_BATCH_SIZE_LIMIT = int(os.getenv("MAX_CHROMA_BATCH_SIZE_LIMIT", "5461"))
@@ -126,7 +126,7 @@ LLAMA_N_GPU_LAYERS = int(os.getenv("LLAMA_N_GPU_LAYERS", "35"))
 LLAMA_N_THREADS = int(os.getenv("LLAMA_N_THREADS", "24"))
 LLAMA_N_BATCH = int(os.getenv("LLAMA_N_BATCH", "512"))
 LLAMA_F16_KV = os.getenv("LLAMA_F16_KV", "True").lower() == "true"
-LLAMA_TEMPERATURE = float(os.getenv("LLAMA_TEMPERATURE", "0.3"))
+LLAMA_TEMPERATURE = float(os.getenv("LLAMA_TEMPERATURE", "0.1"))
 # When generating each token, restrict sampling to the top k most likely next tokens (based on probability distribution).
 LLAMA_TOP_K = int(os.getenv("LLAMA_TOP_K", "25"))
 LLAMA_TOP_P = float(os.getenv("LLAMA_TOP_P", "0.85"))
