@@ -32,9 +32,6 @@ export COMPOSE_BAKE=true
 # Set deterministic temperature by default
 export LLAMA_TEMPERATURE='0.1'
 
-export CHROMA_DATA_DIR=${INGEST_FOLDER:-}/chroma_db
-export QDRANT_DATA_DIR=${INGEST_FOLDER:-}/qdrant_data
-
 # redis host name since this docker-compose service
 export REDIS_HOST=redis
 export REDIS_PORT=6380
@@ -159,6 +156,11 @@ for entry in "${REQUIRED_VARS[@]}"; do
   validation_type="${entry##*:}"
   validate_var_path "$var_name" "$validation_type"
 done
+
+# NOW that INGEST_FOLDER is validated and exported, we can set data dirs
+export CHROMA_DATA_DIR="${INGEST_FOLDER}/chroma_db"
+export QDRANT_DATA_DIR="${INGEST_FOLDER}/qdrant_data"
+export VECTOR_DB_DATA_DIR="${INGEST_FOLDER}/qdrant_data" # Ensure it matches docker-compose.yaml
 
 #################################
 # Launch Docker Compose         #

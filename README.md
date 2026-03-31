@@ -104,6 +104,14 @@ export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K
 # https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
 export SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
 
+# Persistence Configuration
+# CHROMA_DATA_DIR: Where ChromaDB persisted data is stored.
+export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
+
+# QDRANT_DATA_DIR / VECTOR_DB_DATA_DIR: Where Qdrant persisted data is stored.
+export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+export VECTOR_DB_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+
 # Start the full stack (GPU mode is default)
 ./doc-ingest-chat/run-compose.sh
 
