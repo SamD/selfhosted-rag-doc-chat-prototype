@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Utility functions for the producer worker and graph.
-Refactored for PARALLEL extraction and OCR jobs.
+Refactored for PARALLEL extraction, OCR jobs, and Document Context injection.
 """
 
 import base64
@@ -178,7 +178,7 @@ def blocking_push_with_backpressure(rclient, queue_name: str, entries: list[str]
         time.sleep(poll_interval)
         total_wait_time += poll_interval
 
-def _process_single_page(full_path, rel_path, page_num, file_type, chunk_callback, metrics):
+def _process_single_page(full_path, rel_path, page_num, file_type, chunk_callback, metrics, doc_context):
     """Internal helper to process a single PDF page (text or OCR)."""
     try:
         # Use a fresh pdfplumber handle per page to be thread-safe
@@ -203,13 +203,13 @@ def _process_single_page(full_path, rel_path, page_num, file_type, chunk_callbac
                 if not text or not text.strip():
                     return False
                 
-                chunk_texts, _ = split_doc(text.strip(), rel_path, file_type, page_num=page_num)
+                chunk_texts, _ = split_doc(text.strip(), rel_path, file_type, page_num=page_num, doc_context=doc_context)
                 if chunk_callback:
                     chunk_callback([(c, engine, page_num) for c in chunk_texts])
                 return True
             else:
                 # Normal text extraction
-                chunk_texts, _ = split_doc(text.strip(), rel_path, file_type, page_num=page_num)
+                chunk_texts, _ = split_doc(text.strip(), rel_path, file_type, page_num=page_num, doc_context=doc_context)
                 if chunk_callback:
                     chunk_callback([(c, "pdfplumber", page_num) for c in chunk_texts])
                 return True
@@ -217,7 +217,7 @@ def _process_single_page(full_path, rel_path, page_num, file_type, chunk_callbac
         log.error(f"💥 Failed page {page_num} of {rel_path}: {e}")
         return False
 
-def process_pdf_by_page(full_path, rel_path, file_type, chunk_callback=None, metrics=None):
+def process_pdf_by_page(full_path, rel_path, file_type, chunk_callback=None, metrics=None, doc_context=None):
     """
     Orchestrates the parallel extraction of a PDF.
     """
@@ -228,10 +228,9 @@ def process_pdf_by_page(full_path, rel_path, file_type, chunk_callback=None, met
         log.info(f"📂 Processing {total_pages} pages of {rel_path} in parallel")
         
         # Parallelize page extraction
-        # Limit concurrency to avoid overloading the OCR worker or Redis
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
-                executor.submit(_process_single_page, full_path, rel_path, p + 1, file_type, chunk_callback, metrics)
+                executor.submit(_process_single_page, full_path, rel_path, p + 1, file_type, chunk_callback, metrics, doc_context)
                 for p in range(total_pages)
             ]
             # Wait for all pages to complete
@@ -242,8 +241,8 @@ def process_pdf_by_page(full_path, rel_path, file_type, chunk_callback=None, met
         log.error(f"💥 Failed to open PDF {rel_path}: {e}")
     return [], []
 
-def fallback_ocr(full_path, rel_path=None, job_id=None, metrics=None, chunk_callback=None):
+def fallback_ocr(full_path, rel_path=None, job_id=None, metrics=None, chunk_callback=None, doc_context=None):
     """
     Force OCR on every page of a PDF in parallel.
     """
-    return process_pdf_by_page(full_path, rel_path, "pdf", chunk_callback=chunk_callback, metrics=metrics)
+    return process_pdf_by_page(full_path, rel_path, "pdf", chunk_callback=chunk_callback, metrics=metrics, doc_context=doc_context)

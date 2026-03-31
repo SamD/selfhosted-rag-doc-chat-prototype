@@ -17,6 +17,8 @@ def mock_state():
         "requires_ocr": False,
         "status": STATUS_PROCESSING,
         "error": None,
+        "doc_preview": None,
+        "doc_context": "General Document",
         "metrics": None,
         "pages_processed": 0
     }
@@ -38,7 +40,7 @@ def test_pdf_extract_node_success(mock_process, mock_state):
     
     # We patch stream_chunks_to_redis because it's called inside the callback
     with patch("workers.producer_graph.stream_chunks_to_redis", return_value=1) as mock_stream:
-        def side_effect(path, rel, ftype, chunk_callback, metrics=None):
+        def side_effect(path, rel, ftype, chunk_callback, **kwargs):
             chunk_callback([("text", "engine", 1)])
             
         mock_process.side_effect = side_effect

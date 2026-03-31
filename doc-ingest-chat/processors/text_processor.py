@@ -63,7 +63,7 @@ class TextProcessor:
         return end - start, last_valid_chunk
 
     @staticmethod
-    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None):
+    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None, doc_context=None):
         """Split document into chunks."""
         tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
 
@@ -77,6 +77,11 @@ class TextProcessor:
         i = 0
         while i < len(content_tokens):
             last, chunk_str = TextProcessor.make_chunk(prefix_tokens, i, content_tokens, tokenizer, budget, overlap)
+            
+            # Prepend Document Context if provided (Global-to-Local pattern)
+            if doc_context:
+                chunk_str = f"[Document: {doc_context}] {chunk_str}"
+                
             chunks.append(chunk_str)
             i += last
 

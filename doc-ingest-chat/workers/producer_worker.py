@@ -4,7 +4,6 @@ Producer Worker for processing documents and enqueuing them into Redis.
 This version uses LangGraph for state-machine based orchestration of the ingestion flow.
 """
 
-import gc
 import multiprocessing
 import os
 import signal
