@@ -12,13 +12,13 @@ import traceback
 from typing import List, Optional, TypedDict
 
 import numpy as np
+import logging
 from config.settings import DEBUG_IMAGE_DIR
 from langgraph.graph import END, StateGraph
 from services.redis_service import get_redis_client
-from utils.logging_config import setup_logging
 from utils.ocr_utils import run_tesseract, save_bad_image
 
-log = setup_logging("ocr_graph.log")
+log = logging.getLogger("ingest.ocr_graph")
 
 # Global cache for the compiled graph
 _COMPILED_OCR_APP = None

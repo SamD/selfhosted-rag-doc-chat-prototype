@@ -35,11 +35,11 @@ from config.settings import (
 from pdf2image import convert_from_path
 from PIL import Image
 from processors.text_processor import split_doc
+import logging
 from transformers import AutoTokenizer
-from utils.logging_config import setup_logging
 from utils.text_utils import is_gibberish, is_low_quality, is_visibly_corrupt
 
-log = setup_logging("producer_utils.log")
+log = logging.getLogger("ingest.producer_utils")
 
 # Global tokenizer and redis client (Lazy initialized)
 _CACHED_TOKENIZER = None

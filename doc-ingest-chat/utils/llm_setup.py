@@ -13,11 +13,11 @@ from langchain.chains import ConversationalRetrievalChain
 from langchain_community.llms import LlamaCpp
 from langchain_ollama import ChatOllama
 from llama_cpp import Llama
+import logging
 from prompts.chat_prompts import SHARED_CHAT_PROMPT
 from services.database import get_db
-from utils.logging_config import setup_logging
 
-log = setup_logging("llm_setup.log")
+log = logging.getLogger("ingest.llm_setup")
 
 # Singleton caches
 _LLAMA_MODEL_CACHE: Optional[Llama] = None

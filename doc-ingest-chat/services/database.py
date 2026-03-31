@@ -9,6 +9,7 @@ import uuid
 from typing import Optional
 
 import chromadb
+import logging
 from config.settings import (
     EMBEDDING_MODEL_PATH,
     LLAMA_USE_GPU,
@@ -21,9 +22,8 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
-from utils.logging_config import setup_logging
 
-log = setup_logging("database_service.log")
+log = logging.getLogger("ingest.database")
 
 device = "cuda" if LLAMA_USE_GPU else "cpu"
 

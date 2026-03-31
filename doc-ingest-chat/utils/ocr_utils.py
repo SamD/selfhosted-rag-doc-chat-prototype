@@ -14,10 +14,10 @@ from config.settings import (
     TESSERACT_PSM,
     TESSERACT_USE_SCRIPT_LATIN,
 )
+import logging
 from PIL import Image
-from utils.logging_config import setup_logging
 
-log = setup_logging("ocr_utils.log")
+log = logging.getLogger("ingest.ocr_utils")
 
 def safe_image_save(pil_image, path, format=None):
     """Save a PIL image to disk safely."""

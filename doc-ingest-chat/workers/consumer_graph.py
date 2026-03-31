@@ -7,15 +7,15 @@ Refactored for ZERO-MEMORY archival via DuckDB.
 import threading
 from typing import Any, Dict, List, Optional, TypedDict
 
+import logging
 from config.settings import MAX_TOKENS
 from langgraph.graph import END, StateGraph
 from services.job_service import STATUS_COMPLETED, STATUS_FAILED, update_job_status
 from services.parquet_service import commit_to_parquet
 from utils.consumer_utils import store_chunks_in_db
-from utils.logging_config import setup_logging
 from utils.metrics import FileMetrics
 
-log = setup_logging("consumer_graph.log")
+log = logging.getLogger("ingest.consumer_graph")
 
 # Global cache for the compiled graph
 _COMPILED_CONSUMER_APP = None

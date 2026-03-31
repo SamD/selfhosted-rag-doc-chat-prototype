@@ -7,13 +7,13 @@ import gc
 import os
 from typing import Any, Dict, List, Optional
 
+import logging
 import torch
 from config.settings import MAX_CHROMA_BATCH_SIZE, USE_QDRANT
 from more_itertools import chunked
 from services.database import get_db
-from utils.logging_config import setup_logging
 
-log = setup_logging("consumer_utils.log")
+log = logging.getLogger("ingest.consumer_utils")
 
 def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: Optional[Any] = None) -> int:
     """

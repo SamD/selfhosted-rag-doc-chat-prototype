@@ -5,12 +5,13 @@ Text processing functionality.
 
 import hashlib
 
+import logging
+
 from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
 from transformers import AutoTokenizer
-from utils.logging_config import setup_logging
 from utils.text_utils import is_bad_ocr
 
-log = setup_logging("text_processor.log")
+log = logging.getLogger("ingest.text_processor")
 
 
 class TextProcessor:

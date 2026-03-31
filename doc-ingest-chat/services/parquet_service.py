@@ -7,12 +7,12 @@ Optimized for incremental DuckDB writes and disk-based Parquet exportation.
 from typing import Any, Dict, List
 
 import duckdb
+import logging
 import pandas as pd
 from config.settings import DUCKDB_FILE, PARQUET_FILE
 from services.job_service import JobService
-from utils.logging_config import setup_logging
 
-log = setup_logging("parquet_service.log")
+log = logging.getLogger("ingest.parquet")
 
 class ParquetService:
     """Parquet service handling DuckDB persistence and Parquet exports."""

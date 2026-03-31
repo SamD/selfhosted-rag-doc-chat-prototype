@@ -17,7 +17,6 @@ from processors.text_processor import TextProcessor, make_chunk_id, split_doc
 from services.job_service import STATUS_ENQUEUED, STATUS_FAILED, STATUS_PROCESSING, update_job_status
 from services.redis_service import get_redis_client
 from utils.llm_setup import get_supervisor_llm
-from utils.logging_config import setup_logging
 from utils.producer_utils import (
     blocking_push_with_backpressure,
     extract_text_from_html,
@@ -26,9 +25,10 @@ from utils.producer_utils import (
     process_pdf_by_page,
 )
 from utils.text_utils import is_valid_pdf
+import logging
 from workers.producer_worker import get_next_queue
 
-log = setup_logging("producer_graph.log")
+log = logging.getLogger("ingest.producer_graph")
 
 # Global cache for the compiled graph
 _COMPILED_PRODUCER_APP = None
@@ -98,11 +98,16 @@ def preview_node(state: IngestState) -> IngestState:
 def supervisor_node(state: IngestState) -> IngestState:
     """Uses Qwen2.5-1.5B to generate a 1-sentence document persona."""
     preview = state.get("doc_preview")
+    rel_path = state["rel_path"]
+    
     if not preview or len(preview.strip()) < 50:
-        log.info(f"⏭️ Skipping supervisor for {state['rel_path']} (insufficient preview)")
+        log.info(f"🕵️ [Supervisor] Skipping {rel_path} (insufficient preview: {len(preview) if preview else 0} chars)")
         return {**state, "doc_context": "General Document"}
 
-    log.info(f"🧠 [Node: Supervisor] Generating context for {state['rel_path']}...")
+    log.info(f"🕵️ [Supervisor] Analyzing {rel_path} ({len(preview)} chars of preview)...")
+    
+    import time
+    start_time = time.perf_counter()
     
     try:
         llm = get_supervisor_llm()
@@ -114,13 +119,19 @@ def supervisor_node(state: IngestState) -> IngestState:
             "<|im_start|>assistant\n"
         )
         
+        log.debug(f"🕵️ [Supervisor] LLM Prompt for {rel_path}: {prompt}")
         response = llm.invoke(prompt)
+        log.info(f"🕵️ [Supervisor] Raw Response for {rel_path}: '{response.strip()}'")
+        
         # Clean up any potential LLM conversational prefix
         context = response.strip().split("\n")[0].replace("This document is ", "")
-        log.info(f"📝 Generated Context: {context}")
+        
+        duration = time.perf_counter() - start_time
+        log.info(f"🕵️ [Supervisor] Final Context for {rel_path} (took {duration:.2f}s): {context}")
+        
         return {**state, "doc_context": context}
     except Exception as e:
-        log.error(f"💥 Supervisor node failed: {e}")
+        log.error(f"🕵️ [Supervisor] 💥 Node failed for {rel_path}: {e}")
         return {**state, "doc_context": "General Document"}
 
 def stream_chunks_to_redis(chunks_with_engine, state: IngestState) -> int:

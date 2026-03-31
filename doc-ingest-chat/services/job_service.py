@@ -11,10 +11,10 @@ import time
 from typing import Any, Dict, Optional
 
 import duckdb
+import logging
 from config.settings import DUCKDB_FILE
-from utils.logging_config import setup_logging
 
-log = setup_logging("job_service.log")
+log = logging.getLogger("ingest.job_service")
 
 # Standardized job statuses used throughout the IngestState graph
 STATUS_PENDING = "pending"      # File discovered but not yet started
