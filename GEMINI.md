@@ -63,7 +63,31 @@ The primary way to run the system is via the provided shell scripts in `doc-inge
 
 ### General
 - **Docker**: The system is highly containerized. Use `docker-compose` profiles (`cuda`, `cpu`, `qdrant`, `chroma`, `with-frontend`) to selectively start services.
-- **Testing**: Python tests are located in `doc-ingest-chat/tests/` and the root `tests/` directory. Run via `pytest`.
+
+---
+
+## Code Quality & Testing
+
+### Testing
+The project uses `pytest`. Due to the module structure, local testing requires setting the `PYTHONPATH`.
+
+**Run all tests:**
+```bash
+PYTHONPATH=doc-ingest-chat pytest doc-ingest-chat/tests/ tests/
+```
+
+**Workflow-Specific Tests:**
+- **Producer Graph**: `doc-ingest-chat/tests/test_producer_graph.py`
+- **OCR Graph**: `doc-ingest-chat/tests/test_ocr_graph.py`
+- **Consumer Graph**: `doc-ingest-chat/tests/test_consumer_graph.py`
+
+### Linting
+Code quality is enforced via `ruff`. 
+
+**Check and Fix:**
+```bash
+ruff check . --fix
+```
 
 ---
 

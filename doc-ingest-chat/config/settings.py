@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
+"""
+Configuration settings for the document ingestion system.
+
+- When running standalone, default values are used for all environment variables.
+- When running in Docker Compose, values from ingest-svc.env will override the defaults.
+"""
+
 import os
-import sys
 from typing import Optional
 from dotenv import load_dotenv
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # FORCE LOAD the env file from the root if it exists
-# This ensures shell exports/env_file values are available to sub-processes
 env_path = os.path.join(PROJECT_ROOT, ".env")
 if os.path.exists(env_path):
     load_dotenv(env_path, override=True)
@@ -35,7 +40,7 @@ _SETTINGS = {
     "PARQUET_FILE": lambda: _abs_path("PARQUET_FILE", "chunks.parquet"),
     "DUCKDB_FILE": lambda: _abs_path("DUCKDB_FILE", "chunks.duckdb"),
 
-    # Redis - Fixed default to 6380 to match your Docker/Export setup
+    # Redis
     "REDIS_HOST": lambda: os.getenv("REDIS_HOST", "redis"),
     "REDIS_PORT": lambda: int(os.getenv("REDIS_PORT", "6380")),
     "REDIS_OCR_JOB_QUEUE": lambda: os.getenv("REDIS_OCR_JOB_QUEUE", "ocr_processing_job"),
@@ -54,10 +59,10 @@ _SETTINGS = {
     "CHROMA_PORT": lambda: int(os.getenv("VECTOR_DB_PORT", "8000")),
     "CHROMA_COLLECTION": lambda: os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection"),
 
-    "CHUNK_TIMEOUT": lambda: int(os.getenv("CHUNK_TIMEOUT", "600")),
+    "CHUNK_TIMEOUT": lambda: int(os.getenv("CHUNK_TIMEOUT", "300")),
     "MAX_CHUNKS": lambda: int(os.getenv("MAX_CHUNKS", "20000")),
-    "MAX_CHROMA_BATCH_SIZE": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE", "75")),
-    "MAX_TOKENS": lambda: int(os.getenv("MAX_TOKENS", "1024")),
+    "MAX_CHROMA_BATCH_SIZE": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE", "500")),
+    "MAX_TOKENS": lambda: int(os.getenv("MAX_TOKENS", "512")),
 
     "DEBUG_IMAGE_DIR": lambda: os.getenv("DEBUG_IMAGE_DIR", "/tmp/ocr_debug"),
     "MAX_OCR_DIM": lambda: int(os.getenv("MAX_OCR_DIM", "3000")),
@@ -73,7 +78,7 @@ _SETTINGS = {
     "MEDIA_BATCH_SIZE": lambda: int(os.getenv("MEDIA_BATCH_SIZE", "8")),
     "COMPUTE_TYPE": lambda: os.getenv("COMPUTE_TYPE", "float16"),
 
-    "MAX_QUEUE_LENGTH": lambda: int(os.getenv("MAX_QUEUE_LENGTH", "25")),
+    "MAX_QUEUE_LENGTH": lambda: int(os.getenv("MAX_QUEUE_LENGTH", "500")),
     "POLL_INTERVAL": lambda: float(os.getenv("POLL_INTERVAL", "0.5")),
     "WAIT_WARN_THRESHOLD": lambda: float(os.getenv("WAIT_WARN_THRESHOLD", "10")),
     "MAX_CHROMA_BATCH_SIZE_LIMIT": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE_LIMIT", "5461")),
@@ -87,7 +92,7 @@ _SETTINGS = {
     "LLAMA_N_THREADS": lambda: int(os.getenv("LLAMA_N_THREADS", "24")),
     "LLAMA_N_BATCH": lambda: int(os.getenv("LLAMA_N_BATCH", "512")),
     "LLAMA_F16_KV": lambda: os.getenv("LLAMA_F16_KV", "True").lower() == "true",
-    "LLAMA_TEMPERATURE": lambda: float(os.getenv("LLAMA_TEMPERATURE", "0.3")),
+    "LLAMA_TEMPERATURE": lambda: float(os.getenv("LLAMA_TEMPERATURE", "0.1")),
     "LLAMA_TOP_K": lambda: int(os.getenv("LLAMA_TOP_K", "25")),
     "LLAMA_TOP_P": lambda: float(os.getenv("LLAMA_TOP_P", "0.85")),
     "LLAMA_REPEAT_PENALTY": lambda: float(os.getenv("LLAMA_REPEAT_PENALTY", "1.2")),
@@ -106,7 +111,10 @@ def __getattr__(name):
         return _SETTINGS[name]()
     raise AttributeError(f"module {__name__} has no attribute {name}")
 
-# Critical: Resolve path before creating directory
+# Critical: Ensure debug directory exists
 _debug_dir = os.getenv("DEBUG_IMAGE_DIR", "/tmp/ocr_debug")
 if not os.path.exists(_debug_dir):
-    os.makedirs(_debug_dir, exist_ok=True)
+    try:
+        os.makedirs(_debug_dir, exist_ok=True)
+    except Exception:
+        pass

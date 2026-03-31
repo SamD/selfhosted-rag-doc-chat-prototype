@@ -1,41 +1,28 @@
 #!/usr/bin/env python3
 """
 Parquet service for data storage operations.
+Optimized for incremental DuckDB writes and disk-based Parquet exportation.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import duckdb
 import pandas as pd
-from config.settings import DUCKDB_FILE
+from config.settings import DUCKDB_FILE, PARQUET_FILE
+from services.job_service import JobService
 from utils.logging_config import setup_logging
 
 log = setup_logging("parquet_service.log")
 
-
 class ParquetService:
-    """Parquet service for data storage operations as static methods."""
-
-    @staticmethod
-    def write_to_parquet(entries: List[Dict[str, Any]], path: str, lock: Optional[Any] = None) -> None:
-        """Write entries to parquet file."""
-        if not entries:
-            return
-
-        if lock:
-            with lock:
-                ParquetService._do_write(entries, path)
-        else:
-            ParquetService._do_write(entries, path)
+    """Parquet service handling DuckDB persistence and Parquet exports."""
 
     @staticmethod
     def ensure_schema() -> None:
-        # Use a persistent DB instead of in-memory table
-        con = duckdb.connect(DUCKDB_FILE)
-        """Call this once at start-up or before the first write."""
-        con.execute("""
+        """Ensures the persistent table exists in DuckDB."""
+        JobService._execute_with_retry("""
             CREATE TABLE IF NOT EXISTS parquet_chunks (
-              id VARCHAR PRIMARY KEY,  -- Crucial for upserts
+              id VARCHAR PRIMARY KEY,
               chunk TEXT,
               source_file VARCHAR,
               type VARCHAR,
@@ -45,42 +32,55 @@ class ParquetService:
               page INTEGER
             )
             """)
-        # Create the table if it doesn't exist
-        # con.execute("""
-        #         CREATE TABLE IF NOT EXISTS parquet_chunks AS SELECT * FROM df LIMIT 0
-        #     """)
-
+        log.info("✅ Ensured parquet_chunks schema in DuckDB")
 
     @staticmethod
-    def _do_write(entries: List[Dict[str, Any]], path: str):
-        """Internal write function."""
-        df = pd.DataFrame(entries)
+    def append_chunks(entries: List[Dict[str, Any]]) -> None:
+        """
+        Incrementally appends chunks to the DuckDB table.
+        This allows us to clear them from Python memory immediately.
+        """
+        if not entries:
+            return
 
+        df = pd.DataFrame(entries)
         desired_cols = ["id", "chunk", "source_file", "type", "chunk_index", "engine", "hash", "page"]
         for col in desired_cols:
             if col not in df.columns:
                 df[col] = -1 if col == "page" else None
         df = df[desired_cols]
-        source_file = df["source_file"][0]
 
-        try:
-            # Use a persistent DB instead of in-memory table
-            con = duckdb.connect(DUCKDB_FILE)
+        max_retries = 10
+        for attempt in range(max_retries):
+            con = None
+            try:
+                con = duckdb.connect(DUCKDB_FILE)
+                con.register("df_temp", df)
+                con.execute("INSERT OR REPLACE INTO parquet_chunks SELECT * FROM df_temp")
+                return
+            except (duckdb.IOException, duckdb.InternalException) as e:
+                if "lock" in str(e).lower():
+                    import random
+                    import time
+                    delay = 0.1 * (2 ** attempt) + (random.random() * 0.1)
+                    log.warning(f"⏳ DuckDB locked during append, retrying in {delay:.2f}s")
+                    time.sleep(delay)
+                    continue
+                raise e
+            finally:
+                if con:
+                    con.close()
 
-            # Register the new data
-            con.register("df", df)
+    @staticmethod
+    def commit_to_parquet() -> None:
+        """
+        Exports the current state of the DuckDB table to a Parquet file.
+        This operation happens on-disk and does not load chunks into Python RAM.
+        """
+        JobService._execute_with_retry(f"COPY parquet_chunks TO '{PARQUET_FILE}' (FORMAT PARQUET)")
+        log.info(f"💾 Exported all chunks from DuckDB to {PARQUET_FILE}")
 
-            # Write the ENTIRE DB to Parquet (overwrite only once)
-            con.execute(f"""
-                COPY parquet_chunks TO '{path}' (FORMAT PARQUET)
-            """)
-            con.close()
-
-            log.info(f"✅ Appended {len(df)} entries to {path} for source_file {source_file}")
-        except Exception as e:
-            log.error(f"💥 Failed to write Parquet file {path}: {e}", exc_info=True)
-
-
-# Expose static methods as module-level functions after class definition
-write_to_parquet = ParquetService.write_to_parquet
+# Convenience aliases
 init_schema = ParquetService.ensure_schema
+append_chunks = ParquetService.append_chunks
+commit_to_parquet = ParquetService.commit_to_parquet

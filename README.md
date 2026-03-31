@@ -130,6 +130,7 @@ Once running, open the Astro frontend at `http://localhost:4321`. Ask questions 
 
 Explore more technical details in our project documentation:
 
+- 🏗️ **[Architecture Overview: LangGraph Streaming Ingestion](./project-docs/architecture_overview.md)**: A deep dive into the state-machine-based orchestration and streaming data flow.
 - ⚖️ **[Why Custom Pipeline vs Langchain?](./project-docs/custom_vs_langchain.md)**: Explore the architectural decisions and why we built a custom distributed pipeline instead of using basic Langchain loaders.
 - 🛠️ **[Debugging, Inspection & Metrics](./project-docs/debugging_and_metrics.md)**: How to inspect Redis queues, query DuckDB, and analyze system performance metrics (JSONL).
 - 🏗️ **[Production Considerations](./project-docs/production_considerations.md)**: Strategies for scaling, cost analysis, and what features are needed for an enterprise deployment.

@@ -53,4 +53,4 @@ def test_import_ocr_worker_startup(monkeypatch, tmp_path):
 
     importlib.reload(ocr_worker)
 
-    assert hasattr(ocr_worker, "fallback_to_tesseract")
+    assert hasattr(ocr_worker, "worker_task")
