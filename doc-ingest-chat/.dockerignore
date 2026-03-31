@@ -1,0 +1,8 @@
+# .dockerignore
+Models/
+Docs/
+.git/
+__pycache__/
+*.gguf
+*.env
+*.db

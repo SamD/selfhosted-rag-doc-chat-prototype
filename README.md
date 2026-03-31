@@ -68,14 +68,43 @@ Want to see it in action? Follow these steps to get the system running locally.
 #### **1. Get the Models**
 The system runs entirely locally. You will need to download two models and reference them via absolute paths:
 1. **Embedding Model**: [e5-large-v2](https://huggingface.co/intfloat/e5-large-v2)
-2. **LLM**: A GGUF model like [Meta-Llama-3.1-8B-Instruct](https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF)
+2. **LLM**: [Phi-3.5-mini](https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF)
 
 #### **2. Configure & Launch**
-Set up your environment variables (see `doc-ingest-chat/ingest-svc.env` for defaults) and start the Docker Compose stack:
+*Optional*: Set up your environment variables to override defaults(see `doc-ingest-chat/ingest-svc.env` for defaults) and start the Docker Compose stack:
+
+**NOTE:** Depending on your system resources the ingestion process (chunking + tokenization + qdrant persist) and RAG (chat)
+may take longer than expected, information is updated on the console where docker-compose was started
 
 ```bash
+# Export required env vars
+
+# INGEST_FOLDER: Directory inside the container where files are read for ingestion. Must match the right side of the data volume mount.
+export INGEST_FOLDER=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
+
+# If you want some docs to test with 
+cd $INGEST_FOLDER
+curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
+curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o outline_of_history_pt2.pdf
+
+# Model Paths
+# EMBEDDING_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
+# Only tested with e5-large-v2
+# https://huggingface.co/intfloat/e5-large-v2/blob/main/model.safetensors
+export EMBEDDING_MODEL_PATH=-/home/myname/AI_LOCAL/Models/e5-large-v2
+
+# LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
+# Last tested with Phi-3.5-mini
+# https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF
+export LLM_PATH=/home/myname/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+
 # Start the full stack (GPU mode is default)
 ./doc-ingest-chat/run-compose.sh
+
+# open browser
+http://localhost:4321/
+# sample prompt
+"Who was Constantine the Great ?"
 
 # Or, start in CPU-only mode (much slower)
 ./doc-ingest-chat/run-compose-cpu.sh

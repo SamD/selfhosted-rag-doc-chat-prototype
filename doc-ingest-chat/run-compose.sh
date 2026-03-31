@@ -28,35 +28,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd $SCRIPT_DIR
 
 export COMPOSE_BAKE=true
-# INGEST_FOLDER: Directory inside the container where files are read for ingestion. Must match the right side of the data volume mount.
-# INGEST_FOLDER=.
-# export INGEST_FOLDER=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
 
-# Model Paths
-# EMBEDDING_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
-# Only tested with e5-large-v2
-# https://huggingface.co/intfloat/e5-large-v2/blob/main/model.safetensors
-# export EMBEDDING_MODEL_PATH=/home/myname/AI/models/e5-large-v2
+# Set deterministic temperature by default
+export LLAMA_TEMPERATURE='0.1'
 
-# LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
-# Only tested with Meta-LLama
-# https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/blob/main/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
-# export LLM_PATH=/home/myname/AI/models/Meta-Llama-3.1-8B-Instruct-Q6_K_L.gguf
+export CHROMA_DATA_DIR=${INGEST_FOLDER:-}/chroma_db
+export QDRANT_DATA_DIR=${INGEST_FOLDER:-}/qdrant_data
 
-# This is the path chroma will use for its files
-# CHROMA_DATA_DIR=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
-
-
-# curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
-# curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o outline_of_history_pt2.pdf
-
-
-export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
-export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
-export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
-
-export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
-export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+# redis host name since this docker-compose service
+export REDIS_HOST=redis
+export REDIS_PORT=6380
 
 COMPOSE_FILE="ingest-dockercompose.yaml"
 
@@ -83,13 +64,6 @@ COMBINED_PROFILE="${GPU_CPU_PROFILE}-${VECTOR_DB_PROFILE}"
 # - VECTOR_DB_PROFILE: for vector db services (e.g., qdrant)
 # - with-frontend: for frontend service
 COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --profile $VECTOR_DB_PROFILE --profile with-frontend"
-
-#: "${INGEST_FOLDER:-}" || INGEST_FOLDER="${SCRIPT_DIR}/Docs"
-#if [[ -z "${INGEST_FOLDER:-}" ]]; then
-#  INGEST_FOLDER="${SCRIPT_DIR}/Docs"
-#fi
-
-echo "✅ INGEST_FOLDER: $INGEST_FOLDER"
 
 REQUIRED_VARS=(
   "LLM_PATH:gguf"
@@ -192,12 +166,13 @@ echo "🚀 Launching Docker Compose with profiles: $COMPOSE_FILE_OPTS"
 
 if command -v docker-compose &> /dev/null; then
   echo "💡 Using docker-compose (v2.36.2)"
+  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
   exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 elif docker compose version &> /dev/null; then
   echo "💡 Using docker compose"
+  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
   exec docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 else
   echo "❌ ERROR: Neither docker-compose nor docker compose found"
   exit 1
 fi
-

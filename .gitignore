@@ -107,7 +107,7 @@ public/
 .vuepress/dist
 
 # Serverless directories
-.serverless/
+.less/
 
 # FuseBox cache
 .fusebox/
@@ -249,5 +249,5 @@ coverage/
 
 .gemini/
 gha-creds-*.json
-Docs
+Docs/
 *.duckdb
