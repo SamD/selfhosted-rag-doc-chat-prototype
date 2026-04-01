@@ -6,24 +6,24 @@ with a relational schema for better state management and restart resilience.
 """
 
 import datetime
+import logging
 import random
 import time
 from typing import Any, Dict, Optional
 
 import duckdb
 from config.settings import DUCKDB_FILE
-from utils.logging_config import setup_logging
 
-log = setup_logging("job_service.log")
+log = logging.getLogger("ingest.job_service")
 
 # Standardized job statuses used throughout the IngestState graph
-STATUS_PENDING = "pending"      # File discovered but not yet started
-STATUS_PROCESSING = "processing" # File currently being handled by a worker
-STATUS_CHUNKING = "chunking"     # Text extraction successful, splitting into chunks
-STATUS_ENQUEUING = "enqueuing"   # Chunks being pushed to Redis
-STATUS_ENQUEUED = "enqueued"     # All chunks and sentinel successfully enqueued
-STATUS_COMPLETED = "completed"   # Consumer has successfully stored all chunks in Vector DB
-STATUS_FAILED = "failed"         # An error occurred during any stage of ingestion
+STATUS_PENDING = "pending"  # File discovered but not yet started
+STATUS_PROCESSING = "processing"  # File currently being handled by a worker
+STATUS_CHUNKING = "chunking"  # Text extraction successful, splitting into chunks
+STATUS_ENQUEUING = "enqueuing"  # Chunks being pushed to Redis
+STATUS_ENQUEUED = "enqueued"  # All chunks and sentinel successfully enqueued
+STATUS_COMPLETED = "completed"  # Consumer has successfully stored all chunks in Vector DB
+STATUS_FAILED = "failed"  # An error occurred during any stage of ingestion
 
 
 class JobService:
@@ -40,7 +40,7 @@ class JobService:
         """
         max_retries = 10
         base_delay = 0.1
-        
+
         for attempt in range(max_retries):
             con = None
             try:
@@ -55,15 +55,15 @@ class JobService:
                     return True
             except (duckdb.IOException, duckdb.InternalException) as e:
                 if "lock" in str(e).lower() or "used by another process" in str(e).lower():
-                    delay = base_delay * (2 ** attempt) + (random.random() * 0.1)
-                    log.warning(f"⏳ DuckDB locked, retrying in {delay:.2f}s (attempt {attempt+1}/{max_retries})")
+                    delay = base_delay * (2**attempt) + (random.random() * 0.1)
+                    log.warning(f"⏳ DuckDB locked, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
                     time.sleep(delay)
                     continue
                 raise e
             finally:
                 if con:
                     con.close()
-        
+
         raise RuntimeError(f"💥 Failed to acquire DuckDB lock after {max_retries} attempts.")
 
     @staticmethod
@@ -75,6 +75,7 @@ class JobService:
             CREATE TABLE IF NOT EXISTS file_ingestion_jobs (
                 file_path VARCHAR PRIMARY KEY,
                 job_id VARCHAR,
+                document_id VARCHAR,
                 status VARCHAR,
                 error_message VARCHAR,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -83,16 +84,19 @@ class JobService:
         log.info("✅ Ensured file_ingestion_jobs schema in DuckDB")
 
     @staticmethod
-    def update_job(file_path: str, status: str, job_id: Optional[str] = None, error_message: Optional[str] = None) -> None:
+    def update_job(file_path: str, status: str, job_id: Optional[str] = None, error_message: Optional[str] = None, document_id: Optional[str] = None) -> None:
         """
-        Update or insert a job record. 
+        Update or insert a job record.
         """
         now = datetime.datetime.now()
-        JobService._execute_with_retry("""
-            INSERT OR REPLACE INTO file_ingestion_jobs (file_path, job_id, status, error_message, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (file_path, job_id, status, error_message, now))
-        log.info(f"🔄 Updated job: {file_path} -> {status}")
+        JobService._execute_with_retry(
+            """
+            INSERT OR REPLACE INTO file_ingestion_jobs (file_path, job_id, document_id, status, error_message, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """,
+            (file_path, job_id, document_id, status, error_message, now),
+        )
+        log.info(f"🔄 Updated job: {file_path} -> {status} (ID: {document_id})")
 
     @staticmethod
     def get_job(file_path: str) -> Optional[Dict[str, Any]]:
@@ -100,11 +104,7 @@ class JobService:
         Retrieve a complete job record by file_path.
         """
         try:
-            res_tuple, cols = JobService._execute_with_retry(
-                "SELECT * FROM file_ingestion_jobs WHERE file_path = ?", 
-                (file_path,), 
-                fetch=True
-            )
+            res_tuple, cols = JobService._execute_with_retry("SELECT * FROM file_ingestion_jobs WHERE file_path = ?", (file_path,), fetch=True)
             if res_tuple:
                 return dict(zip(cols, res_tuple))
             return None
@@ -115,10 +115,12 @@ class JobService:
     @staticmethod
     def is_processed(file_path: str) -> bool:
         """
-        Helper method used by the tree watcher to skip already handled files.
+        Helper method used by the tree watcher to skip already handled or in-flight files.
         """
         job = JobService.get_job(file_path)
-        return job is not None and job["status"] == STATUS_COMPLETED
+        if job is None:
+            return False
+        return job["status"] in (STATUS_COMPLETED, STATUS_ENQUEUED, STATUS_PROCESSING)
 
 
 # Module-level convenience functions for cleaner imports

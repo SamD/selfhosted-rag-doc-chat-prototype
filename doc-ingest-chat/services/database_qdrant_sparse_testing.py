@@ -2,6 +2,7 @@
 """
 Database service for vector database operations (ChromaDB or Qdrant).
 """
+
 from typing import Any, Dict, List, Optional
 
 import chromadb
@@ -27,27 +28,23 @@ _sparse_embeddings_cache = None
 
 WEIGHTS = {"dense": QDRANT_DENSE_WEIGHT, "sparse": QDRANT_SPARSE_WEIGHT}
 
+
 # Build prefetches with higher limits to allow sparse to "check" dense bias
 def build_prefetches(dense_vector: List[float], sparse_vector: Any) -> List[Prefetch]:
     return [
         Prefetch(
             query=dense_vector,
             using="dense",
-            limit=50  # Increased to provide more candidates for fusion
+            limit=50,  # Increased to provide more candidates for fusion
         ),
         # Higher limit for sparse ensures keywords are caught even if semantically "distant"
-        Prefetch(
-            query=SparseVector(
-                indices=sparse_vector.indices.tolist(),
-                values=sparse_vector.values.tolist()
-            ),
-            using="sparse",
-            limit=100
-        ),
+        Prefetch(query=SparseVector(indices=sparse_vector.indices.tolist(), values=sparse_vector.values.tolist()), using="sparse", limit=100),
     ]
+
 
 # Use DBSF (Distribution-Based Score Fusion) to eliminate E5/BM25 scale bias
 f_query = models.FusionQuery(fusion=models.Fusion.DBSF)
+
 
 class QdrantHybridRetriever(BaseRetriever):
     """Hybrid dense + sparse retriever for Qdrant."""
@@ -60,37 +57,17 @@ class QdrantHybridRetriever(BaseRetriever):
     sparse_embeddings: Any
 
     def __init__(self, client, collection_name, embeddings, sparse_embeddings, **kwargs):
-        super().__init__(
-            client=client,
-            collection_name=collection_name,
-            embeddings=embeddings,
-            sparse_embeddings=sparse_embeddings,
-            **kwargs
-        )
+        super().__init__(client=client, collection_name=collection_name, embeddings=embeddings, sparse_embeddings=sparse_embeddings, **kwargs)
 
-
-    def _get_relevant_documents(
-            self, query: str, *, run_manager: CallbackManagerForRetrieverRun
-    ) -> List[Document]:
+    def _get_relevant_documents(self, query: str, *, run_manager: CallbackManagerForRetrieverRun) -> List[Document]:
         """Required method for BaseRetriever."""
 
         dense = self.embeddings.embed_query(query)
         sparse = list(self.sparse_embeddings.embed([query]))[0]
 
-        results = self.client.query_points(
-            collection_name=self.collection_name,
-            prefetch=build_prefetches(dense, sparse),
-            query=f_query,
-            limit=QDRANT_RETRIEVER_K,
-            with_payload=True
-        )
-        return [
-            Document(
-                page_content=hit.payload.get("page_content", ""),
-                metadata=hit.payload.get("metadata", {})
-            )
-            for hit in results.points
-        ]
+        results = self.client.query_points(collection_name=self.collection_name, prefetch=build_prefetches(dense, sparse), query=f_query, limit=QDRANT_RETRIEVER_K, with_payload=True)
+        return [Document(page_content=hit.payload.get("page_content", ""), metadata=hit.payload.get("metadata", {})) for hit in results.points]
+
 
 class VectorStoreWrapper:
     """Wrapper around vector store to provide unified interface for ChromaDB and Qdrant."""
@@ -103,6 +80,7 @@ class VectorStoreWrapper:
         """Add texts to the vector store."""
         if self.db_type == "qdrant" and ids is not None:
             import uuid
+
             namespace = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
             ids = [uuid.uuid5(namespace, str(id_)) for id_ in ids]
         return self.vectorstore.add_texts(texts, metadatas=metadatas, ids=ids)
@@ -119,6 +97,7 @@ class VectorStoreWrapper:
             if where:
                 if "source_file" in where:
                     from qdrant_client.models import FieldCondition, Filter, MatchValue
+
                     filter_condition = Filter(must=[FieldCondition(key="metadata.source_file", match=MatchValue(value=where["source_file"]))])
                     self.vectorstore.client.delete(collection_name=VECTOR_DB_COLLECTION, points_selector=filter_condition)
             elif ids:
@@ -142,6 +121,7 @@ class VectorStoreWrapper:
         if self.db_type != "qdrant":
             raise NotImplementedError("upsert is only supported for Qdrant")
         import uuid
+
         namespace = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
         for point in points:
             if isinstance(point.get("id"), str):
@@ -157,11 +137,7 @@ class DatabaseServiceQdrantSparseTesting:
         global _embeddings_cache
         if _embeddings_cache is None:
             log.info(f"Loading embeddings model on {device}...")
-            _embeddings_cache = HuggingFaceEmbeddings(
-                model_name=EMBEDDING_MODEL_PATH,
-                model_kwargs={"device": device, "trust_remote_code": True},
-                encode_kwargs={"normalize_embeddings": True}
-            )
+            _embeddings_cache = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_PATH, model_kwargs={"device": device, "trust_remote_code": True}, encode_kwargs={"normalize_embeddings": True})
             log.info(f"Embeddings model loaded successfully on {device}")
         return _embeddings_cache
 
@@ -170,11 +146,11 @@ class DatabaseServiceQdrantSparseTesting:
         global _sparse_embeddings_cache
         if _sparse_embeddings_cache is None:
             from fastembed import SparseTextEmbedding
+
             log.info("Loading sparse embeddings model...")
             _sparse_embeddings_cache = SparseTextEmbedding("Qdrant/bm25")
             log.info("Sparse embeddings model loaded successfully")
         return _sparse_embeddings_cache
-
 
     @staticmethod
     def get_chromadb() -> "VectorStoreWrapper":
@@ -204,21 +180,15 @@ class DatabaseServiceQdrantSparseTesting:
                 try:
                     client.create_collection(
                         collection_name=VECTOR_DB_COLLECTION,
-                        vectors_config={
-                            "dense": VectorParams(
-                                on_disk=True,
-                                size=embedding_dimension,
-                                distance=Distance.COSINE
-                            )
-                        },
+                        vectors_config={"dense": VectorParams(on_disk=True, size=embedding_dimension, distance=Distance.COSINE)},
                         sparse_vectors_config={
                             "sparse": SparseVectorParams(
                                 index=SparseIndexParams(
                                     on_disk=True,  # Optimization: RAM-based index prevents hanging
-                                    full_scan_threshold=1000
+                                    full_scan_threshold=1000,
                                 )
                             )
-                        }
+                        },
                     )
                     log.info(f"Collection '{VECTOR_DB_COLLECTION}' created successfully (dimension: {embedding_dimension})")
                 except UnexpectedResponse as create_error:

@@ -65,7 +65,13 @@ The **Consumer worker** pulls batches of chunks from Redis, embeds them, and per
 
 Want to see it in action? Follow these steps to get the system running locally.
 
-#### **1. Get the Models**
+#### **1. Prerequisites**
+- **Docker & Docker Compose**: (v2.20+)
+- **NVIDIA Container Toolkit**: (If using GPU)
+- **Node.js**: **v22.12.0+** (Required for Frontend development/builds)
+- **Python**: 3.10+ (For local worker development)
+
+#### **2. Get the Models**
 The system runs entirely locally. You will need to download two models and reference them via absolute paths:
 1. **Embedding Model**: [e5-large-v2](https://huggingface.co/intfloat/e5-large-v2)
 2. **LLM**: [Phi-3.5-mini](https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF)
@@ -80,7 +86,7 @@ may take longer than expected, information is updated on the console where docke
 # Export required env vars
 
 # INGEST_FOLDER: Directory inside the container where files are read for ingestion. Must match the right side of the data volume mount.
-export INGEST_FOLDER=/home/myname/Projects/selfhosted-rag-doc-chat-prototype/Docs
+export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
 
 # If you want some docs to test with 
 cd $INGEST_FOLDER
@@ -91,12 +97,26 @@ curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhisto
 # EMBEDDING_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
 # Only tested with e5-large-v2
 # https://huggingface.co/intfloat/e5-large-v2/blob/main/model.safetensors
-export EMBEDDING_MODEL_PATH=-/home/myname/AI_LOCAL/Models/e5-large-v2
+export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
 
 # LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
 # Last tested with Phi-3.5-mini
 # https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF
-export LLM_PATH=/home/myname/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+
+
+# SUPERVISOR_LLM_PATH: Supervisor agent used to create doc and per chunk context
+# Last tested with Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+# https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+export SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+
+# Persistence Configuration
+# CHROMA_DATA_DIR: Where ChromaDB persisted data is stored.
+export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
+
+# QDRANT_DATA_DIR / VECTOR_DB_DATA_DIR: Where Qdrant persisted data is stored.
+export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+export VECTOR_DB_DATA_DIR=${INGEST_FOLDER}/qdrant_data
 
 # Start the full stack (GPU mode is default)
 ./doc-ingest-chat/run-compose.sh

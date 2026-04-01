@@ -4,15 +4,16 @@ Parquet service for data storage operations.
 Optimized for incremental DuckDB writes and disk-based Parquet exportation.
 """
 
+import logging
 from typing import Any, Dict, List
 
 import duckdb
 import pandas as pd
 from config.settings import DUCKDB_FILE, PARQUET_FILE
 from services.job_service import JobService
-from utils.logging_config import setup_logging
 
-log = setup_logging("parquet_service.log")
+log = logging.getLogger("ingest.parquet")
+
 
 class ParquetService:
     """Parquet service handling DuckDB persistence and Parquet exports."""
@@ -25,6 +26,7 @@ class ParquetService:
               id VARCHAR PRIMARY KEY,
               chunk TEXT,
               source_file VARCHAR,
+              document_id VARCHAR,
               type VARCHAR,
               chunk_index INTEGER,
               engine VARCHAR,
@@ -44,7 +46,7 @@ class ParquetService:
             return
 
         df = pd.DataFrame(entries)
-        desired_cols = ["id", "chunk", "source_file", "type", "chunk_index", "engine", "hash", "page"]
+        desired_cols = ["id", "chunk", "source_file", "document_id", "type", "chunk_index", "engine", "hash", "page"]
         for col in desired_cols:
             if col not in df.columns:
                 df[col] = -1 if col == "page" else None
@@ -62,7 +64,8 @@ class ParquetService:
                 if "lock" in str(e).lower():
                     import random
                     import time
-                    delay = 0.1 * (2 ** attempt) + (random.random() * 0.1)
+
+                    delay = 0.1 * (2**attempt) + (random.random() * 0.1)
                     log.warning(f"⏳ DuckDB locked during append, retrying in {delay:.2f}s")
                     time.sleep(delay)
                     continue
@@ -79,6 +82,7 @@ class ParquetService:
         """
         JobService._execute_with_retry(f"COPY parquet_chunks TO '{PARQUET_FILE}' (FORMAT PARQUET)")
         log.info(f"💾 Exported all chunks from DuckDB to {PARQUET_FILE}")
+
 
 # Convenience aliases
 init_schema = ParquetService.ensure_schema

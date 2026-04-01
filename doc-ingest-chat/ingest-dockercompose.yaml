@@ -13,6 +13,7 @@ x-base-service: &base-service
     - ${DEBUG_IMAGE_DIR:-/tmp/ocr_debug}:${DEBUG_IMAGE_DIR:-/tmp/ocr_debug}
     - ${EMBEDDING_MODEL_PATH}:${EMBEDDING_MODEL_PATH}:ro
     - ${LLM_PATH}:${LLM_PATH}:ro
+    - ${SUPERVISOR_LLM_PATH}:${SUPERVISOR_LLM_PATH}:ro
 
 x-gpu-params: &gpu-params
   runtime: nvidia
@@ -27,6 +28,7 @@ x-gpu-params: &gpu-params
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
     - LLM_PATH=${LLM_PATH}
+    - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
     - INGEST_FOLDER=${INGEST_FOLDER}
     - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
@@ -54,6 +56,7 @@ x-cpu-params: &cpu-params
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
     - LLM_PATH=${LLM_PATH}
+    - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
     - INGEST_FOLDER=${INGEST_FOLDER}
     - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
 
@@ -159,8 +162,11 @@ services:
       - .env
     environment:
       - NODE_ENV=development
+    # Call local astro directly to avoid network checks and version mismatches
+    command: ["./node_modules/.bin/astro", "dev", "--host", "0.0.0.0", "--port", "4321"]
     volumes:
       - ../astro-frontend:/app
+      - /app/node_modules
 
 volumes:
   redis_data:

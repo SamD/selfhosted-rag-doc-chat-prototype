@@ -72,7 +72,8 @@ def test_explicit_port_overrides_default():
 
 def test_backward_compatibility_with_chroma_host():
     """Test that old CHROMA_HOST/PORT variables still work."""
-    with patch.dict(os.environ, {"CHROMA_HOST": "old-chromadb", "CHROMA_PORT": "7777", "EMBEDDING_MODEL_PATH": "/fake/path", "INGEST_FOLDER": "/fake/ingest", "CHROMA_DATA_DIR": "/fake/chroma", "LLM_PATH": "/fake/llm.gguf"}, clear=True):
+    env_vars = {"CHROMA_HOST": "old-chromadb", "CHROMA_PORT": "7777", "EMBEDDING_MODEL_PATH": "/fake/path", "INGEST_FOLDER": "/fake/ingest", "CHROMA_DATA_DIR": "/fake/chroma", "LLM_PATH": "/fake/llm.gguf", "SKIP_LOAD_DOTENV": "true"}
+    with patch.dict(os.environ, env_vars, clear=True):
         # Reload config to pick up environment changes
         import importlib
 

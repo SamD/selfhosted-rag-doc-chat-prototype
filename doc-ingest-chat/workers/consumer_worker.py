@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Consumer Worker for processing chunks and storing them in Vector DB.
-Refactored for ZERO-MEMORY archival via DuckDB.
+Uses a shared pre-compiled LangGraph singleton inherited via fork.
 """
 
 import json
@@ -12,7 +12,6 @@ import sys
 import time
 import traceback
 from collections import defaultdict
-from itertools import cycle
 from typing import Any, Callable, List
 
 from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, QUEUE_NAMES
@@ -22,108 +21,73 @@ from utils.consumer_utils import store_chunks_in_db
 from utils.logging_config import setup_logging
 from utils.metrics import FileMetrics
 
-queue_lock = multiprocessing.Lock()
-queue_cycle = cycle(QUEUE_NAMES)
-# parquet_lock not needed for DuckDB writes as we have retry logic
-parquet_lock = multiprocessing.Lock()
-
 log = setup_logging("ingest_consumer.log", include_default_filters=True)
 
-def get_next_queue() -> str:
-    global queue_lock, queue_cycle
-    with queue_lock:
-        return next(queue_cycle)
 
 def current_time() -> int:
     return int(time.time())
 
+
 def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
     """Main consumer worker function."""
     from workers.consumer_graph import run_consumer_graph
-    
+
     try:
         r = get_redis_client()
-        # buffer: Only holds the CURRENT active batch
         buffer = defaultdict(list)
         timestamps = {}
 
-        log.info(f"🚀 Started zero-memory consumer for queue: {queue_name}")
+        log.info(f"🚀 Started shared-graph consumer for queue: {queue_name}")
 
-        while True:
+        while not shared_data["shutdown_flag"]:
+            # Use a small timeout to allow frequent shutdown_flag checks
+            res = r.blpop(queue_name, timeout=5)
+
+            # Periodically clean up stale buffers (TTL check)
             now = current_time()
-            # Buffer TTL cleanup
-            for file, first_seen in list(timestamps.items()):
+            for file_path, first_seen in list(timestamps.items()):
                 if now - first_seen > CHUNK_TIMEOUT:
-                    log.info(f"⌛ TTL expired for {file}, discarding buffer")
-                    buffer.pop(file, None)
-                    timestamps.pop(file, None)
-                    # update_failed_files(file)
-                    pass
+                    log.warning(f"⌛ TTL expired for {file_path}, discarding buffer")
+                    buffer.pop(file_path, None)
+                    timestamps.pop(file_path, None)
 
-            item = r.blpop(queue_name, timeout=5)
-            
-            if shared_data["shutdown_flag"]:
-                log.info("\n👋 SHUTDOWN_FLAG set exiting ...")
-                break
+            if res:
+                _, job_raw = res
+                data = json.loads(job_raw)
+                source_file = data.get("source_file")
 
-            if not item:
-                continue
+                if data.get("type") == "file_end":
+                    expected = data.get("expected_chunks", 0)
+                    final_chunks = buffer.pop(source_file, [])
+                    timestamps.pop(source_file, None)
 
-            try:
-                data = json.loads(item[1])
-            except Exception as e:
-                log.info(f"⚠️ [{queue_name}] Skipping malformed Redis entry: {e}")
-                continue
+                    log.info(f"📨 [{queue_name}] Received file_end for {source_file} (finalizing)")
+                    metrics = FileMetrics(worker="consumer", file=source_file, queue=queue_name)
+                    with parq_lock:
+                        run_consumer_graph(source_file, expected, final_chunks, metrics)
+                    continue
 
-            source_file = data.get("source_file")
-            if not source_file:
-                continue
-
-            if data.get("type") == "file_end":
-                expected = data["expected_chunks"]
-                log.info(f"📨 [{queue_name}] Received file_end for {source_file} (finalizing remaining chunks)")
-                
-                # Retrieve remaining chunks from memory
-                remaining_chunks = buffer.pop(source_file, [])
-                timestamps.pop(source_file, None)
-                
-                metrics = FileMetrics(worker="consumer", file=source_file, queue=queue_name)
-                # Finalize: Process last chunks + Export Parquet + Update DuckDB Status
-                run_consumer_graph(source_file, expected, remaining_chunks, metrics)
-
-            else:
                 if source_file not in timestamps:
                     timestamps[source_file] = current_time()
-                
+
                 buffer[source_file].append(data)
 
-                # Incremental write when batch size is reached
                 if len(buffer[source_file]) >= MAX_CHROMA_BATCH_SIZE:
-                    log.info(f"📦 [{queue_name}] Batch threshold reached for {source_file} ({MAX_CHROMA_BATCH_SIZE} chunks). Ingesting...")
                     try:
                         active_batch = buffer[source_file]
-                        
-                        # 1. Persist to DuckDB (Disk bound) - SAFETY FIRST
-                        # This ensures we have the data captured even if Qdrant/VRAM fails
-                        append_chunks(active_batch)
-                        
-                        # 2. Ingest to Qdrant (CPU/GPU bound)
-                        store_chunks_in_db(source_file, active_batch)
-                        
-                        # 3. CRITICAL: Clear memory IMMEDIATELY
+                        with parq_lock:
+                            append_chunks(active_batch)
+                            store_chunks_in_db(source_file, active_batch)
                         buffer[source_file] = []
-                        
                     except Exception as e:
                         log.error(f"💥 Incremental ingestion failed for {source_file}: {e}")
-                
-                # Global safety limit
+
                 if len(buffer[source_file]) >= MAX_CHUNKS:
                     log.warning(f"🛘 Max chunks exceeded for {source_file} - discarding")
                     buffer.pop(source_file, None)
                     timestamps.pop(source_file, None)
-                    # update_failed_files(source_file)
                     continue
-                
+
     except Exception as e:
         log.error(f"💥 Critical consumer error: {e}")
         log.error(traceback.format_exc())
@@ -132,6 +96,7 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
 
 
 CHILD_PROCESSES = []
+
 
 def make_sigint_handler(processes: List[multiprocessing.Process], ppid: int, shared_data: Any) -> Callable[[int, Any], None]:
     def handler(signum: int, frame: Any) -> None:
@@ -142,28 +107,40 @@ def make_sigint_handler(processes: List[multiprocessing.Process], ppid: int, sha
         for p in processes:
             p.join()
         sys.exit(0)
+
     return handler
+
 
 def main() -> None:
     parent_pid = os.getpid()
     init_schema()
 
+    try:
+        multiprocessing.set_start_method("fork")
+    except RuntimeError:
+        pass
+
+    # 1. PRE-COMPILE CONSUMER GRAPH IN PARENT
+    from workers.consumer_graph import get_consumer_app
+
+    log.info("🏗️ Pre-compiling Consumer LangGraph in parent process...")
+    get_consumer_app()
+
+    # 2. Setup Shared Manager
     with multiprocessing.Manager() as manager:
         shared_dict = manager.dict({"shutdown_flag": False})
+        parq_lock = manager.Lock()
+
         signal.signal(signal.SIGINT, make_sigint_handler(CHILD_PROCESSES, parent_pid, shared_dict))
 
-        for i in range(len(QUEUE_NAMES)):
-            next_queue = get_next_queue()
-            p = multiprocessing.Process(target=consumer_worker, args=(next_queue, shared_dict, parquet_lock))
+        for queue_name in QUEUE_NAMES:
+            p = multiprocessing.Process(target=consumer_worker, args=(queue_name, shared_dict, parq_lock))
             p.start()
             CHILD_PROCESSES.append(p)
-            
-        log.info(f"🚀 Started {len(QUEUE_NAMES)} consumer workers for queues: {QUEUE_NAMES}")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            sys.exit(0)
+
+        for p in CHILD_PROCESSES:
+            p.join()
+
 
 if __name__ == "__main__":
     main()

@@ -35,6 +35,9 @@ The system tracks the lifecycle of every file in the `file_ingestion_jobs` table
 -- View counts of files by status
 SELECT status, COUNT(*) FROM file_ingestion_jobs GROUP BY status;
 
+-- View all jobs with their deterministic document_id
+SELECT file_path, document_id, status, updated_at FROM file_ingestion_jobs ORDER BY updated_at DESC;
+
 -- List all failed files and their error messages
 SELECT file_path, error_message, updated_at 
 FROM file_ingestion_jobs 
@@ -65,8 +68,11 @@ SELECT engine, COUNT(*) FROM parquet_chunks GROUP BY engine;
 -- Check if specific content (e.g. "Bretton") exists
 SELECT * FROM parquet_chunks WHERE chunk ILIKE '%bretton%';
 
+-- Find all chunks for a specific deterministic ID (mmh3 hash)
+SELECT * FROM parquet_chunks WHERE document_id = 'DOC_F3E9';
+
 -- View per-file chunk totals
-SELECT source_file, COUNT(*) FROM parquet_chunks GROUP BY source_file ORDER BY COUNT(*) DESC;
+SELECT source_file, document_id, COUNT(*) FROM parquet_chunks GROUP BY source_file, document_id ORDER BY COUNT(*) DESC;
 ```
 
 #### Advanced Queries for Troubleshooting

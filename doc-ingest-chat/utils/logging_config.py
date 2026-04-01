@@ -5,6 +5,7 @@ Logging configuration utilities.
 
 import logging
 import sys
+from typing import Optional
 
 
 class FlushFileHandler(logging.FileHandler):
@@ -15,33 +16,31 @@ class FlushFileHandler(logging.FileHandler):
         self.flush()
 
 
-def setup_logging(log_file: str, level: int = logging.INFO, include_default_filters: bool = False) -> logging.Logger:
+def setup_logging(log_file: Optional[str] = None, level: int = logging.INFO, include_default_filters: bool = False) -> logging.Logger:
     """
-    Set up logging configuration with both file and console handlers.
-
-    Args:
-        log_file: Path to the log file
-        level: Logging level
-
-    Returns:
-        Configured logger
+    Set up logging configuration. Should be called ONCE in the entry point (main).
     """
-    # Create handlers
-    stream_handler = logging.StreamHandler(sys.stdout)
-    file_handler = FlushFileHandler(log_file)
+    root_logger = logging.getLogger()
 
-    # Set consistent formatter
+    # If handlers are already set, don't re-configure (prevents 0-byte orphaned files)
+    if root_logger.hasHandlers():
+        return logging.getLogger("ingest")
+
+    handlers = [logging.StreamHandler(sys.stdout)]
+
+    if log_file:
+        handlers.append(FlushFileHandler(log_file))
+
     formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    stream_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
+    for handler in handlers:
+        handler.setFormatter(formatter)
 
-    # Apply to root logger
-    logging.basicConfig(level=level, handlers=[stream_handler, file_handler])
+    logging.basicConfig(level=level, handlers=handlers, force=True)
 
     if include_default_filters:
         setup_pdf_logging()
 
-    return logging.getLogger(__name__)
+    return logging.getLogger("ingest")
 
 
 class SuppressCropBoxWarnings(logging.Filter):

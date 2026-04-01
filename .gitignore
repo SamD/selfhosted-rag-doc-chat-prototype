@@ -247,7 +247,14 @@ docker-compose.override.yml
 jacoco.exec
 coverage/
 
-.gemini/
-gha-creds-*.json
 Docs/
 *.duckdb
+
+# gemini-cli settings
+.gemini/
+
+# GitHub App credentials
+gha-creds-*.json
+
+# Ensure GitHub workflows and templates are tracked
+!/.github/

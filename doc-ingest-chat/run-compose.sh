@@ -32,9 +32,6 @@ export COMPOSE_BAKE=true
 # Set deterministic temperature by default
 export LLAMA_TEMPERATURE='0.1'
 
-export CHROMA_DATA_DIR=${INGEST_FOLDER:-}/chroma_db
-export QDRANT_DATA_DIR=${INGEST_FOLDER:-}/qdrant_data
-
 # redis host name since this docker-compose service
 export REDIS_HOST=redis
 export REDIS_PORT=6380
@@ -67,6 +64,7 @@ COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --prof
 
 REQUIRED_VARS=(
   "LLM_PATH:gguf"
+  "SUPERVISOR_LLM_PATH:gguf"
   "EMBEDDING_MODEL_PATH:e5"
   "INGEST_FOLDER:dir"
 )
@@ -159,6 +157,11 @@ for entry in "${REQUIRED_VARS[@]}"; do
   validate_var_path "$var_name" "$validation_type"
 done
 
+# NOW that INGEST_FOLDER is validated and exported, we can set data dirs
+export CHROMA_DATA_DIR="${INGEST_FOLDER}/chroma_db"
+export QDRANT_DATA_DIR="${INGEST_FOLDER}/qdrant_data"
+export VECTOR_DB_DATA_DIR="${INGEST_FOLDER}/qdrant_data" # Ensure it matches docker-compose.yaml
+
 #################################
 # Launch Docker Compose         #
 #################################
@@ -166,12 +169,10 @@ echo "🚀 Launching Docker Compose with profiles: $COMPOSE_FILE_OPTS"
 
 if command -v docker-compose &> /dev/null; then
   echo "💡 Using docker-compose (v2.36.2)"
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
+  docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 elif docker compose version &> /dev/null; then
   echo "💡 Using docker compose"
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
-  exec docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
+  docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 else
   echo "❌ ERROR: Neither docker-compose nor docker compose found"
   exit 1

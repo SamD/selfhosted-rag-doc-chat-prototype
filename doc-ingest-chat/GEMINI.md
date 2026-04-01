@@ -14,10 +14,11 @@
 - **Infrastructure**: Docker Compose with GPU/CPU and Vector DB profiles
 
 ### Architecture
-1.  **Producer Worker (`run_producer.py`)**: Monitors `INGEST_FOLDER`, extracts text/images, detects quality, and enqueues chunks into Redis.
-2.  **OCR Worker (`run_ocr_worker.py`)**: Specialized worker for performing Tesseract OCR on scanned pages or poor-quality text detected by the producer.
-3.  **Consumer Worker (`run_consumer.py`)**: Embeds text chunks using a local embedding model (e.g., `e5-large-v2`) and stores them in the selected vector database.
-4.  **API Service (`apimain.py`)**: FastAPI server providing endpoints for chat, status, and RAG-based query resolution.
+The pipeline is orchestrated using **LangGraph StateGraphs** for robust, stateful processing.
+1.  **Producer Worker (`run_producer.py`)**: Orchestrates ingestion via `producer_graph.py`. Includes a **Supervisor Agent** (Qwen2.5) for global context enrichment and parallel streaming to Redis.
+2.  **OCR Worker (`run_ocr_worker.py`)**: Specialized worker for performing Tesseract OCR fallback using `ocr_graph.py`.
+3.  **Consumer Worker (`run_consumer.py`)**: Vectorizes and stores chunks via `consumer_graph.py`, featuring incremental Vector DB writes and DuckDB persistence.
+4.  **API Service (`apimain.py`)**: FastAPI server providing RAG-based chat with citation de-duplication and metadata enrichment.
 
 ---
 
