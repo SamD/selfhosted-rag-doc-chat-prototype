@@ -15,6 +15,7 @@ from services.database import get_db
 
 log = logging.getLogger("ingest.consumer_utils")
 
+
 def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: Optional[Any] = None) -> int:
     """
     Stores a list of chunks in the Vector DB (Chroma or Qdrant).
@@ -22,14 +23,14 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
     """
     # Filter out chunks that were already stored during incremental ingestion
     chunks_to_store = [c for c in chunks if not c.get("_already_stored")]
-    
+
     if not chunks_to_store:
         log.info(f"⏭️ All {len(chunks)} chunks for {source_file} already in DB")
         return 0
 
     try:
         db = get_db()
-        
+
         # Extract fields
         all_texts = [entry["chunk"] for entry in chunks_to_store]
         all_metadatas = [
@@ -48,10 +49,10 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
 
         # Split and ingest in safe batches
         batches_count = 0
-        
+
         # If metrics provided, wrap in timer
         timer_ctx = metrics.timer("chromadb_embedding") if metrics else open(os.devnull, "w")
-        
+
         if metrics:
             with timer_ctx:
                 for texts_batch, metas_batch, ids_batch in zip(
@@ -77,11 +78,11 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
                     ids=ids_batch,
                 )
                 batches_count += 1
-                
+
         count = db.get_collection_count()
         if count == 0:
             raise RuntimeError(f"💥 Vector DB persist failed — 0 documents after ingesting {source_file}")
-            
+
         log.info(f"✅ Persisted {source_file} — Vector DB doc count: {count}")
         return batches_count
     except Exception as e:

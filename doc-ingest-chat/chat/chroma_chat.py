@@ -1,52 +1,70 @@
-"""
-Core chat logic for conversational retrieval and response.
-"""
-
-#!/usr/bin/env python
+import logging
 import re
 
 from config.settings import USE_OLLAMA
-from utils.chat_utils import format_chunks_with_citations, get_env_boolean, replace_citation_labels
+from utils.chat_utils import replace_citation_labels
 from utils.llm_setup import get_chain_or_llama, get_retriever, get_vectorstore
-from utils.logging_config import setup_logging
 
-log = setup_logging("chroma_chat.log")
-
-vectorstore = get_vectorstore()
-log.info(f"Vectorstore contains {vectorstore.get_collection_count()} documents")
-retriever = get_retriever(vectorstore)
-
-chain, llama_model = get_chain_or_llama(retriever)
-
+log = logging.getLogger(__name__)
 
 class ChromaChat:
     """Core chat logic for conversational retrieval and response as static methods."""
 
     @staticmethod
     def simulate_conversational_chain(query, chat_history):
+        vectorstore = get_vectorstore()
+        retriever = get_retriever(vectorstore)
+        _, llama_model = get_chain_or_llama(retriever)
+
+        # Retrieval query: Ensure the 'query: ' prefix matches the 'passage: ' used in ingest
         docs = retriever.invoke(f"query: {query}")
-        context_chunks = format_chunks_with_citations(docs)
-        context_str = "\n\n".join(context_chunks)
-        citation_list = ", ".join(f"[source{i + 1}]" for i in range(len(docs)))
+
+        context_chunks = []
+        for i, doc in enumerate(docs):
+            content = doc.page_content
+
+            # 1. Strip 'passage: ' prefix from ingest
+            if content.startswith("passage: "):
+                content = content[9:].strip()
+
+            # 2. Extract deterministic [DOC_XXXX] anchor
+            doc_id = "UNKNOWN"
+            if content.startswith("[") and "]" in content:
+                end_idx = content.find("]")
+                doc_id = content[1:end_idx].strip()
+                content = content[end_idx + 1 :].strip()
+
+            # Format specifically for Phi-3.5-mini's attention mechanism
+            # Anchoring the SOURCE_ID to a numbered CITATION_TAG
+            chunk_text = f"SOURCE_ID: {doc_id}\nCITATION_TAG: [source{i + 1}]\nCONTENT: {content}"
+            context_chunks.append(chunk_text)
+
+        context_str = "\n\n---\n\n".join(context_chunks)
+
         system_msg = {
             "role": "system",
             "content": (
-                "You are a factual and precise assistant specialized in document extraction.\n\n"
-                "**Strict Guidelines:**\n"
-                "1. Respond ONLY with information explicitly found in <context>.\n"
-                "2. PRIORITY: BE CONCISE. Do not use filler words, introductory phrases, or creative adjectives. Use short, direct sentences.\n"
-                "3. EXTRACTION ONLY: Do not synthesize across chunks or summarize loosely. Treat each chunk as an independent fact source.\n"
-                "4. Do not use phrases like 'based on the context' or 'it is important to note'. Just state the facts.\n"
-                f"5. CITATION MANDATE: You MUST include citations like {citation_list} inline after each factual statement. Do not invent tags.\n"
-                "6. If no relevant context exists, respond: 'Not enough information in the provided sources.'\n"
-                f"\n<context>\n{context_str}\n</context>"
+                "You are a factual extraction engine. Answer ONLY using the provided <context>.\n\n"
+                "RULES:\n"
+                "1. NO PROSE. No introductions, conclusions, or meta-commentary about the context.\n"
+                "2. CITE: Every sentence MUST end with its CITATION_TAG (e.g. [source1]).\n"
+                "3. If multiple sources apply, use both: [source1][source2].\n"
+                "4. If the answer is not in the context, respond: 'Data not found.'\n\n"
+                f"<context>\n{context_str}\n</context>"
             ),
         }
+
         messages = [system_msg] + chat_history + [{"role": "user", "content": query}]
-        log.info(f"Calling LLM with {len(messages)} messages")
+        log.info(f"Context loaded: {len(docs)} chunks. Anchors verified.")
+
         try:
-            result = llama_model.create_chat_completion(messages=messages)
-            log.info("LLM response received")
+            # Phi-3.5-mini requires temp=0.0 to prevent hallucinating beyond the context window
+            result = llama_model.create_chat_completion(
+                messages=messages,
+                temperature=0.0,
+                repeat_penalty=1.1,
+                max_tokens=256 # Forces conciseness
+            )
             return result["choices"][0]["message"]["content"].strip(), docs
         except Exception as e:
             log.error(f"LLM call failed: {e}", exc_info=True)
@@ -55,47 +73,24 @@ class ChromaChat:
     @staticmethod
     def respond(query, chat_history):
         if USE_OLLAMA:
+            vectorstore = get_vectorstore()
+            retriever = get_retriever(vectorstore)
+            chain, _ = get_chain_or_llama(retriever)
             result = chain.invoke({"question": query, "chat_history": [(m["content"], a["content"]) for m, a in zip(chat_history[::2], chat_history[1::2])]})
             output = result["answer"].strip()
             docs = result.get("source_documents", [])
         else:
             output, docs = ChromaChat.simulate_conversational_chain(query, chat_history)
-        for i, doc in enumerate(docs):
-            log.debug(f"Expecting [source{i + 1}] for: {doc.metadata.get('source_file')} | Page {doc.metadata.get('page')}")
-            log.debug(f"\n🧪 Raw model output:\n{output}")
-        log.debug("\n📄 CONTEXT:\n" + "\n\n".join(format_chunks_with_citations(docs)))
-        log.debug(f"\n⚙️ MODEL OUTPUT (raw):\n{output}")
-        # Find both [sourceX] and (sourceX) formats
-        found_bracket_tags = set(re.findall(r"\[source\d+\]", output))
-        found_paren_tags = set(re.findall(r"\(source\d+\)", output))
-        found_tags = found_bracket_tags | found_paren_tags
-        # Check if any expected tags (in either format) are found
-        expected_tags_bracket = {f"[source{i + 1}]" for i in range(len(docs))}
-        expected_tags_paren = {f"(source{i + 1})" for i in range(len(docs))}
-        # A citation is valid if we find the bracket or paren version
-        citation_tags_present = False
-        for i in range(len(docs)):
-            source_num = i + 1
-            bracket_tag = f"[source{source_num}]"
-            paren_tag = f"(source{source_num})"
-            if bracket_tag in found_tags or paren_tag in found_tags:
-                citation_tags_present = True
-                log.debug(f"🔎 Found citation for source {source_num}: {bracket_tag if bracket_tag in found_tags else paren_tag}")
-        # Check for invalid/unexpected tags
-        all_expected_tags = expected_tags_bracket | expected_tags_paren
-        invalid_tags = found_tags - all_expected_tags
-        if invalid_tags:
-            log.warning(f"🚫 Model hallucinated unexpected citation tags: {sorted(invalid_tags)}")
-            # Don't reject if we also have valid tags
-            if not citation_tags_present:
-                debug_str = "❌ Invalid citation tags found — response rejected."
-                log.warning("⚠️ Skipping citation replacement — only invalid tags found.")
-                return (chat_history + [{"role": "user", "content": query}, {"role": "assistant", "content": output}], debug_str)
-        debug_str = "✅ Citation tags were used." if citation_tags_present else "⚠️ No valid citation tags found in model output."
-        if citation_tags_present:
+
+        # Post-process: Map [sourceN] tags back to filenames/metadata
+        found_tags = set(re.findall(r"\[source\d+\]|\(source\d+\)", output))
+
+        if found_tags:
             output = replace_citation_labels(output, docs)
+            debug_str = f"✅ Grounding successful. {len(found_tags)} citations mapped."
         else:
-            log.warning("⚠️ Skipping citation replacement — no valid tags matched.")
+            debug_str = "⚠️ Grounding failure: No valid citation tags found."
+
         return (chat_history + [{"role": "user", "content": query}, {"role": "assistant", "content": output}], debug_str)
 
     @staticmethod
@@ -107,20 +102,12 @@ class ChromaChat:
                 if query.lower() in {"exit", "quit"}:
                     break
                 chat_history, debug = ChromaChat.respond(query, chat_history)
-                print("\n📘 Answer:\n" + chat_history[-1]["content"])
-                print("\n🔍 Debug Info:\n" + debug)
+                print(f"\n📘 Answer:\n{chat_history[-1]['content']}\n\n🔍 Debug: {debug}")
             except KeyboardInterrupt:
                 break
 
-    @staticmethod
-    def use_fast_api():
-        pass
-
+# --- EXPORT ---
+respond = ChromaChat.respond
 
 if __name__ == "__main__":
-    if get_env_boolean("USE_FASTAPI", False):
-        ChromaChat.use_fast_api()
-    else:
-        ChromaChat.use_cli()
-
-respond = ChromaChat.respond
+    ChromaChat.use_cli()

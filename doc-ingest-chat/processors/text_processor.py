@@ -6,6 +6,7 @@ Text processing functionality.
 import hashlib
 import logging
 
+import mmh3
 from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
 from transformers import AutoTokenizer
 from utils.text_utils import is_bad_ocr
@@ -15,6 +16,16 @@ log = logging.getLogger("ingest.text_processor")
 
 class TextProcessor:
     """Text processing functionality as static methods."""
+
+    @staticmethod
+    def get_document_id(file_bytes: bytes) -> str:
+        """
+        Generates an 8-char MurmurHash3 directly from raw binary checksum.
+        No supervisor, no text sampling, no hallucinations.
+        """
+        # Deterministic 8-char Hash of the binary file bytes
+        m_hash = hex(mmh3.hash(file_bytes) & 0xFFFFFFFF)[2:].upper().zfill(8)
+        return f"DOC_{m_hash}"
 
     @staticmethod
     def make_chunk_id(rel_path: str, idx: int, chunk: str) -> str:
@@ -63,20 +74,32 @@ class TextProcessor:
         return end - start, last_valid_chunk
 
     @staticmethod
-    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None, doc_context=None):
-        """Split document into chunks."""
+    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None, document_id=None):
+        """Split document into chunks with fast hash-based enrichment."""
         tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
 
-        prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
+        log.info(f"📄 Splitting file: {rel_path}, Page: {page_num}")
         content_tokens = tokenizer.encode(text, add_special_tokens=False)
 
-        log.info(f"📄 Splitting file: {rel_path}, Page: {page_num}")
-        log.debug(f"🔢 Total content tokens: {len(content_tokens)} | Prefix tokens: {len(prefix_tokens)}")
+        # Final Enrichment Tag: [DOC_A1B2]
+        meta_id = document_id if document_id else "DOC_UNKNOWN"
+        enrichment_prefix = f"{prefix}[{meta_id}] "
+
+        log.info(f"✨ [Enrichment] Applying anchor: [{meta_id}] to {rel_path} Page {page_num}")
+
+        prefix_tokens = tokenizer.encode(enrichment_prefix, add_special_tokens=False)
 
         chunks = []
         i = 0
         while i < len(content_tokens):
+            # Pass the enrichment prefix tokens directly to make_chunk
+            # This guarantees the total chunk (tag + content) <= budget (512)
             last, chunk_str = TextProcessor.make_chunk(prefix_tokens, i, content_tokens, tokenizer, budget, overlap)
+
+            if not chunk_str:
+                i += 1
+                continue
+
             chunks.append(chunk_str)
             i += last
 
@@ -101,6 +124,7 @@ class TextProcessor:
             "chunk",  # The actual text
             "id",  # Chunk ID
             "source_file",  # Original file relative path
+            "document_id",  # Fast mmh3 ID (e.g. DOC_A1B2)
             "type",  # File type: pdf/html/video
             "hash",  # Content hash
             "engine",  # OCR engine used
@@ -135,3 +159,4 @@ split_doc = TextProcessor.split_doc
 make_chunk_id = TextProcessor.make_chunk_id
 normalize_metadata = TextProcessor.normalize_metadata
 validate_chunk = TextProcessor.validate_chunk
+get_document_id = TextProcessor.get_document_id

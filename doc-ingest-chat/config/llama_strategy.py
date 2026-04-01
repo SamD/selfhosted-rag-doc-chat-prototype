@@ -11,21 +11,21 @@ class LlamaParamStrategy:
         # Use os.getenv with the imported constant as the fallback/default.
         # This ensures we get the LIVE environment variable first.
         params = {
-            "model_path":     os.getenv("LLM_PATH", LLM_PATH),
-            "n_ctx":          int(os.getenv("LLAMA_N_CTX", LLAMA_N_CTX)),
-            "n_gpu_layers":   int(os.getenv("LLAMA_N_GPU_LAYERS", LLAMA_N_GPU_LAYERS)),
-            "n_threads":      int(os.getenv("LLAMA_N_THREADS", LLAMA_N_THREADS)),
-            "n_batch":        int(os.getenv("LLAMA_N_BATCH", LLAMA_N_BATCH)),
-            "f16_kv":         os.getenv("LLAMA_F16_KV", str(LLAMA_F16_KV)).lower() == "true",
-            "temperature":    float(os.getenv("LLAMA_TEMPERATURE", LLAMA_TEMPERATURE)),
-            "top_k":          int(os.getenv("LLAMA_TOP_K", LLAMA_TOP_K)),
-            "top_p":          float(os.getenv("LLAMA_TOP_P", LLAMA_TOP_P)),
+            "model_path": os.getenv("LLM_PATH", LLM_PATH),
+            "n_ctx": int(os.getenv("LLAMA_N_CTX", LLAMA_N_CTX)),
+            "n_gpu_layers": int(os.getenv("LLAMA_N_GPU_LAYERS", LLAMA_N_GPU_LAYERS)),
+            "n_threads": int(os.getenv("LLAMA_N_THREADS", LLAMA_N_THREADS)),
+            "n_batch": int(os.getenv("LLAMA_N_BATCH", LLAMA_N_BATCH)),
+            "f16_kv": os.getenv("LLAMA_F16_KV", str(LLAMA_F16_KV)).lower() == "true",
+            "temperature": float(os.getenv("LLAMA_TEMPERATURE", LLAMA_TEMPERATURE)),
+            "top_k": int(os.getenv("LLAMA_TOP_K", LLAMA_TOP_K)),
+            "top_p": float(os.getenv("LLAMA_TOP_P", LLAMA_TOP_P)),
             "repeat_penalty": float(os.getenv("LLAMA_REPEAT_PENALTY", LLAMA_REPEAT_PENALTY)),
-            "max_tokens":     int(os.getenv("LLAMA_MAX_TOKENS", LLAMA_MAX_TOKENS)),
-            "chat_format":    os.getenv("LLAMA_CHAT_FORMAT", LLAMA_CHAT_FORMAT),
-            "verbose":        os.getenv("LLAMA_VERBOSE", str(LLAMA_VERBOSE)).lower() == "true",
-            "seed":           int(os.getenv("LLAMA_SEED", LLAMA_SEED)),
-            "use_mmap":       False, # Usually safer inside containers to avoid bus errors
+            "max_tokens": int(os.getenv("LLAMA_MAX_TOKENS", LLAMA_MAX_TOKENS)),
+            "chat_format": os.getenv("LLAMA_CHAT_FORMAT", LLAMA_CHAT_FORMAT),
+            "verbose": os.getenv("LLAMA_VERBOSE", str(LLAMA_VERBOSE)).lower() == "true",
+            "seed": int(os.getenv("LLAMA_SEED", LLAMA_SEED)),
+            "use_mmap": False,  # Usually safer inside containers to avoid bus errors
         }
 
         # Force GPU layers to 0 if explicit disable is set

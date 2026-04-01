@@ -31,6 +31,7 @@ _EMBEDDINGS_CACHE: Optional[HuggingFaceEmbeddings] = None
 _QDRANT_CLIENT_CACHE: Optional[QdrantClient] = None
 _CHROMA_CLIENT_CACHE: Optional[chromadb.HttpClient] = None
 
+
 class VectorStoreWrapper:
     """Wrapper around vector store to provide unified interface for ChromaDB and Qdrant."""
 
@@ -53,6 +54,7 @@ class VectorStoreWrapper:
             if where:
                 if "source_file" in where:
                     from qdrant_client.models import FieldCondition, Filter, MatchValue
+
                     filter_condition = Filter(must=[FieldCondition(key="metadata.source_file", match=MatchValue(value=where["source_file"]))])
                     self.vectorstore.client.delete(collection_name=VECTOR_DB_COLLECTION, points_selector=filter_condition)
             elif ids:
@@ -80,11 +82,7 @@ class DatabaseService:
         global _EMBEDDINGS_CACHE
         if _EMBEDDINGS_CACHE is None:
             log.info(f"🚀 Loading embedding model into {device}: {EMBEDDING_MODEL_PATH}")
-            _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(
-                model_name=EMBEDDING_MODEL_PATH, 
-                model_kwargs={"device": device, "trust_remote_code": True}, 
-                encode_kwargs={"normalize_embeddings": True}
-            )
+            _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_PATH, model_kwargs={"device": device, "trust_remote_code": True}, encode_kwargs={"normalize_embeddings": True})
         return _EMBEDDINGS_CACHE
 
     @staticmethod
@@ -116,11 +114,13 @@ class DatabaseService:
         client = DatabaseService.get_qdrant_client()
 
         from qdrant_client.http.exceptions import UnexpectedResponse
+
         try:
             client.get_collection(VECTOR_DB_COLLECTION)
         except UnexpectedResponse as e:
             if "doesn't exist" in str(e) or e.status_code == 404:
                 from qdrant_client.models import Distance, VectorParams
+
                 log.info(f"Creating collection '{VECTOR_DB_COLLECTION}'")
                 test_embedding = embeddings.embed_query("test")
                 dim = len(test_embedding)

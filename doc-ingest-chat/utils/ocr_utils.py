@@ -19,6 +19,7 @@ from PIL import Image
 
 log = logging.getLogger("ingest.ocr_utils")
 
+
 def safe_image_save(pil_image, path, format=None):
     """Save a PIL image to disk safely."""
     try:
@@ -30,11 +31,13 @@ def safe_image_save(pil_image, path, format=None):
         log.info(f"💥 Failed to save image to {path}: {e}")
         return False
 
+
 def save_bad_image(np_image, debug_image_path, log_prefix):
     """Save problematic image for debugging OCR failures."""
     log.info(f"{log_prefix} ⚠️ Saving invalid page for debugging: {debug_image_path}")
     pil_image = Image.fromarray(np_image)
     safe_image_save(pil_image, debug_image_path)
+
 
 def run_tesseract(np_image, rel_path, page_num):
     """
@@ -42,7 +45,7 @@ def run_tesseract(np_image, rel_path, page_num):
     Configures Tesseract based on project settings (PSM, OEM, Scripts).
     """
     log.info(f"↪️ Running Tesseract for {rel_path} page {page_num}")
-    
+
     env = os.environ.copy()
     if TESSDATA_PREFIX:
         env["TESSDATA_PREFIX"] = TESSDATA_PREFIX
@@ -68,14 +71,14 @@ def run_tesseract(np_image, rel_path, page_num):
                 lang=TESSERACT_LANGS,
                 config=config,
             ).strip()
-            
+
         execution_time_ms = (time.perf_counter() - start_time) * 1000.0
-        
+
         if not text or not text.strip():
             return None, "notext_tesseract", execution_time_ms
-            
+
         return text, "tesseract", execution_time_ms
-        
+
     except Exception as e:
         log.error(f"💥 Tesseract execution failed: {e}")
         return None, "error_tesseract", 0.0

@@ -720,8 +720,8 @@ x-cpu-params:
     - LLAMA_USE_GPU=false
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
-    - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
-    - SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+    LLM_PATH: ${LLM_PATH}
+    SUPERVISOR_LLM_PATH: ${SUPERVISOR_LLM_PATH}
     - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
     - VECTOR_DB_PROFILE=qdrant
 x-gpu-params:
@@ -747,8 +747,8 @@ x-gpu-params:
     - LLAMA_USE_GPU=true
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
-    - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
-    - SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+    LLM_PATH: ${LLM_PATH}
+    SUPERVISOR_LLM_PATH: ${SUPERVISOR_LLM_PATH}
     - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
     - VECTOR_DB_PROFILE=qdrant
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu

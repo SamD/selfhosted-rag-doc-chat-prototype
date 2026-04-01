@@ -21,13 +21,13 @@ def setup_logging(log_file: Optional[str] = None, level: int = logging.INFO, inc
     Set up logging configuration. Should be called ONCE in the entry point (main).
     """
     root_logger = logging.getLogger()
-    
+
     # If handlers are already set, don't re-configure (prevents 0-byte orphaned files)
     if root_logger.hasHandlers():
         return logging.getLogger("ingest")
 
     handlers = [logging.StreamHandler(sys.stdout)]
-    
+
     if log_file:
         handlers.append(FlushFileHandler(log_file))
 

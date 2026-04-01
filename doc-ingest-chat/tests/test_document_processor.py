@@ -382,10 +382,7 @@ def test_process_pdf_by_page_good_text_uses_split_doc():
     mock_redis = MagicMock()
     split_result = (["chunk_a"], [{"source_file": "doc.pdf"}])
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", return_value=False), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result) as mock_split:
-
+    with patch("pdfplumber.open", return_value=mock_pdf), patch("processors.document_processor.is_bad_ocr", return_value=False), patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result) as mock_split:
         chunks, metas = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     mock_split.assert_called_once()
@@ -400,10 +397,7 @@ def test_process_pdf_by_page_accumulates_all_pages():
     mock_redis = MagicMock()
     split_result = (["chunk"], [{"source_file": "doc.pdf"}])
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", return_value=False), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with patch("pdfplumber.open", return_value=mock_pdf), patch("processors.document_processor.is_bad_ocr", return_value=False), patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
         chunks, metas = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     assert len(chunks) == 2  # one chunk per page
@@ -419,13 +413,14 @@ def test_process_pdf_by_page_empty_page_triggers_ocr_fallback():
     split_result = (["ocr_chunk"], [{"source_file": "doc.pdf"}])
     fake_pil = _make_rgb_image(100, 100)
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", return_value=False), \
-         patch("processors.document_processor.convert_from_path", return_value=[fake_pil]), \
-         patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)), \
-         patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with (
+        patch("pdfplumber.open", return_value=mock_pdf),
+        patch("processors.document_processor.is_bad_ocr", return_value=False),
+        patch("processors.document_processor.convert_from_path", return_value=[fake_pil]),
+        patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)),
+        patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result),
+        patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result),
+    ):
         chunks, metas = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     assert chunks == ["ocr_chunk"]
@@ -440,13 +435,14 @@ def test_process_pdf_by_page_bad_ocr_text_triggers_fallback():
     split_result = (["clean_chunk"], [{"source_file": "doc.pdf"}])
     fake_pil = _make_rgb_image(100, 100)
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", side_effect=[True, False]), \
-         patch("processors.document_processor.convert_from_path", return_value=[fake_pil]), \
-         patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)), \
-         patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with (
+        patch("pdfplumber.open", return_value=mock_pdf),
+        patch("processors.document_processor.is_bad_ocr", side_effect=[True, False]),
+        patch("processors.document_processor.convert_from_path", return_value=[fake_pil]),
+        patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)),
+        patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result),
+        patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result),
+    ):
         chunks, _ = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     assert chunks == ["clean_chunk"]
@@ -460,12 +456,13 @@ def test_process_pdf_by_page_ocr_returns_garbage_skips_page():
     ocr_result = ("ÃÃÂ garbage", "doc.pdf", 1, "tesseract", "job3")
     fake_pil = _make_rgb_image(100, 100)
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", return_value=True), \
-         patch("processors.document_processor.convert_from_path", return_value=[fake_pil]), \
-         patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)), \
-         patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result):
-
+    with (
+        patch("pdfplumber.open", return_value=mock_pdf),
+        patch("processors.document_processor.is_bad_ocr", return_value=True),
+        patch("processors.document_processor.convert_from_path", return_value=[fake_pil]),
+        patch.object(DocumentProcessor, "preprocess_image", return_value=np.zeros((100, 100), dtype=np.uint8)),
+        patch.object(DocumentProcessor, "send_image_to_ocr", return_value=ocr_result),
+    ):
         chunks, metas = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     assert chunks == []
@@ -487,14 +484,16 @@ def test_process_pdf_by_page_ocr_exception_continues_to_next_page():
     mock_tokenizer = MagicMock()
     mock_redis = MagicMock()
     split_result = (["page2_chunk"], [{"source_file": "doc.pdf"}])
+
     def is_bad_side_effect(text, tok):
         return not text.strip()  # empty pages are "bad"
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.is_bad_ocr", side_effect=is_bad_side_effect), \
-         patch("processors.document_processor.convert_from_path", side_effect=RuntimeError("render failed")), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with (
+        patch("pdfplumber.open", return_value=mock_pdf),
+        patch("processors.document_processor.is_bad_ocr", side_effect=is_bad_side_effect),
+        patch("processors.document_processor.convert_from_path", side_effect=RuntimeError("render failed")),
+        patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result),
+    ):
         chunks, _ = DocumentProcessor.process_pdf_by_page("doc.pdf", "doc.pdf", "pdf", mock_redis, mock_tokenizer)
 
     assert chunks == ["page2_chunk"]
@@ -511,9 +510,7 @@ def test_process_pdf_by_page_nofallback_returns_chunks():
     mock_tokenizer = MagicMock()
     split_result = (["chunk"], [{"source_file": "doc.pdf"}])
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with patch("pdfplumber.open", return_value=mock_pdf), patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
         chunks, metas = DocumentProcessor.process_pdf_by_page_nofallback("doc.pdf", "doc.pdf", "pdf", mock_tokenizer)
 
     assert len(chunks) == 2
@@ -526,9 +523,7 @@ def test_process_pdf_by_page_nofallback_skips_empty_pages():
     mock_tokenizer = MagicMock()
     split_result = (["chunk"], [{"source_file": "doc.pdf"}])
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
-
+    with patch("pdfplumber.open", return_value=mock_pdf), patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result):
         chunks, metas = DocumentProcessor.process_pdf_by_page_nofallback("doc.pdf", "doc.pdf", "pdf", mock_tokenizer)
 
     assert len(chunks) == 1  # only the first non-empty page
@@ -540,10 +535,7 @@ def test_process_pdf_by_page_nofallback_no_ocr_called():
     mock_tokenizer = MagicMock()
     split_result = (["c"], [{}])
 
-    with patch("pdfplumber.open", return_value=mock_pdf), \
-         patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result), \
-         patch("processors.document_processor.convert_from_path") as mock_convert:
-
+    with patch("pdfplumber.open", return_value=mock_pdf), patch("processors.document_processor.TextProcessor.split_doc", return_value=split_result), patch("processors.document_processor.convert_from_path") as mock_convert:
         DocumentProcessor.process_pdf_by_page_nofallback("doc.pdf", "doc.pdf", "pdf", mock_tokenizer)
 
     mock_convert.assert_not_called()

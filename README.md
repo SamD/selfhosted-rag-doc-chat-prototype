@@ -65,7 +65,13 @@ The **Consumer worker** pulls batches of chunks from Redis, embeds them, and per
 
 Want to see it in action? Follow these steps to get the system running locally.
 
-#### **1. Get the Models**
+#### **1. Prerequisites**
+- **Docker & Docker Compose**: (v2.20+)
+- **NVIDIA Container Toolkit**: (If using GPU)
+- **Node.js**: **v22.12.0+** (Required for Frontend development/builds)
+- **Python**: 3.10+ (For local worker development)
+
+#### **2. Get the Models**
 The system runs entirely locally. You will need to download two models and reference them via absolute paths:
 1. **Embedding Model**: [e5-large-v2](https://huggingface.co/intfloat/e5-large-v2)
 2. **LLM**: [Phi-3.5-mini](https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF)

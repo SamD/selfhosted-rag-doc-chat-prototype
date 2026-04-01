@@ -22,25 +22,27 @@ log = logging.getLogger("ingest.llm_setup")
 _LLAMA_MODEL_CACHE: Optional[Llama] = None
 _SUPERVISOR_LLM_CACHE: Optional[LlamaCpp] = None
 
+
 def get_vectorstore():
     return get_db()
 
+
 def get_retriever(vectorstore):
     return vectorstore.as_retriever(search_kwargs={"k": RETRIEVER_TOP_K})
+
 
 def get_chain_or_llama(retriever):
     global _LLAMA_MODEL_CACHE
     if USE_OLLAMA:
         llm = ChatOllama(base_url=OLLAMA_URL, model=OLLAMA_MODEL)
-        return ConversationalRetrievalChain.from_llm(
-            llm=llm, retriever=retriever, return_source_documents=True, prompt=SHARED_CHAT_PROMPT
-        ), None
+        return ConversationalRetrievalChain.from_llm(llm=llm, retriever=retriever, return_source_documents=True, prompt=SHARED_CHAT_PROMPT), None
     else:
         if _LLAMA_MODEL_CACHE is None:
             params = LlamaParamStrategy().get_params()
             log.info(f"🚀 Loading Main Llama: {params['model_path']}")
             _LLAMA_MODEL_CACHE = Llama(**params)
         return None, _LLAMA_MODEL_CACHE
+
 
 def get_supervisor_llm() -> LlamaCpp:
     """
@@ -49,15 +51,8 @@ def get_supervisor_llm() -> LlamaCpp:
     """
     global _SUPERVISOR_LLM_CACHE
     if _SUPERVISOR_LLM_CACHE is None:
+        if not SUPERVISOR_LLM_PATH:
+            raise ValueError("❌ SUPERVISOR_LLM_PATH is not set in environment. Please set it to the absolute path of your Supervisor GGUF model.")
         log.info(f"🧠 Loading Supervisor LLM: {SUPERVISOR_LLM_PATH}")
-        _SUPERVISOR_LLM_CACHE = LlamaCpp(
-            model_path=SUPERVISOR_LLM_PATH,
-            n_ctx=2048, 
-            n_gpu_layers=LLAMA_N_GPU_LAYERS,
-            n_threads=LLAMA_N_THREADS,
-            temperature=SUPERVISOR_TEMPERATURE,
-            top_k=SUPERVISOR_TOP_K,
-            verbose=LLAMA_VERBOSE,
-            seed=LLAMA_SEED
-        )
+        _SUPERVISOR_LLM_CACHE = LlamaCpp(model_path=SUPERVISOR_LLM_PATH, n_ctx=2048, n_gpu_layers=LLAMA_N_GPU_LAYERS, n_threads=LLAMA_N_THREADS, temperature=SUPERVISOR_TEMPERATURE, top_k=SUPERVISOR_TOP_K, verbose=LLAMA_VERBOSE, seed=LLAMA_SEED)
     return _SUPERVISOR_LLM_CACHE

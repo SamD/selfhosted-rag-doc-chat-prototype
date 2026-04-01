@@ -27,6 +27,8 @@ The Producer is responsible for file discovery and initial text extraction.
 - **Workflow**: Orchestrated by a `StateGraph` in `producer_graph.py`.
 - **Nodes**:
     - `scan_file_node`: Validates file presence and determines type (PDF, HTML, Media).
+    - `preview_node`: Scans the first 10 pages to extract a high-quality text sample.
+    - `supervisor_node`: Uses **Qwen2.5-1.5B** to generate a single-sentence global context persona for the document.
     - `pdf_extract_node`: Uses `pdfplumber` for fast text-layer extraction.
     - `fallback_ocr_node`: Triggered if the fast extraction yields low-quality results.
     - `send_sentinel_node`: Dispatches the `file_end` signal to ensure consumer finalization.

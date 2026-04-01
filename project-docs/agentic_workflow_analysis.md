@@ -1,8 +1,8 @@
-# Agentic Workflow Analysis & Implementation Plan
+# Agentic Workflow: Implementation Report
 
-This document evaluates the transition of the RAG ingestion pipeline from a deterministic state machine to an agentic workflow. It identifies specific areas where LLM reasoning provides a clear return on investment (ROI) without introducing unnecessary latency or complexity.
+This document details the implementation of the RAG ingestion pipeline's transition from a deterministic state machine to an agentic workflow using **LangGraph**.
 
-## 1. ROI Analysis
+## 1. Feature ROI Analysis (Post-Implementation)
 
 | Feature | Type | Benefit | Cost (Latency/VRAM) | Verdict |
 | :--- | :--- | :--- | :--- | :--- |
@@ -13,7 +13,7 @@ This document evaluates the transition of the RAG ingestion pipeline from a dete
 
 ---
 
-## 2. Proposed Feature: The Contextualizer Agent
+## 2. Implemented Feature: The Contextualizer Agent
 
 ### The Problem
 Traditional chunking loses the "Big Picture." 
@@ -21,41 +21,26 @@ Traditional chunking loses the "Big Picture."
 *   **Chunk**: "...profits increased by 5% due to cost-cutting in the logistics division."
 *   **Retrieval Issue**: If a user asks "How did the company perform in 2023?", this chunk might be missed because it doesn't contain the year or the company name.
 
-### The Agentic Solution
-We introduce a **Supervisor Agent** node at the start of the `ProducerGraph`. 
-1.  The agent reads the first 1000 tokens of the document.
-2.  It generates a 2-sentence "Document Persona" (e.g., "This is the 2023 Annual Report for ACME Corp, focusing on fiscal growth and logistics.").
-3.  This Persona is added to the `IngestState`.
-4.  The extraction nodes prepend this Persona to every chunk before it is sent to Redis.
+### The Agentic Solution (LangGraph)
+We have integrated a **Supervisor Agent** node at the start of the `ProducerGraph`. 
+1.  The `preview_node` extracts text from the first 10 pages.
+2.  The `supervisor_node` (Qwen2.5) generates a 1-sentence "Document Persona" (e.g., "This is the 2023 Annual Report for ACME Corp, focusing on fiscal growth and logistics.").
+3.  The extraction nodes prepend this Persona to **every chunk** before it is sent to Redis.
 
 ---
 
-## 3. Implementation Plan
+## 3. Technical Details
 
-### Step 1: LLM Integration
-We will leverage the existing LLM configuration but wrap it in a LangGraph-compatible `ChatModel` (via `ChatLlamaCpp` or `ChatOllama`). We will use the **Singleton Pattern** in `llm_setup.py` to ensure the Producer doesn't fight the API for VRAM.
+### Multi-Process Safety
+To prevent GPU deadlocks during concurrent model loading, we implemented a **Global Multiprocessing Lock** (`gpu_lock`). Only one worker process can initialize or invoke the Supervisor LLM at a time.
 
-### Step 2: Define the "Contextualizer" Tool/Node
-A new node in `producer_graph.py`:
-```python
-def contextualizer_node(state: IngestState) -> IngestState:
-    sample_text = state["extracted_sample"]
-    # Agent generates: "This document is [Topic] by [Author] regarding [Year]..."
-    context_summary = llm.invoke(f"Summarize the context of this document: {sample_text}")
-    return {**state, "doc_context": context_summary}
-```
+### Singleton Pattern
+All models (LLM, Embedding, Tokenizer) are implemented as **Per-Process Singletons**. They are lazy-loaded on first use and cached for the remainder of the process lifecycle.
 
-### Step 3: Modify `IngestState`
-Add a `doc_context` field to the `TypedDict`.
-
-### Step 4: Update Extraction Logic
-Update `producer_utils.py` to accept the `doc_context` and prepend it during the `split_doc` phase:
-```python
-# Before
-chunk = "profits increased by 5%..."
-# After
-chunk = "[Context: ACME Corp 2023 Report] profits increased by 5%..."
-```
+### Data Flow
+1.  **Enrichment**: The `doc_context` is prepended to chunks in the `on_chunks` streaming callback.
+2.  **Atomicity**: DuckDB handles job status via `file_ingestion_jobs`.
+3.  **Persistence**: Incremental DuckDB appends ensure zero-memory buffering for large files.
 
 ---
 
