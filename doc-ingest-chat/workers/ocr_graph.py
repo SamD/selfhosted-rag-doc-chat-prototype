@@ -6,13 +6,12 @@ Refactored to compile the graph ONCE per process to prevent memory accumulation.
 
 import base64
 import json
+import logging
 import os
-import threading
 import traceback
 from typing import List, Optional, TypedDict
 
 import numpy as np
-import logging
 from config.settings import DEBUG_IMAGE_DIR
 from langgraph.graph import END, StateGraph
 from services.redis_service import get_redis_client
@@ -22,7 +21,6 @@ log = logging.getLogger("ingest.ocr_graph")
 
 # Global cache for the compiled graph
 _COMPILED_OCR_APP = None
-_APP_LOCK = threading.Lock()
 
 class OCRState(TypedDict):
     """Represents the internal state of an OCR job."""
@@ -109,10 +107,8 @@ def get_ocr_app():
     """Singleton getter for the compiled graph."""
     global _COMPILED_OCR_APP
     if _COMPILED_OCR_APP is None:
-        with _APP_LOCK:
-            if _COMPILED_OCR_APP is None:
-                log.info("🔨 Compiling OCR LangGraph...")
-                _COMPILED_OCR_APP = create_ocr_graph()
+        log.info("🔨 Compiling OCR LangGraph...")
+        _COMPILED_OCR_APP = create_ocr_graph()
     return _COMPILED_OCR_APP
 
 def run_ocr_graph(job: dict) -> bool:

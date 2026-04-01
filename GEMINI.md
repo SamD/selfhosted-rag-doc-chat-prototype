@@ -3,6 +3,12 @@
 ## Project Overview
 This project is a **Scalable RAG (Retrieval-Augmented Generation) Pipeline** designed for distributed document ingestion and chat. It handles mixed-quality PDFs (scanned + digital), HTML, and large document collections with automatic quality detection and OCR fallback.
 
+## Agent Instructions
+- **Subagent Delegation**: 
+    - Use `@researcher` for searching latest documentation for example (Astro 5.x, FastAPI, redis, qdrant, chromadb) as wella as Python and HuggingFace AI and other supporting libraries
+    - Use `@analyzer` for deep code analysis or refactoring tasks.
+- **Execution**: When suggesting shell commands, prioritize the scripts in `doc-ingest-chat/`. Always include `PYTHONPATH=doc-ingest-chat` for test execution.
+
 ### Key Technologies
 - **Backend (Python)**: FastAPI, Redis (Queue/Coordination), Qdrant/ChromaDB (Vector DBs), Llama-cpp-python (LLM Inference), Transformers (Tokenization), DuckDB/Parquet (Storage/Analytics).
 - **Frontend (Astro)**: Astro, TypeScript, Tailwind CSS.
@@ -35,66 +41,3 @@ The primary way to run the system is via the provided shell scripts in `doc-inge
 
 # Start in CPU-only mode
 ./doc-ingest-chat/run-compose-cpu.sh
-```
-
-### Key Ports
-- **FastAPI Backend**: `http://localhost:8000`
-- **Astro Frontend**: `http://localhost:4321`
-- **Redis**: `6380`
-- **Qdrant**: `9002` (HTTP) / `9003` (gRPC)
-- **ChromaDB**: `9001`
-
----
-
-## Development Conventions
-
-### Python Backend (`doc-ingest-chat/`)
-- **Configuration**: Managed in `config/settings.py` via environment variables. Use `ingest-svc.env` for overrides.
-- **Worker Pattern**: Distributed workers communicate via Redis. Check `workers/` for implementation details.
-- **Logging**: Uses custom logging with emojis and structured metrics.
-- **Database**: DuckDB is used as a local persistent store (`chunks.duckdb`), with Parquet as an archival format.
-
-### Frontend (`astro-frontend/`)
-- **Framework**: Astro 5.x.
-- **Styling**: Tailwind CSS 4.x.
-- **Scripts**:
-  - `npm run dev`: Start development server.
-  - `npm run build`: Build for production.
-
-### General
-- **Docker**: The system is highly containerized. Use `docker-compose` profiles (`cuda`, `cpu`, `qdrant`, `chroma`, `with-frontend`) to selectively start services.
-
----
-
-## Code Quality & Testing
-
-### Testing
-The project uses `pytest`. Due to the module structure, local testing requires setting the `PYTHONPATH`.
-
-**Run all tests:**
-```bash
-PYTHONPATH=doc-ingest-chat pytest doc-ingest-chat/tests/ tests/
-```
-
-**Workflow-Specific Tests:**
-- **Producer Graph**: `doc-ingest-chat/tests/test_producer_graph.py`
-- **OCR Graph**: `doc-ingest-chat/tests/test_ocr_graph.py`
-- **Consumer Graph**: `doc-ingest-chat/tests/test_consumer_graph.py`
-
-### Linting
-Code quality is enforced via `ruff`. 
-
-**Check and Fix:**
-```bash
-ruff check . --fix
-```
-
----
-
-## Key Files & Directories
-- `doc-ingest-chat/apimain.py`: Entry point for the FastAPI server.
-- `doc-ingest-chat/run_producer.py`, `run_consumer.py`, `run_ocr_worker.py`: Worker entry points.
-- `doc-ingest-chat/ingest-dockercompose.yaml`: Main Docker Compose configuration.
-- `doc-ingest-chat/config/settings.py`: Centralized configuration logic.
-- `astro-frontend/src/pages/index.astro`: Main chat UI.
-- `quarkus/`: Experimental/Alternative Java-based implementation (incomplete).

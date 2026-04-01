@@ -89,7 +89,9 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
                 
                 metrics = FileMetrics(worker="consumer", file=source_file, queue=queue_name)
                 # Finalize: Process last chunks + Export Parquet + Update DuckDB Status
-                run_consumer_graph(source_file, expected, remaining_chunks, metrics)
+                # CRITICAL: Use process-level lock for finalization
+                with parq_lock:
+                    run_consumer_graph(source_file, expected, remaining_chunks, metrics)
 
             else:
                 if source_file not in timestamps:
@@ -103,14 +105,15 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
                     try:
                         active_batch = buffer[source_file]
                         
-                        # 1. Persist to DuckDB (Disk bound) - SAFETY FIRST
-                        # This ensures we have the data captured even if Qdrant/VRAM fails
-                        append_chunks(active_batch)
+                        # CRITICAL: Use process-level lock for GPU/DB operations
+                        with parq_lock:
+                            # 1. Persist to DuckDB (Disk bound) - SAFETY FIRST
+                            append_chunks(active_batch)
+                            
+                            # 2. Ingest to Qdrant (CPU/GPU bound)
+                            store_chunks_in_db(source_file, active_batch)
                         
-                        # 2. Ingest to Qdrant (CPU/GPU bound)
-                        store_chunks_in_db(source_file, active_batch)
-                        
-                        # 3. CRITICAL: Clear memory IMMEDIATELY
+                        # 3. Clear memory
                         buffer[source_file] = []
                         
                     except Exception as e:

@@ -60,6 +60,34 @@ def test_send_sentinel_node(mock_push, mock_redis, mock_state):
     assert state["status"] == STATUS_ENQUEUED
     mock_push.assert_called_once()
 
+@patch("workers.producer_graph.process_pdf_by_page")
+def test_pdf_extract_node_context_enrichment(mock_process, mock_state):
+    """
+    CRITICAL TEST: Ensures that the [Document: context] header is 
+    actually prepended to chunks in the streaming callback.
+    """
+    from workers.producer_graph import pdf_extract_node
+    
+    mock_state["doc_context"] = "Test Document Persona"
+    
+    # We catch the data being sent to stream_chunks_to_redis
+    with patch("workers.producer_graph.stream_chunks_to_redis", return_value=1) as mock_stream:
+        def side_effect(path, rel, ftype, chunk_callback, **kwargs):
+            # Simulate a utility function yielding a raw chunk
+            chunk_callback([("raw chunk content", "pdfplumber", 1)])
+            
+        mock_process.side_effect = side_effect
+        
+        with patch("workers.producer_graph.is_valid_pdf", return_value=True):
+            pdf_extract_node(mock_state)
+            
+            # Verify that the chunk passed to stream_chunks_to_redis was enriched
+            sent_batch = mock_stream.call_args[0][0]
+            enriched_text = sent_batch[0][0]
+            
+            assert enriched_text == "[Document: Test Document Persona] raw chunk content"
+            assert mock_stream.called
+
 def test_run_ingest_graph_integration():
     job_tuple = ("job1", "src", "rel")
     with patch("workers.producer_graph.get_producer_app") as mock_get:

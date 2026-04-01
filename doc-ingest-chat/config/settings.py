@@ -8,6 +8,7 @@ Configuration settings for the document ingestion system.
 
 import os
 from typing import Optional
+
 from dotenv import load_dotenv
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

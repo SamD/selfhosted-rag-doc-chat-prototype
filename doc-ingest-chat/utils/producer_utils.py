@@ -7,8 +7,8 @@ Refactored for PARALLEL extraction, OCR jobs, and Document Context injection.
 import base64
 import gc
 import json
+import logging
 import re
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -35,7 +35,6 @@ from config.settings import (
 from pdf2image import convert_from_path
 from PIL import Image
 from processors.text_processor import split_doc
-import logging
 from transformers import AutoTokenizer
 from utils.text_utils import is_gibberish, is_low_quality, is_visibly_corrupt
 
@@ -43,22 +42,19 @@ log = logging.getLogger("ingest.producer_utils")
 
 # Global tokenizer and redis client (Lazy initialized)
 _CACHED_TOKENIZER = None
-_TOKENIZER_LOCK = threading.Lock()
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 def get_tokenizer():
     """Lazy initializer for the shared tokenizer."""
     global _CACHED_TOKENIZER
     if _CACHED_TOKENIZER is None:
-        with _TOKENIZER_LOCK:
-            if _CACHED_TOKENIZER is None:
-                log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
-                _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(
-                    EMBEDDING_MODEL_PATH, 
-                    use_fast=True, 
-                    trust_remote_code=True, 
-                    local_files_only=True
-                )
+        log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
+        _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(
+            EMBEDDING_MODEL_PATH, 
+            use_fast=True, 
+            trust_remote_code=True, 
+            local_files_only=True
+        )
     return _CACHED_TOKENIZER
 
 try:

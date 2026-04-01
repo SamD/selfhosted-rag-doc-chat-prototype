@@ -4,10 +4,10 @@ Utility functions for the consumer worker and graph.
 """
 
 import gc
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
-import logging
 import torch
 from config.settings import MAX_CHROMA_BATCH_SIZE, USE_QDRANT
 from more_itertools import chunked

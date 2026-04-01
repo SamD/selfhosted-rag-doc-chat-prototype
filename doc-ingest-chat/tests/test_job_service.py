@@ -13,7 +13,8 @@ def test_job_service_lifecycle(tmp_path):
         job = get_job_status("test.pdf")
         assert job["status"] == STATUS_PROCESSING
         assert job["job_id"] == "job1"
-        assert is_file_processed("test.pdf") is False
+        # is_file_processed now returns True for STATUS_PROCESSING to prevent re-ingestion
+        assert is_file_processed("test.pdf") is True
         
         update_job_status("test.pdf", STATUS_COMPLETED)
         assert is_file_processed("test.pdf") is True

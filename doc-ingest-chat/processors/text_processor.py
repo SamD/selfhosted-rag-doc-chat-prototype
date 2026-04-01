@@ -4,7 +4,6 @@ Text processing functionality.
 """
 
 import hashlib
-
 import logging
 
 from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
@@ -78,11 +77,6 @@ class TextProcessor:
         i = 0
         while i < len(content_tokens):
             last, chunk_str = TextProcessor.make_chunk(prefix_tokens, i, content_tokens, tokenizer, budget, overlap)
-            
-            # Prepend Document Context if provided (Global-to-Local pattern)
-            if doc_context:
-                chunk_str = f"[Document: {doc_context}] {chunk_str}"
-                
             chunks.append(chunk_str)
             i += last
 
@@ -109,7 +103,9 @@ class TextProcessor:
             "source_file",  # Original file relative path
             "type",  # File type: pdf/html/video
             "hash",  # Content hash
-            "engine",  # OCR engine used: "easyocr" or "tesseract"
+            "engine",  # OCR engine used
+            "page",  # Page number
+            "chunk_index",  # Index within the file
         ]
 
         default_values = default_values or {}

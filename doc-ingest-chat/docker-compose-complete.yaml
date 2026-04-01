@@ -75,6 +75,7 @@ services:
       REDIS_OCR_JOB_QUEUE: ocr_processing_job
       REDIS_PORT: "6380"
       RETRIEVER_TOP_K: "5"
+      SUPERVISOR_LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
       SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
       TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
       USE_OLLAMA: "0"
@@ -118,6 +119,11 @@ services:
       - type: bind
         source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
         target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
         read_only: true
         bind: {}
   consumer_worker_gpu:
@@ -195,6 +201,7 @@ services:
       REDIS_OCR_JOB_QUEUE: ocr_processing_job
       REDIS_PORT: "6380"
       RETRIEVER_TOP_K: "5"
+      SUPERVISOR_LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
       SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
       TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
       USE_OLLAMA: "0"
@@ -233,6 +240,11 @@ services:
       - type: bind
         source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
         target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
         read_only: true
         bind: {}
   frontend:
@@ -296,6 +308,9 @@ services:
         source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/astro-frontend
         target: /app
         bind: {}
+      - type: volume
+        target: /app/node_modules
+        volume: {}
   ocr_worker:
     profiles:
       - cuda
@@ -364,6 +379,7 @@ services:
       REDIS_OCR_JOB_QUEUE: ocr_processing_job
       REDIS_PORT: "6380"
       RETRIEVER_TOP_K: "5"
+      SUPERVISOR_LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
       SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
       TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
       USE_OLLAMA: "0"
@@ -412,6 +428,11 @@ services:
       - type: bind
         source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
         target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
         read_only: true
         bind: {}
   producer_worker:
@@ -486,6 +507,7 @@ services:
       REDIS_OCR_JOB_QUEUE: ocr_processing_job
       REDIS_PORT: "6380"
       RETRIEVER_TOP_K: "5"
+      SUPERVISOR_LLM_PATH: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
       SUPPORTED_MEDIA_EXT: .mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv
       TRACK_FILE: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/ingested_files.txt
       USE_OLLAMA: "0"
@@ -524,6 +546,11 @@ services:
       - type: bind
         source: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
         target: /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+        read_only: true
+        bind: {}
+      - type: bind
+        source: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+        target: /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
         read_only: true
         bind: {}
   qdrant:
@@ -599,7 +626,7 @@ services:
     restart: unless-stopped
     volumes:
       - type: bind
-        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/doc-ingest-chat/Docs/qdrant_data
+        source: /home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/qdrant_data
         target: /qdrant/storage
         bind: {}
   redis:
@@ -682,6 +709,7 @@ x-base-service:
     - /tmp/ocr_debug:/tmp/ocr_debug
     - /home/samueldoyle/AI_LOCAL/e5-large-v2:/home/samueldoyle/AI_LOCAL/e5-large-v2:ro
     - /home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf:/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf:ro
+    - /home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf:/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf:ro
 x-cpu-params:
   build:
     args:
@@ -693,6 +721,7 @@ x-cpu-params:
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
     - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+    - SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
     - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
     - VECTOR_DB_PROFILE=qdrant
 x-gpu-params:
@@ -719,6 +748,7 @@ x-gpu-params:
     - PYTHONUNBUFFERED=1
     - EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
     - LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+    - SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
     - INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
     - VECTOR_DB_PROFILE=qdrant
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu

@@ -35,15 +35,15 @@ os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
 Image.MAX_IMAGE_PIXELS = 500_000_000
 MAX_CHROMA_BATCH_SIZE = MAX_CHROMA_BATCH_SIZE_LIMIT
 
-# Queue Rotation State (Shared across processes)
+# Shared State (across processes)
 queue_names = QUEUE_NAMES
 queue_lock = None
 queue_index = None
+gpu_lock = None # Global lock for Supervisor LLM access
 
 def get_next_queue():
     """
     Returns the next queue in a round-robin fashion.
-    Thread-safe and Process-safe via global locks initialized in init_worker.
     """
     global queue_lock, queue_index
     with queue_lock:
@@ -56,58 +56,48 @@ log = setup_logging("ingest_producer.log", include_default_filters=True)
 
 def run_ingest(job_tuple):
     """
-    The target function for the multiprocessing Pool.
-    Delegates the entire ingestion lifecycle to the LangGraph StateMachine.
+    Target for the multiprocessing Pool.
     """
-    # Import here to avoid circular dependencies during process serialization
     from workers.producer_graph import run_ingest_graph
-    return run_ingest_graph(job_tuple)
+    # We pass the global gpu_lock to the graph runner
+    return run_ingest_graph(job_tuple, gpu_lock_obj=gpu_lock)
 
-def init_worker(lock_obj, index_obj):
+def init_worker(q_lock_obj, q_idx_obj, g_lock_obj):
     """
-    Initializes shared state for each worker process in the Pool.
-    Ensures that the queue rotation lock and index are accessible.
+    Initializes shared state for each worker process.
     """
-    global queue_lock, queue_index
-    queue_lock = lock_obj
-    queue_index = index_obj
+    global queue_lock, queue_index, gpu_lock
+    queue_lock = q_lock_obj
+    queue_index = q_idx_obj
+    gpu_lock = g_lock_obj
 
-# Shared primitives for the multiprocessing pool
+# Shared primitives
 lock = Lock()
 index = Value("i", 0)
+global_gpu_lock = Lock() # NEW: Created in parent, shared with all children
 SHUTDOWN = multiprocessing.Event()
 
 def signal_handler(sig, frame):
-    """Graceful shutdown handler for OS signals."""
     log.warning(f"💥 Received signal {sig}, initiating shutdown...")
     SHUTDOWN.set()
 
 def run_tree_watcher(scan_interval=30):
-    """
-    Main loop that watches the INGEST_FOLDER for new files.
-    - Scans directory recursively.
-    - Checks DuckDB to skip already processed files.
-    - Dispatches new work to the multiprocessing pool.
-    """
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        # Use 'fork' for better compatibility with shared CUDA contexts (if applicable)
         multiprocessing.set_start_method("fork")
     except RuntimeError:
         pass
 
-    # Ensure the relational state tracking table exists
     init_job_db()
 
     while not SHUTDOWN.is_set():
         try:
             jobs = []
-            job_id_base = str(uuid.uuid4())[:8] # Correlation ID prefix for the batch
+            job_id_base = str(uuid.uuid4())[:8]
             counter = 0
 
-            # Scan the ingestion directory
             for root, _, files in os.walk(INGEST_FOLDER):
                 for fname in files:
                     if fname.lower().endswith(ALL_SUPPORTED_EXT):
@@ -116,7 +106,6 @@ def run_tree_watcher(scan_interval=30):
                         _ingest_folder = INGEST_FOLDER.decode() if isinstance(INGEST_FOLDER, bytes) else INGEST_FOLDER
                         rel_path = normalize_rel_path(os.path.relpath(full_path, _ingest_folder))
                         
-                        # PERSISTENCE CHECK: Skip files already marked 'completed' in DuckDB
                         if is_file_processed(rel_path):
                             continue
                             
@@ -129,18 +118,15 @@ def run_tree_watcher(scan_interval=30):
 
                 pool = None
                 try:
-                    # Spawn a pool of workers to process files in parallel
                     pool = multiprocessing.Pool(
                         processes=min(4, os.cpu_count()),
                         initializer=init_worker,
-                        initargs=(lock, index),
-                        maxtasksperchild=1, # Refresh process after each job to clear memory/GPU cache
+                        initargs=(lock, index, global_gpu_lock), # PASS LOCK HERE
+                        maxtasksperchild=1,
                     )
 
-                    # Execute the LangGraph workflow for each file
                     for result in pool.imap_unordered(run_ingest, jobs, chunksize=1):
                         if SHUTDOWN.is_set():
-                            log.warning("⛔ Shutdown requested mid-processing")
                             break
                         if result:
                             success += 1

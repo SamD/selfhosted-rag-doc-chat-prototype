@@ -4,10 +4,10 @@ Parquet service for data storage operations.
 Optimized for incremental DuckDB writes and disk-based Parquet exportation.
 """
 
+import logging
 from typing import Any, Dict, List
 
 import duckdb
-import logging
 import pandas as pd
 from config.settings import DUCKDB_FILE, PARQUET_FILE
 from services.job_service import JobService

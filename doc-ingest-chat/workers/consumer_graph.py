@@ -4,10 +4,9 @@ LangGraph implementation of the consumer batch processing workflow.
 Refactored for ZERO-MEMORY archival via DuckDB.
 """
 
-import threading
+import logging
 from typing import Any, Dict, List, Optional, TypedDict
 
-import logging
 from config.settings import MAX_TOKENS
 from langgraph.graph import END, StateGraph
 from services.job_service import STATUS_COMPLETED, STATUS_FAILED, update_job_status
@@ -19,7 +18,6 @@ log = logging.getLogger("ingest.consumer_graph")
 
 # Global cache for the compiled graph
 _COMPILED_CONSUMER_APP = None
-_APP_LOCK = threading.Lock()
 
 class ConsumerState(TypedDict):
     """Represents the state for finalization of a file."""
@@ -119,10 +117,8 @@ def create_consumer_graph():
 def get_consumer_app():
     global _COMPILED_CONSUMER_APP
     if _COMPILED_CONSUMER_APP is None:
-        with _APP_LOCK:
-            if _COMPILED_CONSUMER_APP is None:
-                log.info("🔨 Compiling Consumer LangGraph...")
-                _COMPILED_CONSUMER_APP = create_consumer_graph()
+        log.info("🔨 Compiling Consumer LangGraph...")
+        _COMPILED_CONSUMER_APP = create_consumer_graph()
     return _COMPILED_CONSUMER_APP
 
 def run_consumer_graph(source_file: str, expected_chunks: int, chunks: List[Dict[str, Any]], metrics: Optional[FileMetrics]) -> bool:

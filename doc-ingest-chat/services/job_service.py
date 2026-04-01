@@ -6,12 +6,12 @@ with a relational schema for better state management and restart resilience.
 """
 
 import datetime
+import logging
 import random
 import time
 from typing import Any, Dict, Optional
 
 import duckdb
-import logging
 from config.settings import DUCKDB_FILE
 
 log = logging.getLogger("ingest.job_service")
@@ -115,10 +115,12 @@ class JobService:
     @staticmethod
     def is_processed(file_path: str) -> bool:
         """
-        Helper method used by the tree watcher to skip already handled files.
+        Helper method used by the tree watcher to skip already handled or in-flight files.
         """
         job = JobService.get_job(file_path)
-        return job is not None and job["status"] == STATUS_COMPLETED
+        if job is None:
+            return False
+        return job["status"] in (STATUS_COMPLETED, STATUS_ENQUEUED, STATUS_PROCESSING)
 
 
 # Module-level convenience functions for cleaner imports

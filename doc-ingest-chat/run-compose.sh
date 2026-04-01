@@ -169,12 +169,10 @@ echo "🚀 Launching Docker Compose with profiles: $COMPOSE_FILE_OPTS"
 
 if command -v docker-compose &> /dev/null; then
   echo "💡 Using docker-compose (v2.36.2)"
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
+  docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 elif docker compose version &> /dev/null; then
   echo "💡 Using docker compose"
-  exec docker-compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS config | tee docker-compose-complete.yaml
-  exec docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
+  docker compose -f "$COMPOSE_FILE" $COMPOSE_FILE_OPTS up --build "$@"
 else
   echo "❌ ERROR: Neither docker-compose nor docker compose found"
   exit 1

@@ -3,6 +3,7 @@
 Utility functions for OCR processing.
 """
 
+import logging
 import os
 import time
 
@@ -14,7 +15,6 @@ from config.settings import (
     TESSERACT_PSM,
     TESSERACT_USE_SCRIPT_LATIN,
 )
-import logging
 from PIL import Image
 
 log = logging.getLogger("ingest.ocr_utils")
