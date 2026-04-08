@@ -8,6 +8,7 @@ import json
 import multiprocessing
 import os
 import signal
+import sys
 import traceback
 from multiprocessing import Manager, Pool
 
@@ -70,6 +71,10 @@ def dispatcher(p, shared_state):
 
 def main():
     """Main OCR worker entry point with pre-compilation."""
+    # Debug info
+    print(f"🕵️ OCR Worker Debug: EMBEDDING_MODEL_PATH={os.getenv('EMBEDDING_MODEL_PATH')}")
+    print(f"🕵️ OCR Worker Debug: Python={sys.executable}")
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -88,7 +93,7 @@ def main():
         lock = manager.Lock()
 
         try:
-            num_workers = min(2, os.cpu_count() or 1)
+            num_workers = 2
             log.info(f"🚀 Spawning {num_workers} OCR workers (maxtasksperchild=1)")
 
             with Pool(processes=num_workers, initializer=init_worker, initargs=(lock,), maxtasksperchild=1) as pool:

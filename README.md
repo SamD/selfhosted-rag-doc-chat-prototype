@@ -102,7 +102,7 @@ export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
 # LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
 # Last tested with Phi-3.5-mini
 # https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF
-export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
+export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instruct-Q6_K.gguf
 
 
 # SUPERVISOR_LLM_PATH: Supervisor agent used to create doc and per chunk context

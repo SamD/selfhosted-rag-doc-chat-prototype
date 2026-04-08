@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Gatekeeper & OCR Integration Stability Update**
+  - **In-Process LLM Normalization**: Moved LLM inference from a dedicated subprocess (`LlamaInferenceServer`) into the main `gatekeeper_worker` loop. This resolves `Signal 9` (SIGKILL) issues caused by multiprocessing/CUDA conflicts and simplifies IPC.
+  - **Phased Resource Management**: Separated document extraction (pdfplumber/OCR) from normalization (LLM). PDF resources and image buffers are now explicitly closed and garbage-collected before the LLM is loaded, significantly reducing peak memory usage.
+  - **Robust File Streaming**: Updated `process_chunk` to initialize output files only when the first chunk is ready and uses atomic flushes (`os.fsync`) to prevent 0-byte files on crash.
+  - **Docling Raw Text Extraction**: Updated OCR worker to use `export_to_text()` instead of Markdown, delegating all formatting and normalization logic to the Gatekeeper's GBNF-enforced LLM phase.
+  - **Configurable Inference Timeouts**: Added a 180-second timeout per chunk to prevent indefinite hangs during inference.
+
+### Fixed
+- **Docling 2.85.0 Compatibility**: Updated `get_docling_converter` to use `PdfPipelineOptions` for both PDF and Image formats, resolving an `AttributeError: 'PipelineOptions' object has no attribute 'do_chart_extraction'`.
+- **Worker Logic Error**: Fixed a bug in `gatekeeper_worker.py` where files were moved to `processed` even if normalization failed.
+- **Unit Test Suite**: Fixed indentation and mock argument order in `test_gatekeeper_worker.py`. Resolved module resolution issues in `test_multiprocess_lock_enforcement.py` by moving imports to the top level.
+- **Memory Footprint**: Reduced default `LLAMA_N_CTX` and enforced CPU-only inference for the Gatekeeper in constrained environments to ensure end-to-end completion of large (600+ page) documents.
+
 ### Added - Qdrant Vector Database Support
 
 #### Major Features

@@ -1,6 +1,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+from workers.consumer_worker import consumer_worker
+
 
 @patch("workers.consumer_worker.store_chunks_in_db")
 @patch("workers.consumer_worker.append_chunks")
@@ -9,8 +11,6 @@ def test_consumer_worker_incremental_respects_lock(mock_append, mock_store):
     Ensures that the incremental ingestion logic in the consumer worker
     uses the multiprocessing lock.
     """
-    from workers.consumer_worker import consumer_worker
-
     mock_redis = MagicMock()
     chunk_data = {"source_file": "f1", "chunk": "c1", "id": "i1", "hash": "h1", "type": "pdf"}
 
