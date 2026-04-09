@@ -67,6 +67,7 @@ REQUIRED_VARS=(
   "SUPERVISOR_LLM_PATH:gguf"
   "EMBEDDING_MODEL_PATH:e5"
   "INGEST_FOLDER:dir"
+  "STAGING_FOLDER:dir"
 )
 
 ###################################

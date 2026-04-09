@@ -88,6 +88,9 @@ may take longer than expected, information is updated on the console where docke
 # INGEST_FOLDER: Directory inside the container where files are read for ingestion. Must match the right side of the data volume mount.
 export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
 
+# STAGING_FOLDER: Directory monitored by the gatekeeper for incoming raw files (PDFs) to be normalized.
+export STAGING_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs/staging
+
 # If you want some docs to test with 
 cd $INGEST_FOLDER
 curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
