@@ -10,12 +10,18 @@ def mock_consumer_state():
     return {"source_file": "test.pdf", "expected_chunks": 1, "chunks": [{"chunk": "text", "id": "id1", "source_file": "test.pdf", "hash": "h1", "type": "pdf"}], "metrics": None, "status": "pending", "error": None}
 
 
-def test_validate_remaining_chunks_node_success(mock_consumer_state):
+@patch("workers.consumer_graph.get_tokenizer")
+@patch("workers.consumer_graph.validate_chunk")
+def test_validate_remaining_chunks_node_success(mock_validate, mock_get_tokenizer, mock_consumer_state):
     from workers.consumer_graph import validate_remaining_chunks_node
 
+    mock_get_tokenizer.return_value = MagicMock()
+    mock_validate.return_value = True
+    
     state = validate_remaining_chunks_node(mock_consumer_state)
     assert state["status"] == "processing"
     assert len(state["chunks"]) == 1
+    mock_validate.assert_called_once()
 
 
 @patch("workers.consumer_graph.store_chunks_in_db")

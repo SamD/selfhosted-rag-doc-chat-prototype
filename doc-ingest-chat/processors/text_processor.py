@@ -35,50 +35,51 @@ class TextProcessor:
 
     @staticmethod
     def make_chunk(prefix_tokens, start, full_tokens, tokenizer, budget=512, overlap=50, decode_step=5, log_prefix=""):
-        """Create a chunk from tokens."""
-        chunk = prefix_tokens.copy()
-        end = start
-        last_valid_chunk = ""
-        decode_now = True
+        """
+        Create a chunk from tokens ensuring it fits within the token budget.
+        
+        Args:
+            prefix_tokens: Tokens to prepend to every chunk (e.g. enrichment anchor).
+            start: Start index in full_tokens.
+            full_tokens: The complete tokenized document content.
+            tokenizer: The tokenizer instance.
+            budget: Maximum total tokens allowed (prefix + content).
+            overlap: Token overlap between chunks.
+            decode_step: Step size for checking budget (performance optimization).
+            log_prefix: Prefix for logs.
+            
+        Returns:
+            (consumed_count, decoded_string)
+        """
+        # Prefix is always included
+        prefix_len = len(prefix_tokens)
+        available_budget = budget - prefix_len
+        
+        if available_budget <= 0:
+            log.error(f"{log_prefix}💥 Prefix tokens ({prefix_len}) exceed budget ({budget})!")
+            return 0, ""
 
-        log.debug(f"{log_prefix}🧩 Starting chunk at token {start}")
-
-        for i in range(start, len(full_tokens)):
-            chunk.append(full_tokens[i])
-            end = i + 1
-
-            decode_now = (i - start) % decode_step == 0 or len(chunk) >= (budget - 10)
-
-            if decode_now:
-                decoded = tokenizer.decode(chunk, skip_special_tokens=True).strip()
-                log.debug(f"{log_prefix}🔎 Decoded at token {i}: {len(decoded)} chars")
-
-                if len(decoded) > budget:
-                    log.debug(f"{log_prefix}❌ Chunk at token {i} exceeded {budget} chars — backtracking")
-
-                    # Backtrack until within budget
-                    for j in range(i, start - 1, -1):
-                        test_chunk = prefix_tokens + full_tokens[start:j]
-                        decoded = tokenizer.decode(test_chunk, skip_special_tokens=True).strip()
-                        if len(decoded) <= budget:
-                            log.debug(f"{log_prefix}✅ Found valid chunk ending at token {j - 1} ({len(decoded)} chars)")
-                            return j - start, decoded
-
-                    log.warning(f"{log_prefix}💥 Could not fit any tokens from position {start} under {budget}-char budget")
-                    return 0, ""
-
-                else:
-                    last_valid_chunk = decoded
-
-        log.debug(f"{log_prefix}✅ Final chunk: {len(last_valid_chunk)} chars, {end - start} tokens")
-        return end - start, last_valid_chunk
+        end = min(start + available_budget, len(full_tokens))
+        content_chunk = full_tokens[start:end]
+        
+        # Combined tokens for decoding
+        full_chunk_tokens = prefix_tokens + content_chunk
+        decoded = tokenizer.decode(full_chunk_tokens, skip_special_tokens=True).strip()
+        
+        log.debug(f"{log_prefix}🧩 Created chunk: {len(full_chunk_tokens)} tokens, {len(decoded)} chars")
+        
+        return len(content_chunk), decoded
 
     @staticmethod
-    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=512, overlap=50, page_num=None, document_id=None):
+    def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=None, overlap=50, page_num=None, document_id=None):
         """Split document into chunks with fast hash-based enrichment."""
         tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+        
+        # Use global MAX_TOKENS if budget not provided
+        if budget is None:
+            budget = MAX_TOKENS
 
-        log.info(f"📄 Splitting file: {rel_path}, Page: {page_num}")
+        log.info(f"📄 Splitting file: {rel_path}, Page: {page_num} (Budget: {budget} tokens)")
         content_tokens = tokenizer.encode(text, add_special_tokens=False)
 
         # Final Enrichment Tag: [DOC_A1B2]
@@ -92,16 +93,18 @@ class TextProcessor:
         chunks = []
         i = 0
         while i < len(content_tokens):
-            # Pass the enrichment prefix tokens directly to make_chunk
-            # This guarantees the total chunk (tag + content) <= budget (512)
+            # last is the number of CONTENT tokens consumed
             last, chunk_str = TextProcessor.make_chunk(prefix_tokens, i, content_tokens, tokenizer, budget, overlap)
 
-            if not chunk_str:
+            if not chunk_str or last <= 0:
                 i += 1
                 continue
 
             chunks.append(chunk_str)
-            i += last
+            
+            # Move index forward by (consumed - overlap)
+            # Ensure we always move forward by at least 1
+            i += max(1, last - overlap)
 
         log.info(f"✅ Finished splitting {rel_path}, Page {page_num} → {len(chunks)} chunks")
 
@@ -142,11 +145,14 @@ class TextProcessor:
 
     @staticmethod
     def validate_chunk(chunk: str, tokenizer) -> bool:
-        """Validate if a chunk is acceptable."""
+        """Validate if a chunk is acceptable based on token length."""
         if not isinstance(chunk, str):
             return False
 
-        token_len = len(chunk)
+        # Use actual tokenizer to check length
+        tokens = tokenizer.encode(chunk, add_special_tokens=False)
+        token_len = len(tokens)
+        
         if token_len > MAX_TOKENS:
             log.warning(f"⚠️ Chunk exceeds {MAX_TOKENS} tokens ({token_len}) — dropping")
             return False

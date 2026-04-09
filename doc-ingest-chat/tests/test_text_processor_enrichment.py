@@ -38,7 +38,7 @@ def test_split_doc_with_hash_enrichment():
 
     with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(3, "passage: [DOC_A1B2] chunk content")):
-            chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=document_id)
+            chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=document_id, overlap=0)
 
     assert len(chunks) == 1
     assert chunks[0] == "passage: [DOC_A1B2] chunk content"
@@ -56,7 +56,7 @@ def test_split_doc_without_document_id():
 
     with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(3, "passage: [DOC_UNKNOWN] original content")):
-            chunks, _ = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=None)
+            chunks, _ = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=None, overlap=0)
 
     assert len(chunks) == 1
     assert chunks[0] == "passage: [DOC_UNKNOWN] original content"
@@ -75,7 +75,7 @@ def test_split_doc_preserves_metadata():
 
     with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(1, "passage: [DOC_1234] Content")):
-            chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=doc_id, page_num=5)
+            chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=doc_id, page_num=5, overlap=0)
 
     assert len(metadata) == 1
     assert metadata[0]["source_file"] == rel_path

@@ -7,12 +7,13 @@ Refactored for ZERO-MEMORY archival via DuckDB.
 import logging
 from typing import Any, Dict, List, Optional, TypedDict
 
-from config.settings import MAX_TOKENS
 from langgraph.graph import END, StateGraph
+from processors.text_processor import validate_chunk
 from services.job_service import STATUS_COMPLETED, STATUS_FAILED, update_job_status
 from services.parquet_service import commit_to_parquet
 from utils.consumer_utils import store_chunks_in_db
 from utils.metrics import FileMetrics
+from utils.producer_utils import get_tokenizer
 
 log = logging.getLogger("ingest.consumer_graph")
 
@@ -39,15 +40,16 @@ def validate_remaining_chunks_node(state: ConsumerState) -> ConsumerState:
     log.info(f"🧐 [Node: Final Validate] {source_file} (Processing remaining {len(chunks)} chunks)")
 
     # We no longer fail if len(chunks) != expected here because
-    # many chunks were already processed incrementally.
+    # Many chunks were already processed incrementally.
+    tokenizer = get_tokenizer()
 
     valid_chunks = []
     for entry in chunks:
-        if not isinstance(entry.get("chunk"), str):
-            continue
-        if len(entry["chunk"]) > MAX_TOKENS:
-            continue
-        valid_chunks.append(entry)
+        chunk_text = entry.get("chunk")
+        if validate_chunk(chunk_text, tokenizer):
+            valid_chunks.append(entry)
+        else:
+            log.warning(f"❌ [Node: Final Validate] Dropping oversized/invalid chunk: {entry.get('id')}")
 
     return {**state, "chunks": valid_chunks, "status": "processing"}
 
