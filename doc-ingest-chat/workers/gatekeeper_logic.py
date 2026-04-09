@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from hashlib import blake2b
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import duckdb
 import pdfplumber
@@ -126,10 +126,11 @@ def sliding_window_normalize(file_path: str, chunk_size: int = 6000, overlap: in
     return sliding_window_chunks(raw_text, chunk_size=chunk_size, overlap=overlap)
 
 
-def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dict] = None) -> bool:
+def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dict] = None) -> Tuple[bool, Optional[dict]]:
     """
     Entry point for normalization.
     Separates Extraction and Normalization to manage peak memory usage.
+    Returns (success, first_chunk_metadata)
     """
     try:
         # 1. Setup paths and slugs
@@ -184,7 +185,7 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
 
         if not raw_text_buffer.strip():
             log.error("❌ No text extracted from document. Normalization aborted.")
-            return False
+            return False, None
 
         # 3. NORMALIZATION PHASE (Load LLM)
         log.info(f"🧠 Normalizing content for {file_slug}...")
@@ -192,15 +193,18 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
 
         chunks = sliding_window_chunks(raw_text_buffer, chunk_size=6000, overlap=600)
 
+        first_chunk_meta = None
         for idx, chunk_content in enumerate(chunks):
-            process_chunk(idx, chunk_content, file_path, file_slug, final_md_path)
+            meta = process_chunk(idx, chunk_content, file_path, file_slug, final_md_path)
+            if idx == 0:
+                first_chunk_meta = meta
 
         log.info(f"✅ Document normalized -> {final_md_path}")
-        return True
+        return True, first_chunk_meta
 
     except Exception as e:
         log.error(f"❌ Normalization failed: {e}", exc_info=True)
-        return False
+        return False, None
 
 
 def process_chunk(idx, raw_content, file_path, slug, final_md_path):
@@ -251,6 +255,7 @@ def process_chunk(idx, raw_content, file_path, slug, final_md_path):
         os.fsync(f.fileno())  # Hard flush to disk
 
     log.info(f"📝 Wrote Chunk {idx} to {final_md_path}")
+    return meta
 
 
 def generate_uuid():
@@ -261,12 +266,34 @@ def generate_slug(file_path):
     return get_slug(Path(file_path).stem)
 
 
-def log_to_failure_sink(metadata, error_msg, raw_content):
+def log_gatekeeper_result(slug: str, status: str, metadata: Optional[dict] = None, error_msg: Optional[str] = None):
+    """Logs the result of document normalization to DuckDB for tracking."""
     db_path = settings.GATEKEEPER_FAILURE_DB
+    import json
+
     try:
         con = duckdb.connect(db_path)
-        con.execute("CREATE TABLE IF NOT EXISTS failures (slug VARCHAR, timestamp TIMESTAMP, reason VARCHAR, raw_data TEXT)")
-        con.execute("INSERT INTO failures VALUES (?, ?, ?, ?)", [metadata.get("slug"), datetime.now(timezone.utc), error_msg, raw_content])
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gatekeeper_history (
+                slug VARCHAR, 
+                timestamp TIMESTAMP, 
+                status VARCHAR, 
+                metadata TEXT, 
+                error VARCHAR
+            )
+        """
+        )
+        con.execute(
+            "INSERT INTO gatekeeper_history VALUES (?, ?, ?, ?, ?)",
+            [
+                slug,
+                datetime.now(timezone.utc),
+                status,
+                json.dumps(metadata) if metadata else None,
+                error_msg,
+            ],
+        )
         con.close()
     except Exception as e:
-        log.error(f"Failed to log to failure sink: {e}")
+        log.error(f"Failed to log gatekeeper result: {e}")

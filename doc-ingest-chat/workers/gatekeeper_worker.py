@@ -14,8 +14,7 @@ from utils.logging_config import setup_logging
 from workers.gatekeeper_logic import (
     gatekeeper_extract_and_normalize,
     generate_slug,
-    generate_uuid,
-    log_to_failure_sink,
+    log_gatekeeper_result,
 )
 
 log = setup_logging("gatekeeper.log", include_default_filters=True)
@@ -33,42 +32,30 @@ def gatekeeper_process_file(file_path):
     p = Path(file_path)
     slug = generate_slug(file_path)
 
-    # 1. Media Detection & Tiered Extraction
-    ext = p.suffix.lower()
-
     try:
-        # Assemble initial metadata
-        metadata = {
-            "id": generate_uuid(),
-            "slug": slug,
-            "source_type": "document",
-            "extraction_tier": "unknown",
-            "raw_path": str(p.absolute()),
-        }
+        # 1. Media Detection & Tiered Extraction
+        ext = p.suffix.lower()
 
         # 2. Tiered Processing
         if ext in [".mp4", ".mkv", ".mov", ".mp3", ".wav", ".flac", ".m4a"]:
-            metadata["source_type"] = "video" if ext in [".mp4", ".mkv", ".mov"] else "audio"
-            metadata["extraction_tier"] = "faster-whisper"
             # TODO: Implement batching for media
             log.warning(f"Media batching not yet implemented: {file_path}")
+            log_gatekeeper_result(slug, "SKIPPED", error_msg="Media batching not yet implemented")
             return False
         elif ext in [".html", ".htm"]:
-            metadata["source_type"] = "web"
-            metadata["extraction_tier"] = "trafilatura"
             # TODO: Implement batching for web
             log.warning(f"Web batching not yet implemented: {file_path}")
+            log_gatekeeper_result(slug, "SKIPPED", error_msg="Web batching not yet implemented")
             return False
         elif ext == ".pdf":
-            metadata["source_type"] = "document"
-            metadata["extraction_tier"] = "pdfplumber"
-
             # 3. The 3-Attempt Normalization Loop (for the whole document)
             for attempt in range(1, 4):
                 try:
                     log.info(f"🔄 Full document normalization attempt {attempt} for {slug}")
-                    if gatekeeper_extract_and_normalize(file_path, metadata):
-                        # Success: Move processed file
+                    success, metadata = gatekeeper_extract_and_normalize(file_path)
+                    if success:
+                        # Success: Log and move processed file
+                        log_gatekeeper_result(slug, "SUCCESS", metadata=metadata)
                         processed_dir = Path(settings.STAGING_FOLDER) / "processed"
                         processed_dir.mkdir(exist_ok=True)
                         shutil.move(file_path, processed_dir / p.name)
@@ -80,7 +67,7 @@ def gatekeeper_process_file(file_path):
                     log.error(f"❌ Attempt {attempt} failed for {slug}: {e}")
                     if attempt == 3:
                         # Move to 'failed' folder
-                        log_to_failure_sink(metadata, str(e), "MAX_ATTEMPTS_REACHED")
+                        log_gatekeeper_result(slug, "FAILURE", error_msg=str(e))
                         failed_dir = Path(settings.STAGING_FOLDER) / "failed"
                         failed_dir.mkdir(exist_ok=True)
                         shutil.move(file_path, failed_dir / p.name)
@@ -88,11 +75,12 @@ def gatekeeper_process_file(file_path):
                     continue
         else:
             log.warning(f"Unsupported file type: {file_path}")
+            log_gatekeeper_result(slug, "SKIPPED", error_msg=f"Unsupported file type: {ext}")
             return False
 
     except Exception as fatal_error:
         log.error(f"💥 Fatal error processing {file_path}: {fatal_error}")
-        log_to_failure_sink({"slug": slug, "extraction_tier": "FATAL"}, str(fatal_error), "CRITICAL_FAILURE")
+        log_gatekeeper_result(slug, "ERROR", error_msg=str(fatal_error))
         # Move to 'failed' folder
         failed_dir = Path(settings.STAGING_FOLDER) / "failed"
         failed_dir.mkdir(exist_ok=True)
