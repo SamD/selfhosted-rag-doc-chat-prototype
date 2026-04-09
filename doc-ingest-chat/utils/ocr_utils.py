@@ -11,7 +11,7 @@ import traceback
 from typing import Optional, Tuple
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions, PipelineOptions
+from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
 from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 from PIL import Image
 

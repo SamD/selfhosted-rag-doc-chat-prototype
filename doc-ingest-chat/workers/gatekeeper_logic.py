@@ -1,10 +1,9 @@
+import gc
 import logging
 import os
 import re
-import time
 import unicodedata
 import uuid
-import gc
 from datetime import datetime, timezone
 from hashlib import blake2b
 from pathlib import Path
@@ -26,18 +25,19 @@ log = logging.getLogger("ingest.gatekeeper_logic")
 _MODEL = None
 _CHUNK0_GRAMMAR = None
 
+
 def get_llm():
     global _MODEL, _CHUNK0_GRAMMAR
     if _MODEL is None:
         log.info(f"🚀 Loading GateKeeper Model: {settings.SUPERVISOR_LLM_PATH}")
         _MODEL = Llama(
-            model_path=settings.SUPERVISOR_LLM_PATH, 
-            n_gpu_layers=0, # CPU-only for maximum stability with large files
-            n_ctx=4096, 
-            n_batch=512, 
-            flash_attn=True, 
-            seed=42, 
-            verbose=False
+            model_path=settings.SUPERVISOR_LLM_PATH,
+            n_gpu_layers=0,  # CPU-only for maximum stability with large files
+            n_ctx=4096,
+            n_batch=512,
+            flash_attn=True,
+            seed=42,
+            verbose=False,
         )
         _CHUNK0_GRAMMAR = LlamaGrammar.from_string(CHUNK0_GBNF_STR)
     return _MODEL, _CHUNK0_GRAMMAR
@@ -138,12 +138,12 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
         os.makedirs(settings.INGEST_FOLDER, exist_ok=True)
 
         raw_text_buffer = ""
-        
+
         # 2. EXTRACTION PHASE (No LLM in memory)
         if file_path.lower().endswith(".pdf"):
             if not is_valid_pdf(file_path):
                 raise ValueError(f"Invalid PDF: {file_path}")
-                
+
             log.info(f"📄 Extracting raw text from {file_path}...")
             with pdfplumber.open(file_path) as pdf:
                 total_pages = len(pdf.pages)
@@ -166,7 +166,7 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
                                 t = ocr_text
                             else:
                                 log.error(f"💥 Failed to preprocess page {page_num}")
-                            
+
                             # Explicitly close image objects
                             for img in images:
                                 img.close()
@@ -175,7 +175,7 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
 
                     if t:
                         raw_text_buffer += t + "\n\n"
-            
+
             # Close PDF and force GC before starting LLM inference
             gc.collect()
         else:
@@ -188,10 +188,10 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
 
         # 3. NORMALIZATION PHASE (Load LLM)
         log.info(f"🧠 Normalizing content for {file_slug}...")
-        get_llm() # Lazy load model here
-        
+        get_llm()  # Lazy load model here
+
         chunks = sliding_window_chunks(raw_text_buffer, chunk_size=6000, overlap=600)
-        
+
         for idx, chunk_content in enumerate(chunks):
             process_chunk(idx, chunk_content, file_path, file_slug, final_md_path)
 
@@ -234,15 +234,9 @@ def process_chunk(idx, raw_content, file_path, slug, final_md_path):
     prompt = f"<|im_start|>system\n{system_msg}<|im_end|>\n<|im_start|>user\n{raw_content}<|im_end|>\n<|im_start|>assistant\n{anchor_header}"
 
     log.info(f"🧠 Processing Chunk {idx} (Inference)...")
-    
+
     llm, grammar = get_llm()
-    response = llm(
-        prompt, 
-        max_tokens=max_tokens, 
-        grammar=grammar if use_grammar else None, 
-        stop=stop_tokens, 
-        temperature=0.1
-    )
+    response = llm(prompt, max_tokens=max_tokens, grammar=grammar if use_grammar else None, stop=stop_tokens, temperature=0.1)
 
     content = response["choices"][0]["text"]
     final_text = anchor_header + content
@@ -254,8 +248,8 @@ def process_chunk(idx, raw_content, file_path, slug, final_md_path):
         if not final_text.endswith("\n"):
             f.write("\n")
         f.flush()
-        os.fsync(f.fileno()) # Hard flush to disk
-        
+        os.fsync(f.fileno())  # Hard flush to disk
+
     log.info(f"📝 Wrote Chunk {idx} to {final_md_path}")
 
 
