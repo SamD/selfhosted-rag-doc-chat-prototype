@@ -14,7 +14,7 @@ import pdfplumber
 from config import settings
 from llama_cpp import Llama, LlamaGrammar
 from pdf2image import convert_from_path
-from utils.producer_utils import preprocess_image, send_image_to_ocr
+from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr, is_valid_pdf
 
 # Set CUDA optimization

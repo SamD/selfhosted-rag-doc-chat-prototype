@@ -81,3 +81,31 @@ def test_split_doc_preserves_metadata():
     assert metadata[0]["source_file"] == rel_path
     assert metadata[0]["page"] == 5
     assert chunks[0] == "passage: [DOC_1234] Content"
+
+
+def test_split_markdown_doc():
+    """
+    Verify Markdown-aware splitting with YAML header.
+    """
+    text = """---
+ID: test-id
+Slug: test-slug
+---
+# Title
+Some content here.
+## Section
+More content.
+"""
+    rel_path = "test.md"
+
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.encode.return_value = [1, 2, 3]
+
+    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+        chunks, metadata = TextProcessor.split_markdown_doc(text=text, rel_path=rel_path)
+
+    assert len(chunks) > 0
+    assert metadata[0]["ID"] == "test-id"
+    assert metadata[0]["Slug"] == "test-slug"
+    assert "Header_1" in metadata[0]
+    assert metadata[0]["source_file"] == rel_path

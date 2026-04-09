@@ -12,7 +12,6 @@ import uuid
 from multiprocessing import Manager, Pool
 
 from config.settings import (
-    ALL_SUPPORTED_EXT,
     DEBUG_IMAGE_DIR,
     INGEST_FOLDER,
     QUEUE_NAMES,
@@ -106,7 +105,7 @@ def main(scan_interval=30):
 
                     for root, _, files in os.walk(INGEST_FOLDER):
                         for fname in files:
-                            if fname.lower().endswith(ALL_SUPPORTED_EXT):
+                            if fname.lower().endswith(".md"):
                                 full_path = os.path.join(root, fname)
                                 _ingest_folder = INGEST_FOLDER.decode() if isinstance(INGEST_FOLDER, bytes) else INGEST_FOLDER
                                 rel_path = normalize_rel_path(os.path.relpath(full_path, _ingest_folder))

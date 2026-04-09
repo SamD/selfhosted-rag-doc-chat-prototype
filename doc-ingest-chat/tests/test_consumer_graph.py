@@ -17,7 +17,7 @@ def test_validate_remaining_chunks_node_success(mock_validate, mock_get_tokenize
 
     mock_get_tokenizer.return_value = MagicMock()
     mock_validate.return_value = True
-    
+
     state = validate_remaining_chunks_node(mock_consumer_state)
     assert state["status"] == "processing"
     assert len(state["chunks"]) == 1
