@@ -37,7 +37,7 @@ The Producer is responsible for file discovery and initial text extraction.
 ### 2. The OCR Worker (Computer Vision)
 Handles scanned documents using a distributed worker pool.
 - **Workflow**: Defined in `ocr_graph.py`.
-- **Logic**: Pops base64 images from Redis, decodes them, executes Tesseract OCR, and pushes results back to a dedicated reply key.
+- **Logic**: Pops base64 images from Redis, decodes them, executes Docling (EasyOCR) OCR, and pushes results back to a dedicated reply key.
 - **Efficiency**: Only invoked when the Producer detects a scanned or unreadable page.
 
 ### 3. The Consumer (Ingestion & Storage)

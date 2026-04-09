@@ -25,8 +25,8 @@ os.environ.setdefault("INGEST_FOLDER", str(_ingest))
 os.environ.setdefault("CHROMA_DATA_DIR", str(_chroma))
 os.environ.setdefault("EMBEDDING_MODEL_PATH", str(_e5))
 os.environ.setdefault("LLM_PATH", str(_llama))
-os.environ.setdefault("SUPERVISOR_LLM_PATH", str(_llama)) # Use same dummy path for supervisor
+os.environ.setdefault("SUPERVISOR_LLM_PATH", str(_llama))  # Use same dummy path for supervisor
 
 # Explicit defaults used in tests
 os.environ.setdefault("ALLOW_LATIN_EXTENDED", "true")
-os.environ.setdefault("LATIN_SCRIPT_MIN_RATIO", "0.7") 
+os.environ.setdefault("LATIN_SCRIPT_MIN_RATIO", "0.7")

@@ -7,6 +7,7 @@ from utils.llm_setup import get_chain_or_llama, get_retriever, get_vectorstore
 
 log = logging.getLogger(__name__)
 
+
 class ChromaChat:
     """Core chat logic for conversational retrieval and response as static methods."""
 
@@ -63,7 +64,7 @@ class ChromaChat:
                 messages=messages,
                 temperature=0.0,
                 repeat_penalty=1.1,
-                max_tokens=256 # Forces conciseness
+                max_tokens=256,  # Forces conciseness
             )
             return result["choices"][0]["message"]["content"].strip(), docs
         except Exception as e:
@@ -105,6 +106,7 @@ class ChromaChat:
                 print(f"\n📘 Answer:\n{chat_history[-1]['content']}\n\n🔍 Debug: {debug}")
             except KeyboardInterrupt:
                 break
+
 
 # --- EXPORT ---
 respond = ChromaChat.respond

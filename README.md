@@ -17,7 +17,7 @@ This project solves those issues by implementing a **custom, multi-process distr
 - **🤖 AI & ML**: `Meta-Llama-3.1-8B-Instruct` (via Llama.cpp), `e5-large-v2` (Sentence Transformers).
 - **⚙️ Backend**: Python, FastAPI, Multi-process Workers.
 - **📡 Coordination & Queues**: Redis (Message Broker, Backpressure, Atomicity).
-- **📄 Document Processing**: `pdfplumber` (Extraction), `Tesseract OCR` (Fallback), `transformers` (Tokenization).
+- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Fallback), `transformers` (Tokenization).
 - **💾 Storage & Analytics**: `Qdrant` / `ChromaDB` (Vector Search), `DuckDB` (Metadata Analytics), `Parquet` (Archival).
 - **🎨 Frontend**: Astro, Tailwind CSS.
 
@@ -33,7 +33,7 @@ The **Producer worker** is designed for massive scale. It can scan an `INGEST_FO
 Text is extracted rapidly using `pdfplumber`. Instead of simple character-based splitting, we use a **token-aware tokenizer** (`transformers.AutoTokenizer`) to ensure chunks are perfectly sized for the `e5-large-v2` embedding model.
 
 #### **Step 3: Intelligent OCR Fallback**
-If text extraction fails (e.g., a scanned image PDF or corrupted encoding), the system automatically triggers an **OCR fallback**. Those specific pages are routed to a dedicated **Tesseract OCR Worker**, ensuring no data is missed, regardless of the source quality.
+If text extraction fails (e.g., a scanned image PDF or corrupted encoding), the system automatically triggers an **OCR fallback**. Those specific pages are routed to a dedicated **Docling OCR Worker**, ensuring no data is missed, regardless of the source quality.
 
 #### **Step 4: Redis Queueing & Atomicity**
 All extracted chunks are enqueued in **Redis**. This acts as our distributed coordinator, providing:
@@ -56,7 +56,7 @@ The **Consumer worker** pulls batches of chunks from Redis, embeds them, and per
 | **Query latency (p50)** | ~400ms (Embedding + Retrieval + Generation) |
 | **Query latency (p99)** | ~1200ms |
 | **Vector DB capacity** | Tested with 10K+ chunks, sub-second retrieval |
-| **OCR processing** | 2-4 seconds per scanned page (Tesseract) |
+| **OCR processing** | 2-4 seconds per scanned page (Docling EasyOCR) |
 | **ChromaDB embedding** | 3-5 seconds per batch (75 chunks) |
 
 ---
@@ -108,7 +108,7 @@ export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instr
 # SUPERVISOR_LLM_PATH: Supervisor agent used to create doc and per chunk context
 # Last tested with Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
 # https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
-export SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
+export SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instruct-Q6_K.gguf
 
 # Persistence Configuration
 # CHROMA_DATA_DIR: Where ChromaDB persisted data is stored.

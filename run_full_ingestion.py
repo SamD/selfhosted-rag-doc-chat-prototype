@@ -1,146 +1,67 @@
-import datetime
-import logging
 import os
-import re
-import uuid
+import subprocess
+import sys
 import time
-from pathlib import Path
 
-import duckdb
-import mmh3
-from outlines import models, regex, Generator
-from llama_cpp import Llama
-import pdfplumber
-from config import settings
-from utils.producer_utils import fallback_ocr
-from utils.text_utils import is_valid_pdf
+# 1. Configuration (EXACT PATHS FROM DISK)
+PROJECT_ROOT = os.getcwd()
+PYTHON_EXE = sys.executable  # Path to the venv python
+MODEL_PATH_PHI = "/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instruct-Q6_K.gguf"
+INGEST_DIR = os.path.join(PROJECT_ROOT, "Docs")
+EMBEDDING_MODEL_PATH = "/home/samueldoyle/AI_LOCAL/e5-large-v2"
 
-# Setup dedicated logger for the full run
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.FileHandler("gatekeeper_full_run.log"), logging.StreamHandler()]
-)
-log = logging.getLogger("ingest.gatekeeper_full")
+# Environment variables common to all processes
+ENV = os.environ.copy()
+ENV["INGEST_FOLDER"] = INGEST_DIR
+ENV["EMBEDDING_MODEL_PATH"] = EMBEDDING_MODEL_PATH
+ENV["LLM_PATH"] = MODEL_PATH_PHI
+ENV["SUPERVISOR_LLM_PATH"] = MODEL_PATH_PHI
+ENV["LLAMA_N_CTX"] = "16384"
+ENV["REDIS_HOST"] = "localhost"
+ENV["REDIS_PORT"] = "6379"
+ENV["SKIP_LOAD_DOTENV"] = "true"
+ENV["PYTHONPATH"] = os.path.join(PROJECT_ROOT, "doc-ingest-chat")
 
-# markdown_polymorphic_regex definition for Outlines
-markdown_full_regex = r"""---
-ID: [a-f0-9\-]+
-Slug: [a-z0-9\-]+
-Source-Type: (document|web|video)
----
 
-# [^\n]+
+def main():
+    print("🚀 Starting unified ingestion environment...")
+    print(f"📁 INGEST_FOLDER: {INGEST_DIR}")
+    print(f"🧬 EMBEDDING_MODEL_PATH: {EMBEDDING_MODEL_PATH}")
+    print(f"🐍 Python: {PYTHON_EXE}")
 
-(## [^\n]+\n\n|### [^\n]+\n\n|(\* [^\n]+\n)+|(\[ [0-9]{2}:[0-9]{2} \] [^\n]+\n\n)|(\| ([^|]+\|)+\n\| (--- \|)+\n(\| ([^|]+\|)+\n)+)|[^\n]+\n\n)+
-""".strip()
+    # 2. Start OCR Worker in background
+    print("🛰️ Launching OCR Worker...")
+    stdout_log = open("ocr_worker_stdout.log", "w", buffering=1)
+    stderr_log = open("ocr_worker_stderr.log", "w", buffering=1)
 
-# Regex for subsequent batches (just the blocks)
-markdown_content_regex = r"""(## [^\n]+\n\n|### [^\n]+\n\n|(\* [^\n]+\n)+|(\[ [0-9]{2}:[0-9]{2} \] [^\n]+\n\n)|(\| ([^|]+\|)+\n\| (--- \|)+\n(\| ([^|]+\|)+\n)+)|[^\n]+\n\n)+
-""".strip()
+    ocr_process = subprocess.Popen([PYTHON_EXE, "doc-ingest-chat/run_ocr_worker.py"], env=ENV, stdout=stdout_log, stderr=stderr_log)
 
-_MODEL = None
-_GEN_FULL = None
-_GEN_CONTENT = None
-
-def get_model():
-    global _MODEL
-    if _MODEL is None:
-        log.info(f"🚀 Loading Model: {settings.SUPERVISOR_LLM_PATH}")
-        llm = Llama(
-            model_path=settings.SUPERVISOR_LLM_PATH,
-            n_gpu_layers=-1,
-            n_ctx=8192,
-            seed=42,
-            verbose=False
-        )
-        _MODEL = models.LlamaCpp(llm, chat_mode=False)
-    return _MODEL
-
-def get_generator(mode="full"):
-    global _GEN_FULL, _GEN_CONTENT
-    model = get_model()
-    if mode == "full":
-        if _GEN_FULL is None:
-            log.info("⚙️ Compiling Full Schema FSM (this takes a moment)...")
-            _GEN_FULL = Generator(model, regex(markdown_full_regex))
-        return _GEN_FULL
+    # Give it a moment to start
+    time.sleep(10)
+    if ocr_process.poll() is not None:
+        print("❌ OCR Worker failed to start. Check ocr_worker_stderr.log")
+        return
     else:
-        if _GEN_CONTENT is None:
-            log.info("⚙️ Compiling Content Schema FSM...")
-            _GEN_CONTENT = Generator(model, regex(markdown_content_regex))
-        return _GEN_CONTENT
+        print(f"✅ OCR Worker running (PID: {ocr_process.pid})")
 
-def is_at_boundary(text: str) -> bool:
-    if not text: return True
-    text = text.strip()
-    return any(text.endswith(char) for char in [".", "!", "?", "\n\n"])
+    # 3. Start Normalization Script
+    print("📖 Starting Full Normalization...")
+    try:
+        subprocess.run([PYTHON_EXE, "run_full_normalization.py"], env=ENV, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Normalization failed with exit code {e.returncode}")
+    except KeyboardInterrupt:
+        print("\n🛑 Stopping...")
+    finally:
+        print("🧹 Cleaning up processes...")
+        ocr_process.terminate()
+        try:
+            ocr_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            ocr_process.kill()
+        stdout_log.close()
+        stderr_log.close()
 
-def normalize_batch(raw_content: str, metadata: dict, is_first: bool):
-    generator = get_generator("full" if is_first else "content")
-    
-    if is_first:
-        prompt = f"""<|im_start|>system
-Normalize this RAW CONTENT into Markdown. Start with metadata header '---'.<|im_end|>
-<|im_start|>user
-ID: {metadata['id']}
-Slug: {metadata['slug']}
-Source-Type: {metadata['source_type']}
-RAW CONTENT:
-{raw_content}
-<|im_end|>
-<|im_start|>assistant
-"""
-    else:
-        prompt = f"""<|im_start|>system
-Continue normalizing into Markdown blocks. NO header.<|im_end|>
-<|im_start|>user
-RAW CONTENT:
-{raw_content}
-<|im_end|>
-<|im_start|>assistant
-"""
-
-    output = generator(prompt, max_tokens=4096, temperature=0.1)
-    if not output.endswith("\n\n"): output += "\n\n"
-    return output
-
-def process_whole_pdf(file_path, output_path):
-    metadata = {
-        "id": str(uuid.uuid4()),
-        "slug": "outline-of-history-complete",
-        "source_type": "document",
-        "extraction_tier": "pdfplumber"
-    }
-    
-    batch_size = 5
-    current_text = ""
-    pages_in_batch = 0
-    is_first = True
-    
-    with pdfplumber.open(file_path) as pdf:
-        total = len(pdf.pages)
-        for i in range(total):
-            page_text = pdf.pages[i].extract_text()
-            if page_text:
-                current_text += page_text + "\n"
-                pages_in_batch += 1
-            
-            should_proc = (i == total - 1) or (pages_in_batch >= batch_size and is_at_boundary(current_text)) or (pages_in_batch >= batch_size * 2)
-            
-            if should_proc and current_text.strip():
-                log.info(f"⏳ Processing pages {i-pages_in_batch+2} to {i+1} of {total}...")
-                start_time = time.time()
-                normalized = normalize_batch(current_text, metadata, is_first)
-                
-                with open(output_path, "a" if not is_first else "w") as f:
-                    f.write(normalized)
-                
-                log.info(f"✅ Batch completed in {time.time()-start_time:.1f}s")
-                is_first = False
-                current_text = ""
-                pages_in_batch = 0
 
 if __name__ == "__main__":
-    os.environ["SUPERVISOR_LLM_PATH"] = "/home/samueldoyle/AI_LOCAL/Models/Qwen-3/Qwen3-8B-Q6_K.gguf"
-    process_whole_pdf("Docs/outline_of_history_pt1.pdf", "FINAL_outline_of_history.md")
+    main()

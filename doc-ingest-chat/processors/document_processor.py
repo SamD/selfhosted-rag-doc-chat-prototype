@@ -98,12 +98,11 @@ class DocumentProcessor:
             pil_image = pil_image.resize(new_size, Image.LANCZOS)
 
         np_image = np.array(pil_image)
-        log.debug(f"PIL size: w: {w}, h: {h}")
-        log.debug(f"NumPy shape: {np_image.shape}")
-
-        # Convert to grayscale
-        np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
-
+        if len(np_image.shape) == 3:
+            if np_image.shape[2] == 4:  # RGBA
+                np_image = cv2.cvtColor(np_image, cv2.COLOR_RGBA2GRAY)
+            else:  # RGB
+                np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
         return np_image
 
     @staticmethod

@@ -1,43 +1,64 @@
-# GEMINI.md - Project Context & Instructions
+# Project Specification: Local RAG Ingestion Feature
 
-## Project Overview
-This project is a **Scalable RAG (Retrieval-Augmented Generation) Pipeline** designed for distributed document ingestion and chat. It handles mixed-quality PDFs (scanned + digital), HTML, and large document collections with automatic quality detection and OCR fallback.
-
-## Agent Instructions
-- **Subagent Delegation**: 
-    - Use `@researcher` for searching latest documentation for example (Astro 5.x, FastAPI, redis, qdrant, chromadb) as wella as Python and HuggingFace AI and other supporting libraries
-    - Use `@analyzer` for deep code analysis or refactoring tasks.
-- **Execution**: When suggesting shell commands, prioritize the scripts in `doc-ingest-chat/`. Always include `PYTHONPATH=doc-ingest-chat` for test execution.
-
-### Key Technologies
-- **Backend (Python)**: FastAPI, Redis (Queue/Coordination), Qdrant/ChromaDB (Vector DBs), Llama-cpp-python (LLM Inference), Transformers (Tokenization), DuckDB/Parquet (Storage/Analytics).
-- **Frontend (Astro)**: Astro, TypeScript, Tailwind CSS.
-- **OCR/Processing**: Tesseract OCR, PDFPlumber.
-- **Infrastructure**: Docker Compose, Redis (port 6380).
-
-### Architecture
-1. **Producer Worker**: Extracts text from documents, detects quality, and enqueues chunks into Redis.
-2. **OCR Worker**: Handles OCR fallback for scanned pages using Tesseract.
-3. **Consumer Worker**: Embeds chunks and stores them in the vector database (Qdrant or ChromaDB).
-4. **API Service**: Provides endpoints for chat and status, performing RAG by retrieving context from the vector DB and generating responses via a local LLM.
-5. **Astro Frontend**: A web-based chat interface.
+## 1. Overview
+* **Feature Status:** Active Implementation
+* **Primary Objective:** Local document ingestion with environment-specific parsing strategies.
+* **Target Environment:** Local / Air-Gapped (CPU Only)
+* **Main Producer Worker:** Primary ingestion logic (Text-based).
+* **OCR Worker (Fallback):** Docling with EasyOCR backend (Image/Scan-based).
+* **Staging Environment:** phi-4-mini (Isolated staging/experimental parsing only).
 
 ---
 
-## Building and Running
+## 2. Technical Architecture
+### Logic Flow
+1. **Producer Worker:** Main path for processing searchable document streams.
+2. **OCR Worker (Fallback):** Triggered by the producer via `Docling[easyocr]` for non-searchable assets.
+3. **Staging Environment:** Isolated `phi-4-mini` instance for testing high-reasoning extraction.
+4. **Deduplication:** `MurmurHash` collision detection on normalized Markdown.
+5. **Persistence:** Unique chunks pushed to local Redis.
 
-### Prerequisites
-- **Models**:
-  - Embedding Model: `e5-large-v2` (must be downloaded and pointed to by `EMBEDDING_MODEL_PATH`).
-  - LLM: GGUF format (e.g., Llama-3.1-8B), pointed to by `LLM_PATH`.
-- **Environment Variables**: Defined in `doc-ingest-chat/ingest-svc.env` or exported in shell.
+---
 
-### Launching the System
-The primary way to run the system is via the provided shell scripts in `doc-ingest-chat/`:
+## 3. Escalation Protocol (Agent Interaction)
+When implementation is blocked or execution is required, utilize these specific agents:
 
-```bash
-# Start the full stack (Default: GPU/CUDA + Qdrant)
-./doc-ingest-chat/run-compose.sh
+* **@researcher:** Use for **External Knowledge**.
+   * *Tasks:* Hunting specific library versions, finding `Docling` documentation, or solving `uv` dependency conflicts.
+   * *Trigger:* "How do I configure EasyOCR for CPU-only in Docling 3.x?"
 
-# Start in CPU-only mode
-./doc-ingest-chat/run-compose-cpu.sh
+* **@analyzer:** Use for **Internal System Logic**.
+   * *Tasks:* Debugging the `ocr_worker` hand-off, optimizing `MurmurHash` collision logic, or diagnosing Redis queue bottlenecks.
+   * *Trigger:* "Why is the producer worker failing to hand off image-based PDFs to the ocr_worker?"
+
+* **@coder:** Use for **Implementation & Refactoring**.
+   * *Tasks:* Writing the actual Python code for the `ocr_worker`, updating `pyproject.toml` via `uv`, or refactoring the ingestion loop.
+   * *Trigger:* "@coder, implement the Docling fallback logic in the ingestion service using the CPU-only configuration."
+
+---
+
+## 4. Implementation Plan
+### Phase 1: Main Producer & OCR Worker
+* [ ] Implement `Docling` + `EasyOCR` fallback logic within the `ocr_worker`.
+* [ ] Suppress `EasyOCR` logging to prevent root logger hijacking.
+
+### Phase 2: Staging Implementation
+* [ ] Deploy `phi-4-mini` in the staging environment.
+* [ ] benchmark SLM output against standard Markdown extraction.
+
+### Phase 3: Core Pipeline
+* [ ] Finalize `MurmurHash` integration for chunk-level deduplication.
+* [ ] Verify stability in a fully air-gapped configuration.
+
+---
+
+## 5. Factual Constraints
+* **Environment Isolation:** `phi-4-mini` is strictly for staging; do not leak SLM logic into the main producer worker.
+* **No Cloud:** All tools must run locally on the M4 Neo (CPU Optimized).
+* **Package Management:** Use `uv` for all dependency resolutions.
+
+---
+
+## 6. Revision History
+* **2026-04-07:** Integrated Docling/EasyOCR fallback; set phi-4-mini to Staging only.
+* **2026-04-07:** Defined Escalation Protocol for @researcher and @analyzer agents.

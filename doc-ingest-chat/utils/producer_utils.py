@@ -18,7 +18,6 @@ import numpy as np
 import pdfplumber
 import redis
 import torch
-import whisperx
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
 from config.settings import (
@@ -36,7 +35,9 @@ from pdf2image import convert_from_path
 from PIL import Image
 from processors.text_processor import split_doc
 from transformers import AutoTokenizer
-from utils.text_utils import is_gibberish, is_low_quality, is_visibly_corrupt
+from utils.text_utils import (
+    is_bad_ocr,
+)
 
 log = logging.getLogger("ingest.producer_utils")
 
@@ -45,21 +46,21 @@ _CACHED_TOKENIZER = None
 _REDIS_CLIENT_CACHE = None
 
 
+def get_tokenizer():
+    """Lazy initializer for the shared tokenizer."""
+    global _CACHED_TOKENIZER
+    if _CACHED_TOKENIZER is None:
+        log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
+        _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+    return _CACHED_TOKENIZER
+
+
 def get_redis_client():
     """Lazy initializer for the Redis client to ensure fork safety."""
     global _REDIS_CLIENT_CACHE
     if _REDIS_CLIENT_CACHE is None:
         _REDIS_CLIENT_CACHE = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     return _REDIS_CLIENT_CACHE
-
-
-def get_tokenizer():
-    """Lazy initializer for the shared tokenizer."""
-    global _CACHED_TOKENIZER
-    if _CACHED_TOKENIZER is None:
-        log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
-        _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH, use_fast=True, trust_remote_code=True, local_files_only=True)
-    return _CACHED_TOKENIZER
 
 
 try:
@@ -73,10 +74,14 @@ compute_type = COMPUTE_TYPE
 
 
 def get_whisper_model():
+    import whisperx
+
     return whisperx.load_model("large-v2", device, compute_type=compute_type)
 
 
 def extract_text_from_media(filepath):
+    import whisperx
+
     if not filepath.lower().endswith(SUPPORTED_MEDIA_EXT):
         raise ValueError(f"Unsupported file type: {filepath}")
     log.info(f" 🎥 Processing media {filepath}")
@@ -95,19 +100,21 @@ def extract_text_from_media(filepath):
             del model
 
 
-def is_bad_ocr(text):
-    tokenizer = get_tokenizer()
-    return not text or not text.strip() or is_gibberish(text) or is_visibly_corrupt(text) or is_low_quality(text, tokenizer)
-
-
 def preprocess_image(pil_image):
+    if pil_image is None:
+        log.error("💥 preprocess_image received None")
+        return None
     w, h = pil_image.size
     if max(w, h) > MAX_OCR_DIM:
         scale = MAX_OCR_DIM / max(w, h)
         new_size = (int(w * scale), int(h * scale))
         pil_image = pil_image.resize(new_size, Resample.LANCZOS)
     np_image = np.array(pil_image)
-    np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
+    if len(np_image.shape) == 3:
+        if np_image.shape[2] == 4:  # RGBA
+            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGBA2GRAY)
+        else:  # RGB
+            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
     return np_image
 
 

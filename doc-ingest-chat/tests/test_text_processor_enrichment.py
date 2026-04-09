@@ -22,7 +22,7 @@ def test_get_document_id():
     file_bytes = b"test content"
     doc_id = TextProcessor.get_document_id(file_bytes)
     assert doc_id.startswith("DOC_")
-    assert len(doc_id) == 12 # DOC_ + 8 chars
+    assert len(doc_id) == 12  # DOC_ + 8 chars
 
 
 def test_split_doc_with_hash_enrichment():

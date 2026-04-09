@@ -272,7 +272,7 @@ def _make_np_image(h: int = 64, w: int = 64) -> np.ndarray:
 def test_send_image_to_ocr_pushes_job_to_redis():
     """A JSON job is pushed to the ocr_processing_job queue."""
     np_image = _make_np_image()
-    reply_payload = {"text": "extracted", "rel_path": "doc.pdf", "page_num": 1, "engine": "tesseract", "job_id": "xyz"}
+    reply_payload = {"text": "extracted", "rel_path": "doc.pdf", "page_num": 1, "engine": "docling_easyocr", "job_id": "xyz"}
     mock_redis = _make_mock_redis(reply_payload)
 
     DocumentProcessor.send_image_to_ocr(np_image, "doc.pdf", 1, mock_redis)
@@ -305,7 +305,7 @@ def test_send_image_to_ocr_job_includes_image_data():
 def test_send_image_to_ocr_waits_on_reply_key():
     """blpop is called with the reply key derived from the job_id."""
     np_image = _make_np_image()
-    reply_payload = {"text": "result", "rel_path": "a.pdf", "page_num": 1, "engine": "tesseract", "job_id": "j1"}
+    reply_payload = {"text": "result", "rel_path": "a.pdf", "page_num": 1, "engine": "docling_easyocr", "job_id": "j1"}
     mock_redis = _make_mock_redis(reply_payload)
 
     DocumentProcessor.send_image_to_ocr(np_image, "a.pdf", 1, mock_redis)
@@ -409,7 +409,7 @@ def test_process_pdf_by_page_empty_page_triggers_ocr_fallback():
     mock_pdf = _make_pdfplumber_ctx([""])
     mock_tokenizer = MagicMock()
     mock_redis = MagicMock()
-    ocr_result = ("OCR extracted text", "doc.pdf", 1, "tesseract", "job1")
+    ocr_result = ("OCR extracted text", "doc.pdf", 1, "docling_easyocr", "job1")  # dummy, will be unpacked correctly in most tests
     split_result = (["ocr_chunk"], [{"source_file": "doc.pdf"}])
     fake_pil = _make_rgb_image(100, 100)
 
@@ -431,7 +431,7 @@ def test_process_pdf_by_page_bad_ocr_text_triggers_fallback():
     mock_pdf = _make_pdfplumber_ctx(["ÃÂ garbled text ÂÃ"])
     mock_tokenizer = MagicMock()
     mock_redis = MagicMock()
-    ocr_result = ("Clean OCR text here.", "doc.pdf", 1, "tesseract", "job2")
+    ocr_result = ("Clean OCR text here.", "doc.pdf", 1, "docling_easyocr", "job1")  # dummy
     split_result = (["clean_chunk"], [{"source_file": "doc.pdf"}])
     fake_pil = _make_rgb_image(100, 100)
 
@@ -453,7 +453,7 @@ def test_process_pdf_by_page_ocr_returns_garbage_skips_page():
     mock_pdf = _make_pdfplumber_ctx([""])
     mock_tokenizer = MagicMock()
     mock_redis = MagicMock()
-    ocr_result = ("ÃÃÂ garbage", "doc.pdf", 1, "tesseract", "job3")
+    ocr_result = ("ÃÃÂ garbage", "doc.pdf", 1, "docling_easyocr", "job1")  # dummy
     fake_pil = _make_rgb_image(100, 100)
 
     with (
