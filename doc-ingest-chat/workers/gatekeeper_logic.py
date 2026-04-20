@@ -14,6 +14,7 @@ import pdfplumber
 from config import settings
 from llama_cpp import Llama, LlamaGrammar
 from pdf2image import convert_from_path
+from utils.llm_setup import RemoteLlama
 from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr, is_valid_pdf
 
@@ -29,17 +30,23 @@ _CHUNK0_GRAMMAR = None
 def get_llm():
     global _MODEL, _CHUNK0_GRAMMAR
     if _MODEL is None:
-        log.info(f"🚀 Loading GateKeeper Model: {settings.SUPERVISOR_LLM_PATH}")
-        _MODEL = Llama(
-            model_path=settings.SUPERVISOR_LLM_PATH,
-            n_gpu_layers=0,  # CPU-only for maximum stability with large files
-            n_ctx=4096,
-            n_batch=512,
-            flash_attn=True,
-            seed=42,
-            verbose=False,
-        )
-        _CHUNK0_GRAMMAR = LlamaGrammar.from_string(CHUNK0_GBNF_STR)
+        model_path = settings.SUPERVISOR_LLM_PATH
+        if model_path.startswith(("http://", "https://")):
+            log.info(f"🚀 Connecting to Remote GateKeeper Model: {model_path}")
+            _MODEL = RemoteLlama(base_url=model_path)
+            _CHUNK0_GRAMMAR = CHUNK0_GBNF_STR  # Remote server expects string GBNF
+        else:
+            log.info(f"🚀 Loading Local GateKeeper Model: {model_path}")
+            _MODEL = Llama(
+                model_path=model_path,
+                n_gpu_layers=0,  # CPU-only for maximum stability with large files
+                n_ctx=4096,
+                n_batch=512,
+                flash_attn=True,
+                seed=42,
+                verbose=False,
+            )
+            _CHUNK0_GRAMMAR = LlamaGrammar.from_string(CHUNK0_GBNF_STR)
     return _MODEL, _CHUNK0_GRAMMAR
 
 

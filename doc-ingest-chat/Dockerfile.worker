@@ -1,9 +1,15 @@
 # Builder stage
 FROM python:3.11.11-bookworm AS builder
 
-COPY ollama-requirements.txt .
-RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r ollama-requirements.txt
+# Install uv
+RUN pip install --upgrade pip && pip install uv
+
+# Copy the pyproject.toml from the project root into the container
+# Assuming the build context is the project root
+COPY pyproject.toml .
+
+# Install dependencies using uv
+RUN uv pip install --system --no-cache-dir -r pyproject.toml
 
 # Runner stage
 FROM python:3.11.11-bookworm AS runner
