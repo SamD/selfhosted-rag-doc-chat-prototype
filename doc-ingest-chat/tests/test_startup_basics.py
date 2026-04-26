@@ -10,7 +10,7 @@ def _set_minimal_env(monkeypatch, tmp_path):
     for p in (ingest, chroma, e5, llama):
         p.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setenv("INGEST_FOLDER", str(ingest))
+    monkeypatch.setenv("DEFAULT_DOC_INGEST_ROOT", str(ingest))
     monkeypatch.setenv("CHROMA_DATA_DIR", str(chroma))
     monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(e5))
     monkeypatch.setenv("LLM_PATH", str(llama))

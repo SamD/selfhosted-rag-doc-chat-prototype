@@ -7,77 +7,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
-- **Gatekeeper & OCR Integration Stability Update**
-  - **In-Process LLM Normalization**: Moved LLM inference from a dedicated subprocess (`LlamaInferenceServer`) into the main `gatekeeper_worker` loop. This resolves `Signal 9` (SIGKILL) issues caused by multiprocessing/CUDA conflicts and simplifies IPC.
-  - **Phased Resource Management**: Separated document extraction (pdfplumber/OCR) from normalization (LLM). PDF resources and image buffers are now explicitly closed and garbage-collected before the LLM is loaded, significantly reducing peak memory usage.
-  - **Robust File Streaming**: Updated `process_chunk` to initialize output files only when the first chunk is ready and uses atomic flushes (`os.fsync`) to prevent 0-byte files on crash.
-  - **Docling Raw Text Extraction**: Updated OCR worker to use `export_to_text()` instead of Markdown, delegating all formatting and normalization logic to the Gatekeeper's GBNF-enforced LLM phase.
-  - **Configurable Inference Timeouts**: Added a 180-second timeout per chunk to prevent indefinite hangs during inference.
+- **Database-Driven Lifecycle State Machine**
+  - **Atomic State Transitions**: Replaced filesystem-only monitoring with a DuckDB-backed `ingestion_lifecycle` registry. Files now move physically between stage directories (`staging/`, `preprocessing/`, `ingestion/`, `consuming/`, `success/`) only after successful atomic "Claim" and "Transition" database updates.
+  - **Relational Resilience**: Implemented millisecond-precision tracking for every phase of a document's journey, including automatic error logging and worker identification.
+- **Zero-Memory Persistent Staging**
+  - **DuckDB Buffer Layer**: Refactored the Consumer to immediately persist incoming chunks to a `staged_chunks` table instead of holding them in RAM. This enables massive (1000+ page) document processing without OOM risk.
+  - **High-Performance Pandas Batching**: Implemented `stage_chunks` using Pandas-driven batch inserts to resolve DuckDB lock contention and maximize ingestion throughput.
+  - **Atomic Vector Persistence**: Documents are only upserted to Qdrant/ChromaDB as a single unit after a `file_end` sentinel is verified against the staged data, ensuring zero partial-visibility for RAG.
+- **High-Fidelity Page Anchoring**
+  - **Structural Tags**: Implemented injection of `### [INTERNAL_PAGE_X]` anchors into the Markdown normalization stream.
+  - **Robust Anchor Extraction**: Refactored the Producer to scan all metadata levels and hierarchical headers to extract these anchors, ensuring 100% accurate page-level metadata for every chunk.
+- **Hardened Token Budgeting**
+  - **Conservative Safety Margin**: Lowered the hierarchical splitter budget to **450 tokens** to accommodate mandatory RAG prefixes and model special tokens.
+  - **Zero-Drop Truncation Policy**: Replaced the "Drop if Oversized" boolean validator with a "Hard Truncation" filter that forcibly caps chunks at 511 tokens, ensuring 100% data persistence.
+  - **Special-Token Parity**: Synchronized length calculations between Producer and Consumer to use `add_special_tokens=True`, ensuring mathematical parity with the embedding model's actual requirements.
+- **Interactive RAG UI Enhancements**
+  - **Clickable Document Citations**: Implemented a static file route (`/files`) in the FastAPI backend to serve ingested PDFs directly. 
+  - **Markdown Link Mapping**: Refactored `chat_utils.py` and the AstroJS frontend to transform plain-text citations into interactive Markdown links pointing to the exact page of the original source.
+  - **Unified User Prompt**: Re-architected RAG and Normalization prompts to use a single User-role message, significantly improving focus and reducing "Note:" hallucinations for smaller models (0.5B / 3.8B).
+  - **Underscore-Aware Anchor Parsing**: Updated regex logic to correctly identify MurmurHash3 IDs containing underscores in the retrieval context.
+- **Dependency & Frontend Modernization**
+  - **Astro 6.1.9 Upgrade**: Major version jump for the frontend, bringing latest performance and stability improvements.
+  - **Tailwind CSS 4.2.4**: Updated styling engine to the latest stable release.
+  - **Universal uv Synchronization**: Fully locked all backend dependencies (288+ packages) to their latest stable versions, including major updates to `Docling (2.91.0)`, `FastAPI`, and `DuckDB`.
 
 ### Fixed
-- **Docling 2.85.0 Compatibility**: Updated `get_docling_converter` to use `PdfPipelineOptions` for both PDF and Image formats, resolving an `AttributeError: 'PipelineOptions' object has no attribute 'do_chart_extraction'`.
-- **Worker Logic Error**: Fixed a bug in `gatekeeper_worker.py` where files were moved to `processed` even if normalization failed.
-- **Unit Test Suite**: Fixed indentation and mock argument order in `test_gatekeeper_worker.py`. Resolved module resolution issues in `test_multiprocess_lock_enforcement.py` by moving imports to the top level.
-- **Memory Footprint**: Reduced default `LLAMA_N_CTX` and enforced CPU-only inference for the Gatekeeper in constrained environments to ensure end-to-end completion of large (600+ page) documents.
-
-### Added - Qdrant Vector Database Support
-
-#### Major Features
-- **Qdrant as Default Vector Store**: Qdrant is now the default vector database, replacing ChromaDB. Qdrant offers improved performance and scalability for production workloads.
-- **Dual Vector Store Support**: The system now supports both Qdrant and ChromaDB through a unified interface, allowing users to choose their preferred vector database via the `VECTOR_DB_PROFILE` environment variable.
-- **VectorStoreWrapper Abstraction**: Introduced `VectorStoreWrapper` class in `doc-ingest-chat/services/database.py` that provides a unified interface for both ChromaDB and Qdrant operations:
-  - Transparent ID conversion for Qdrant (string IDs to UUIDs)
-  - Unified `add_texts()`, `delete()`, `as_retriever()`, and `get_collection_count()` methods
-  - Automatic metadata filter translation between ChromaDB and Qdrant formats
-- **Flexible Docker Compose Profiles**: Updated `ingest-dockercompose.yaml` with profile-based deployment supporting:
-  - `cuda-qdrant` / `cpu-qdrant` - GPU/CPU mode with Qdrant
-  - `cuda-chroma` / `cpu-chroma` - GPU/CPU mode with ChromaDB
-  - Both vector databases use the same `vector-db` network alias for seamless switching
-
-#### Configuration Changes
-- **New Environment Variables**:
-  - `VECTOR_DB_PROFILE`: Set to "qdrant" (default) or "chroma" to choose vector database
-  - `VECTOR_DB_HOST`: Unified host setting (defaults to "vector-db")
-  - `VECTOR_DB_PORT`: Defaults to 6333 for Qdrant, 8000 for ChromaDB
-  - `VECTOR_DB_COLLECTION`: Unified collection name setting
-  - `VECTOR_DB_DATA_DIR`: Unified data directory path
-- **Renamed Environment Variables** (backward compatible):
-  - `E5_MODEL_PATH` → `EMBEDDING_MODEL_PATH`
-  - `LLAMA_MODEL_PATH` → `LLM_PATH`
-- **Backward Compatibility**: Old `CHROMA_*` variables still work as aliases
-
-#### Infrastructure
-- **Qdrant Service**: Added Qdrant container configuration with:
-  - HTTP port 6333, gRPC port 6334
-  - Persistent storage volume
-  - Debug logging and telemetry disabled
-  - Same network alias as ChromaDB for transparent switching
-- **Service Dependencies**: Updated all workers (producer, consumer, OCR) and API services to properly depend on the selected vector database service
-
-#### Testing
-- **Comprehensive Test Suite**: Added 4 new test files with extensive coverage:
-  - `test_database_service.py`: Tests for VectorStoreWrapper and database service methods
-  - `test_vector_db_config.py`: Tests for vector database configuration and initialization
-  - `test_vector_db_settings.py`: Tests for environment variable handling and settings
-  - `test_vectorstore_wrapper.py`: Tests for wrapper class functionality
-
-#### Documentation
-- **Updated README**: Corrected environment variable names in setup instructions
-- **Updated CLAUDE.md**: Added documentation for Qdrant support and configuration options
+- **DuckDB Lock Contention**: Implemented a global **20-Retry Exponential Backoff** system for all database operations, resolving "Conflicting lock" crashes during high-concurrency ingestion.
+- **Duplicate Document Pollution**: Implemented content-addressable ID generation using **MurmurHash3 (mmh3)** combining `DOC_ID` and `CHUNK_HASH`. This ensures that identical text within or across documents collides and overwrites instead of creating redundant vector points.
+- **RAG History Leak**: Fixed a bug where user queries were being double-appended to the chat history, causing "Broken Record" LLM responses.
+- **Metadata KeyError**: Refactored `store_chunks_in_db` to use safe `.get()` defaults, preventing Consumer crashes when encountering inconsistent metadata fields.
+- **Indentation-Triggered Hallucinations**: Flattened the Gatekeeper prompt to zero-indentation to prevent models from interpreting whitespace as a "Compliance Report" requirement.
 
 ### Changed
-- **Database Service Refactoring**: Split `get_db()` into `get_chromadb()` and `get_qdrant()` with a common `_get_embeddings()` helper
-- **Worker Updates**: All workers (producer, consumer, OCR) updated to use the new vector database abstraction
-- **Docker Compose**: Restructured to support multiple deployment profiles with different vector database backends
+- **Stateless Retyping Philosophy**: Re-locked the Gatekeeper into a pure pass-through mode that trusts server-side parameters (Temperature/Tokens) and focuses exclusively on high-density structural transcription.
+- **Global mmh3 Standardization**: Standardized on MurmurHash3 across the entire pipeline for both document binary signatures and semantic chunk addressing.
 
-### Technical Details
-- Qdrant client uses HTTP API via `langchain-qdrant` integration
-- Vector similarity search uses the same embedding model (e5-large-v2) regardless of vector database choice
-- Collection management handled automatically with fallback creation if collection doesn't exist
-- UUID generation for Qdrant IDs uses UUID5 (SHA-1 based) for deterministic ID mapping from string IDs
-
-### Migration Notes
-For users upgrading from ChromaDB-only version:
-1. Set `VECTOR_DB_PROFILE=chroma` in your environment to continue using ChromaDB
-2. To migrate to Qdrant, set `VECTOR_DB_PROFILE=qdrant` and re-run ingestion (vector embeddings will be regenerated)
-3. Update environment variables to use new names (`EMBEDDING_MODEL_PATH`, `LLM_PATH`) though old names still work
+---
+... [Previous legacy changes maintained below] ...

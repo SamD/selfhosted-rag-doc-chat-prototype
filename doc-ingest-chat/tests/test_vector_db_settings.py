@@ -13,7 +13,7 @@ def test_use_qdrant_flag_with_qdrant_profile():
     """Test that USE_QDRANT is True when VECTOR_DB_PROFILE is qdrant."""
     # Set minimal required environment
     os.environ["VECTOR_DB_PROFILE"] = "qdrant"
-    os.environ["INGEST_FOLDER"] = "/tmp/test"
+    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
     os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
     os.environ["LLM_PATH"] = "/tmp/test.gguf"
     os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
@@ -33,7 +33,7 @@ def test_use_qdrant_flag_with_chroma_profile():
     """Test that USE_QDRANT is False when VECTOR_DB_PROFILE is chroma."""
     # Set minimal required environment
     os.environ["VECTOR_DB_PROFILE"] = "chroma"
-    os.environ["INGEST_FOLDER"] = "/tmp/test"
+    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
     os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
     os.environ["LLM_PATH"] = "/tmp/test.gguf"
     os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
@@ -53,7 +53,7 @@ def test_default_port_for_qdrant():
     """Test that default port is 6333 for Qdrant when not explicitly set."""
     # Set minimal required environment WITHOUT explicit port
     os.environ["VECTOR_DB_PROFILE"] = "qdrant"
-    os.environ["INGEST_FOLDER"] = "/tmp/test"
+    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
     os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
     os.environ["LLM_PATH"] = "/tmp/test.gguf"
     os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
@@ -75,7 +75,7 @@ def test_default_port_for_chroma():
     """Test that default port is 8000 for ChromaDB when not explicitly set."""
     # Set minimal required environment WITHOUT explicit port
     os.environ["VECTOR_DB_PROFILE"] = "chroma"
-    os.environ["INGEST_FOLDER"] = "/tmp/test"
+    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
     os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
     os.environ["LLM_PATH"] = "/tmp/test.gguf"
     os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
@@ -98,7 +98,7 @@ def test_explicit_port_override():
     # Set explicit port
     os.environ["VECTOR_DB_PROFILE"] = "qdrant"
     os.environ["VECTOR_DB_PORT"] = "9999"
-    os.environ["INGEST_FOLDER"] = "/tmp/test"
+    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
     os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
     os.environ["LLM_PATH"] = "/tmp/test.gguf"
     os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"

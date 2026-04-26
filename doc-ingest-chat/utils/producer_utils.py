@@ -5,6 +5,7 @@ Refactored for PARALLEL extraction, OCR jobs, and Document Context injection.
 """
 
 import gc
+import json
 import logging
 import re
 import time
@@ -120,3 +121,20 @@ def blocking_push_with_backpressure(rclient, queue_name: str, entries: list[str]
             log.warning(f"⏳ Backpressure triggered on queue {queue_name} for {rel_path}")
         time.sleep(poll_interval)
         total_wait_time += poll_interval
+
+
+def handle_error(state: dict, error_msg: str, logger: logging.Logger) -> dict:
+    """Helper for consistent error state updates in LangGraph."""
+    logger.error(f"💥 {error_msg}")
+    return {**state, "status": "failed", "error": error_msg}
+
+
+def send_file_end_sentinel(rclient, queue_name: str, source_file: str, total_chunks: int):
+    """Sends the sentinel message to indicate the end of document processing."""
+    sentinel = {
+        "source_file": source_file,
+        "type": "file_end",
+        "total_chunks": total_chunks,
+    }
+    rclient.rpush(queue_name, json.dumps(sentinel))
+    log.info(f"🏁 Sent file_end sentinel for {source_file} ({total_chunks} chunks)")

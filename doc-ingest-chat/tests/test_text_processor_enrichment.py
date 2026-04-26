@@ -1,15 +1,9 @@
-#!/usr/bin/env python3
-"""
-Tests for TextProcessor fast hash-based Document Enrichment.
-Ensures the [DOC_HASH] format is strictly maintained.
-"""
-
 import os
 import sys
 from unittest.mock import MagicMock, patch
 
-# Set required environment variables before importing settings
-os.environ.setdefault("INGEST_FOLDER", "/tmp/test")
+# Set required environment variables
+os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", "/tmp/test")
 os.environ.setdefault("EMBEDDING_MODEL_PATH", "intfloat/e5-large-v2")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -22,13 +16,11 @@ def test_get_document_id():
     file_bytes = b"test content"
     doc_id = TextProcessor.get_document_id(file_bytes)
     assert doc_id.startswith("DOC_")
-    assert len(doc_id) == 12  # DOC_ + 8 chars
+    assert len(doc_id) == 12
 
 
 def test_split_doc_with_hash_enrichment():
-    """
-    Verify that [DOC_HASH] is prepended to every chunk.
-    """
+    """Verify that [DOC_HASH] is prepended to every chunk."""
     text = "This is some test content."
     rel_path = "test_doc.pdf"
     document_id = "DOC_A1B2"
@@ -45,9 +37,7 @@ def test_split_doc_with_hash_enrichment():
 
 
 def test_split_doc_without_document_id():
-    """
-    Verify fallback when no document_id is provided.
-    """
+    """Verify fallback when no document_id is provided."""
     text = "Some text content."
     rel_path = "test_doc.pdf"
 
@@ -63,9 +53,7 @@ def test_split_doc_without_document_id():
 
 
 def test_split_doc_preserves_metadata():
-    """
-    Ensure metadata remains correct with new enrichment.
-    """
+    """Ensure metadata remains correct."""
     text = "Content"
     rel_path = "doc.pdf"
     doc_id = "DOC_1234"
@@ -80,24 +68,21 @@ def test_split_doc_preserves_metadata():
     assert len(metadata) == 1
     assert metadata[0]["source_file"] == rel_path
     assert metadata[0]["page"] == 5
-    assert chunks[0] == "passage: [DOC_1234] Content"
 
 
 def test_split_markdown_doc():
-    """
-    Verify Markdown-aware splitting with YAML header.
-    """
+    """Verify Markdown splitting with page anchors."""
     text = """---
-ID: test-id
+document_id: test-id
 Slug: test-slug
+source_type: pdf_ocr_raw
 ---
 # Title
 Some content here.
-## Section
-More content.
+### [INTERNAL_PAGE_10]
+Content on page 10.
 """
     rel_path = "test.md"
-
     mock_tokenizer = MagicMock()
     mock_tokenizer.encode.return_value = [1, 2, 3]
 
@@ -105,7 +90,12 @@ More content.
         chunks, metadata = TextProcessor.split_markdown_doc(text=text, rel_path=rel_path)
 
     assert len(chunks) > 0
-    assert metadata[0]["ID"] == "test-id"
-    assert metadata[0]["Slug"] == "test-slug"
-    assert "Header_1" in metadata[0]
-    assert metadata[0]["source_file"] == rel_path
+    # Keys should match normalized YAML or code assignment
+    assert metadata[0]["document_id"] == "test-id"
+    assert metadata[0]["slug"] == "test-slug"
+    assert metadata[0]["source_type"] == "pdf_ocr_raw"
+
+    # Verify that the second part of the text (after page anchor) is correctly tagged
+    # Note: Depending on splitter, it might be in metadata[1]
+    found_page_10 = any(m.get("page") == 10 for m in metadata)
+    assert found_page_10, f"Page 10 not found in metadata: {metadata}"

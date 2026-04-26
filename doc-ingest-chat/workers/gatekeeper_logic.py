@@ -12,9 +12,9 @@ from typing import List, Optional, Tuple
 import duckdb
 import pdfplumber
 from config import settings
-from llama_cpp import Llama, LlamaGrammar
+from llama_cpp import LlamaGrammar
 from pdf2image import convert_from_path
-from utils.llm_setup import RemoteLlama
+from utils.llm_setup import RemoteLlama, get_supervisor_llm
 from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr, is_valid_pdf
 
@@ -23,38 +23,22 @@ os.environ["GGML_CUDA_GRAPH_OPT"] = "1"
 
 log = logging.getLogger("ingest.gatekeeper_logic")
 
-_MODEL = None
-_CHUNK0_GRAMMAR = None
 
-
-def get_llm():
-    global _MODEL, _CHUNK0_GRAMMAR
-    if _MODEL is None:
-        model_path = settings.SUPERVISOR_LLM_PATH
-        if model_path.startswith(("http://", "https://")):
-            log.info(f"🚀 Connecting to Remote GateKeeper Model: {model_path}")
-            _MODEL = RemoteLlama(base_url=model_path)
-            _CHUNK0_GRAMMAR = CHUNK0_GBNF_STR  # Remote server expects string GBNF
-        else:
-            log.info(f"🚀 Loading Local GateKeeper Model: {model_path}")
-            _MODEL = Llama(
-                model_path=model_path,
-                n_gpu_layers=0,  # CPU-only for maximum stability with large files
-                n_ctx=4096,
-                n_batch=512,
-                flash_attn=True,
-                seed=42,
-                verbose=False,
-            )
-            _CHUNK0_GRAMMAR = LlamaGrammar.from_string(CHUNK0_GBNF_STR)
-    return _MODEL, _CHUNK0_GRAMMAR
+def get_llm_and_grammar():
+    """centralized getter for supervisor and grammar."""
+    llm = get_supervisor_llm()
+    # Grammar depends on whether model is local (needs object) or remote (needs string)
+    if isinstance(llm, RemoteLlama):
+        return llm, CHUNK0_GBNF_STR
+    else:
+        return llm, LlamaGrammar.from_string(CHUNK0_GBNF_STR)
 
 
 # GBNF for Chunk 0 completion (starting after the pre-filled "# ")
 # Matches: Title + Body
 CHUNK0_GBNF_STR = r"""
 root    ::= title body
-title   ::= [^\n]+ "\n\n"
+title   ::= [^\n]+ "\n"+
 body    ::= [^\t\r\n]* ("\n" [^\t\r\n]*)*
 """
 
@@ -133,30 +117,33 @@ def sliding_window_normalize(file_path: str, chunk_size: int = 6000, overlap: in
     return sliding_window_chunks(raw_text, chunk_size=chunk_size, overlap=overlap)
 
 
-def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dict] = None) -> Tuple[bool, Optional[dict]]:
+def gatekeeper_extract_and_normalize(job_id: str, pdf_path: str, md_path: str) -> Tuple[bool, Optional[dict]]:
     """
-    Entry point for normalization.
-    Separates Extraction and Normalization to manage peak memory usage.
-    Returns (success, first_chunk_metadata)
+    Core normalization logic for a claimed job.
+    Processes pages in fixed batches for improved throughput.
     """
     try:
-        # 1. Setup paths and slugs
-        file_slug = get_slug(Path(file_path).stem)
-        final_md_path = os.path.join(settings.INGEST_FOLDER, f"{file_slug}.md")
-        os.makedirs(settings.INGEST_FOLDER, exist_ok=True)
+        file_slug = get_slug(Path(pdf_path).stem)
+        log.info(f"🔍 Starting extraction and batch normalization for {pdf_path}")
 
-        raw_text_buffer = ""
+        # Ensure we have the model ready
+        get_llm_and_grammar()
 
-        # 2. EXTRACTION PHASE (No LLM in memory)
-        if file_path.lower().endswith(".pdf"):
-            if not is_valid_pdf(file_path):
-                raise ValueError(f"Invalid PDF: {file_path}")
+        chunk_idx = 0
+        first_chunk_meta = None
 
-            log.info(f"📄 Extracting raw text from {file_path}...")
-            with pdfplumber.open(file_path) as pdf:
-                total_pages = len(pdf.pages)
-                for i, page in enumerate(pdf.pages):
-                    page_num = i + 1
+        if not is_valid_pdf(pdf_path):
+            raise ValueError(f"Invalid PDF: {pdf_path}")
+
+        log.info(f"📄 Extracting {pdf_path} in batches of {settings.GATEKEEPER_BATCH_SIZE} pages...")
+        batch_text = []
+        batch_start_page = 1
+
+        with pdfplumber.open(pdf_path) as pdf:
+            total_pages = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                page_num = i + 1
+                try:
                     try:
                         t = page.extract_text()
                     except Exception as e:
@@ -165,48 +152,50 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
 
                     if not t or is_bad_ocr(t):
                         log.info(f"📸 Page {page_num}/{total_pages} delegating to OCR worker...")
-                        # Use lower DPI (200) to save memory during large file conversion
-                        images = convert_from_path(file_path, dpi=200, first_page=page_num, last_page=page_num)
+                        images = convert_from_path(pdf_path, dpi=200, first_page=page_num, last_page=page_num)
                         if images:
                             np_image = preprocess_image(images[0])
                             if np_image is not None:
-                                ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, file_path, page_num)
+                                ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, pdf_path, page_num)
                                 t = ocr_text
-                            else:
-                                log.error(f"💥 Failed to preprocess page {page_num}")
 
-                            # Explicitly close image objects
                             for img in images:
                                 img.close()
-                        else:
-                            log.error(f"💥 Failed to convert page {page_num} to image")
 
-                    if t:
-                        raw_text_buffer += t + "\n\n"
+                    if not t:
+                        log.warning(f"⚠️ No text could be extracted for page {page_num}. Adding placeholder.")
+                        t = f"[DOCUMENT PAGE {page_num} EXTRACTION FAILED OR PAGE IS EMPTY]"
 
-            # Close PDF and force GC before starting LLM inference
-            gc.collect()
-        else:
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                raw_text_buffer = f.read()
+                    # TAG EVERY PAGE: Critical for Producer to extract accurate metadata
+                    tagged_text = f"### [INTERNAL_PAGE_{page_num}]\n{t}"
+                    batch_text.append(tagged_text)
 
-        if not raw_text_buffer.strip():
-            log.error("❌ No text extracted from document. Normalization aborted.")
-            return False, None
+                    # PROCESS BATCH: Trigger when we hit the size limit
+                    if len(batch_text) >= settings.GATEKEEPER_BATCH_SIZE:
+                        log.info(f"📊 Normalizing Batch (Pages {batch_start_page}-{page_num})...")
+                        full_content = "\n\n".join(batch_text)
+                        meta = process_chunk(chunk_idx, full_content, pdf_path, file_slug, md_path)
+                        if chunk_idx == 0:
+                            first_chunk_meta = meta
 
-        # 3. NORMALIZATION PHASE (Load LLM)
-        log.info(f"🧠 Normalizing content for {file_slug}...")
-        get_llm()  # Lazy load model here
+                        chunk_idx += 1
+                        batch_text = []  # CLEAR COMPLETELY
+                        batch_start_page = page_num + 1
 
-        chunks = sliding_window_chunks(raw_text_buffer, chunk_size=6000, overlap=600)
+                except Exception as page_err:
+                    log.error(f"💥 Critical error on page {page_num}: {page_err}. Skipping page but continuing...")
+                    continue
 
-        first_chunk_meta = None
-        for idx, chunk_content in enumerate(chunks):
-            meta = process_chunk(idx, chunk_content, file_path, file_slug, final_md_path)
-            if idx == 0:
-                first_chunk_meta = meta
+            # FINAL BATCH: Handle remaining pages
+            if batch_text:
+                log.info(f"📊 Normalizing Final Batch (Pages {batch_start_page}-{total_pages})...")
+                full_content = "\n\n".join(batch_text)
+                meta = process_chunk(chunk_idx, full_content, pdf_path, file_slug, md_path)
+                if chunk_idx == 0:
+                    first_chunk_meta = meta
 
-        log.info(f"✅ Document normalized -> {final_md_path}")
+        gc.collect()
+        log.info(f"✅ Document normalization finished: {md_path}")
         return True, first_chunk_meta
 
     except Exception as e:
@@ -214,10 +203,11 @@ def gatekeeper_extract_and_normalize(file_path: str, metadata_base: Optional[dic
         return False, None
 
 
-def process_chunk(idx, raw_content, file_path, slug, final_md_path):
-    """Normalizes a chunk and writes immediately to file."""
-    meta = assemble_metadata(file_path, slug, idx, 9999)  # total_chunks unknown yet
+def process_chunk(idx, raw_content, file_path, slug, md_path):
+    """Stateless normalization using the exact prompt verified by the user."""
+    meta = assemble_metadata(file_path, slug, idx, 9999)
 
+    # 1. Define the Anchor
     if idx == 0:
         anchor_header = (
             f"---\n"
@@ -229,78 +219,64 @@ def process_chunk(idx, raw_content, file_path, slug, final_md_path):
             f"Chunk-Index: {meta['chunk_index']}\n"
             f"Schema-Version: {meta['schema_version']}\n"
             f"Raw-Path: {meta['raw_path']}\n"
-            f"---\n\n# "
+            f"---\n\n"
         )
-        use_grammar = True
-        system_msg = "You are a strict Markdown normalizer. Provide an accurate document title and normalized Markdown body. Do NOT repeat the metadata block. Use proper headers (##, ###)."
-        stop_tokens = ["<|im_end|>", "---"]
-        max_tokens = 4096
     else:
-        anchor_header = f"\n\n<!-- CHUNK {idx} -->\n\n"
-        use_grammar = False
-        system_msg = "You are a document normalizer. Convert raw text into clean Markdown body. No metadata, no titles. Smooth transition."
-        stop_tokens = ["<|im_end|>", "---", "metadata:", "ID:", "Slug:", "# "]
-        max_tokens = 6144
+        anchor_header = "\n\n\n\n"
 
-    prompt = f"<|im_start|>system\n{system_msg}<|im_end|>\n<|im_start|>user\n{raw_content}<|im_end|>\n<|im_start|>assistant\n{anchor_header}"
+    # 2. VERIFIED 'Markdown Formatter' Prompt
+    user_msg = f"""
+    You are a Markdown formatter. Convert RAW_TEXT below into valid Markdown. 
+    Preserve all content and structure as much as possible. 
+    Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. 
+    DO NOT summarize, infer, or add new information. 
+    Return only Markdown, with no preface or explanation.
+    Remove any OCR gibberish and unreadable characters.
+    
+    RAW_TEXT:
+    {raw_content}
+    """
 
-    log.info(f"🧠 Processing Chunk {idx} (Inference)...")
+    # 3. Payload (Unified User Role)
+    messages = [{"role": "user", "content": user_msg}]
 
-    llm, grammar = get_llm()
-    response = llm(prompt, max_tokens=max_tokens, grammar=grammar if use_grammar else None, stop=stop_tokens, temperature=0.1)
+    log.info(f"🧠 Normalizing Batch {idx} (High-Fidelity Verified Prompt)...")
 
-    content = response["choices"][0]["text"]
+    llm, _ = get_llm_and_grammar()
+
+    response = llm.create_chat_completion(
+        messages=messages,
+    )
+
+    content = response["choices"][0]["message"]["content"]
+
+    # 3. Final text construction
     final_text = anchor_header + content
 
-    # Use 'w' for first chunk, 'a' for others
     mode = "w" if idx == 0 else "a"
-    with open(final_md_path, mode, encoding="utf-8") as f:
+    with open(md_path, mode, encoding="utf-8") as f:
         f.write(final_text)
         if not final_text.endswith("\n"):
             f.write("\n")
         f.flush()
-        os.fsync(f.fileno())  # Hard flush to disk
+        os.fsync(f.fileno())
 
-    log.info(f"📝 Wrote Chunk {idx} to {final_md_path}")
+    log.info(f"📝 Wrote Chunk {idx} to {md_path}")
     return meta
 
 
-def generate_uuid():
-    return str(uuid.uuid4())
-
-
-def generate_slug(file_path):
-    return get_slug(Path(file_path).stem)
-
-
 def log_gatekeeper_result(slug: str, status: str, metadata: Optional[dict] = None, error_msg: Optional[str] = None):
-    """Logs the result of document normalization to DuckDB for tracking."""
+    """
+    Deprecated in favor of JobService lifecycle tracking,
+    but kept for schema compatibility during migration.
+    """
     db_path = settings.GATEKEEPER_FAILURE_DB
     import json
 
     try:
         con = duckdb.connect(db_path)
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS gatekeeper_history (
-                slug VARCHAR, 
-                timestamp TIMESTAMP, 
-                status VARCHAR, 
-                metadata TEXT, 
-                error VARCHAR
-            )
-        """
-        )
-        con.execute(
-            "INSERT INTO gatekeeper_history VALUES (?, ?, ?, ?, ?)",
-            [
-                slug,
-                datetime.now(timezone.utc),
-                status,
-                json.dumps(metadata) if metadata else None,
-                error_msg,
-            ],
-        )
+        con.execute("CREATE TABLE IF NOT EXISTS gatekeeper_history (slug VARCHAR, timestamp TIMESTAMP, status VARCHAR, metadata TEXT, error VARCHAR)")
+        con.execute("INSERT INTO gatekeeper_history VALUES (?, ?, ?, ?, ?)", [slug, datetime.now(timezone.utc), status, json.dumps(metadata) if metadata else None, error_msg])
         con.close()
     except Exception as e:
         log.error(f"Failed to log gatekeeper result: {e}")

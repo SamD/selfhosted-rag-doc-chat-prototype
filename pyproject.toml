@@ -60,4 +60,6 @@ dependencies = [
     "regex>=2024.11.6",
     "langchain-openai>=0.2.0,<0.3.0",
     "langchain-community>=0.3.0,<0.4.0",
+    "protobuf<4.21.0",
+    "sentence-transformers>=5.4.1",
 ]

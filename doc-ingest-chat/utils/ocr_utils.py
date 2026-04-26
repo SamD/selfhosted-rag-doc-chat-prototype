@@ -18,7 +18,12 @@ import numpy as np
 import redis
 from config.settings import MAX_OCR_DIM, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    AcceleratorDevice,
+    AcceleratorOptions,
+    EasyOcrOptions,
+    PdfPipelineOptions,
+)
 from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 from PIL import Image
 
@@ -72,9 +77,24 @@ def send_image_to_ocr(np_image, rel_path, page_num):
     }
     redis_client = get_redis_client()
     redis_client.lpush(REDIS_OCR_JOB_QUEUE, json.dumps(job))
-    result = redis_client.blpop(reply_key, timeout=300)
+
+    # HEARTBEAT POLLING: Instead of one long block, we poll and log status
+    result = None
+    wait_timeout = 300
+    start_wait = time.time()
+
+    while (time.time() - start_wait) < wait_timeout:
+        # Check for response in 30-second increments
+        result = redis_client.blpop(reply_key, timeout=30)
+        if result:
+            break
+
+        elapsed = int(time.time() - start_wait)
+        log.info(f"⏳ Waiting for OCR... {rel_path} P{page_num} ({elapsed}s elapsed)")
+
     if not result:
-        raise TimeoutError(f"OCR timeout for {rel_path} page {page_num}")
+        raise TimeoutError(f"OCR timeout after {wait_timeout}s for {rel_path} page {page_num}")
+
     ocr_roundtrip_ms = (time.perf_counter() - start_time) * 1000.0
     _, data = result
     result = json.loads(data)
@@ -95,21 +115,32 @@ def get_docling_converter():
     global _DOCLING_CONVERTER
     if _DOCLING_CONVERTER is None:
         try:
-            log.info("🚀 Initializing Docling Converter (EasyOCR backend)...")
+            # Silence internal library noise
+            logging.getLogger("docling").setLevel(logging.WARNING)
+            logging.getLogger("easyocr").setLevel(logging.WARNING)
+            logging.getLogger("docling_parse").setLevel(logging.WARNING)
 
             # OCR Options (EasyOCR)
-            ocr_options = EasyOcrOptions(
-                lang=["en"],
-                use_gpu=os.getenv("DEVICE", "cpu").lower() == "cuda",
-            )
+
+            log.info("🚀 Initializing Docling Converter (EasyOCR backend)...")
+
+            # Modern Docling 2.x Acceleration Setup
+            device_type = os.getenv("DEVICE", "cpu").lower()
+            accel_device = AcceleratorDevice.CUDA if device_type == "cuda" else AcceleratorDevice.CPU
+            log.info(f"⚡ Setting Docling acceleration to: {accel_device}")
+
+            # OCR Options (EasyOCR)
+            ocr_options = EasyOcrOptions(lang=["en"])
 
             # Use PdfPipelineOptions for both to ensure compatibility with StandardPdfPipeline
-            # which Docling often uses even for image-based inputs.
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_ocr = True
             pipeline_options.ocr_options = ocr_options
             # Disable extra extractions for raw text speed
             pipeline_options.do_table_structure = False
+
+            # Apply modern acceleration settings
+            pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
 
             _DOCLING_CONVERTER = DocumentConverter(
                 allowed_formats=[InputFormat.IMAGE, InputFormat.PDF],
@@ -154,20 +185,22 @@ def run_ocr(np_image, rel_path, page_num) -> Tuple[Optional[str], str, float]:
     if not converter:
         return None, "error_docling_not_init", 0.0
 
-    import tempfile
+    # Ensure a context-aware filename for the temporary file
+    # This prevents 'docling-parse' from logging generic 'Processing document tmp...' nonsense.
+    clean_name = os.path.basename(rel_path).replace(".", "_")
+    context_filename = f"page_{page_num}_{clean_name}.png"
+    tmp_path = os.path.join("/tmp", context_filename)
 
     start_time = time.perf_counter()
     try:
-        # Docling works best with file paths. We save the NumPy array to a temp file.
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            pil_image = Image.fromarray(np_image)
-            pil_image.save(tmp.name)
-            tmp_path = tmp.name
+        # Save the NumPy array to a context-aware file
+        pil_image = Image.fromarray(np_image)
+        pil_image.save(tmp_path)
 
         try:
             result = converter.convert(tmp_path)
-            # Result is a converted document. We export to raw text.
-            full_text = result.document.export_to_text().strip()
+            # Result is a converted document. We export to markdown for better structure preservation.
+            full_text = result.document.export_to_markdown().strip()
 
             execution_time_ms = (time.perf_counter() - start_time) * 1000.0
 

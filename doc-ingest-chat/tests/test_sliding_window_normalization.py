@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 # Setup environment variables for testing
-os.environ["INGEST_FOLDER"] = "/tmp/test_ingest"
+os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test_ingest"
 os.environ["EMBEDDING_MODEL_PATH"] = "/tmp/test_models"
 os.environ["LLM_PATH"] = "/tmp/test_models/model.gguf"
 os.environ["SUPERVISOR_LLM_PATH"] = "/tmp/test_models/model.gguf"

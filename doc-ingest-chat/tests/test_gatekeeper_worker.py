@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 # Set environment variables for modules that use settings at import time
 _test_temp_dir = tempfile.mkdtemp()
-os.environ.setdefault("INGEST_FOLDER", _test_temp_dir)
+os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", _test_temp_dir)
 os.environ.setdefault("EMBEDDING_MODEL_PATH", _test_temp_dir)
 os.environ.setdefault("LLM_PATH", os.path.join(_test_temp_dir, "model.gguf"))
 os.environ.setdefault("SUPERVISOR_LLM_PATH", os.environ["LLM_PATH"])
@@ -19,13 +19,13 @@ class TestGateKeeperWorker(unittest.TestCase):
     def setUp(self):
         self.test_dir = _test_temp_dir
         self.staging_dir = os.path.join(self.test_dir, "staging")
-        self.ingest_dir = os.path.join(self.test_dir, "ingest")
+        self.ingest_dir = os.path.join(self.test_dir, "ingestion")
         os.makedirs(self.staging_dir, exist_ok=True)
         os.makedirs(self.ingest_dir, exist_ok=True)
 
         # Patch settings
-        self.settings_patcher = patch("config.settings.STAGING_FOLDER", self.staging_dir)
-        self.settings_patcher2 = patch("config.settings.INGEST_FOLDER", self.ingest_dir)
+        self.settings_patcher = patch("config.settings.STAGING_DIR", self.staging_dir)
+        self.settings_patcher2 = patch("config.settings.INGESTION_DIR", self.ingest_dir)
         self.settings_patcher3 = patch("config.settings.GATEKEEPER_FAILURE_DB", os.path.join(self.test_dir, "failures.db"))
         self.settings_patcher.start()
         self.settings_patcher2.start()

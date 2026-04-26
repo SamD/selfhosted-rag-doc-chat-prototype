@@ -6,23 +6,25 @@ from pathlib import Path
 # Set minimal environment variables as early as possible (on import),
 # so modules imported during test collection see them.
 _base_dir = Path(tempfile.mkdtemp(prefix="test_env_"))
-_ingest = _base_dir / "ingest"
-_chroma = _base_dir / "chroma"
+_root = _base_dir / "Docs"
 _tmp_e5 = _base_dir / "e5-model"
 _tmp_llama = _base_dir / "llama-model"
 
-for _p in (_ingest, _chroma, _tmp_e5, _tmp_llama):
+for _p in (_root, _tmp_e5, _tmp_llama):
     _p.mkdir(parents=True, exist_ok=True)
 
+# Pre-create standard lifecycle folders
+for _d in ["staging", "preprocessing", "ingestion", "consuming", "success", "failed"]:
+    (_root / _d).mkdir(parents=True, exist_ok=True)
+
 # Prefer developer's local model paths if available; fall back to temp dirs
-_default_e5 = Path("/home/samueldoyle/AI/e5-large-v2")
-_default_llama = Path("/home/samueldoyle/AI/llama-model")
+_default_e5 = Path("/tmp/AI/e5-large-v2")
+_default_llama = Path("/tmp/AI/llama-model")
 
 _e5 = _default_e5 if _default_e5.exists() else _tmp_e5
 _llama = _default_llama if _default_llama.exists() else _tmp_llama
 
-os.environ.setdefault("INGEST_FOLDER", str(_ingest))
-os.environ.setdefault("CHROMA_DATA_DIR", str(_chroma))
+os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", str(_root))
 os.environ.setdefault("EMBEDDING_MODEL_PATH", str(_e5))
 os.environ.setdefault("LLM_PATH", str(_llama))
 os.environ.setdefault("SUPERVISOR_LLM_PATH", str(_llama))  # Use same dummy path for supervisor

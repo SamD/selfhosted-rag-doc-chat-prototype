@@ -6,9 +6,11 @@ import os
 import sys
 
 import uvicorn
+from config import settings
 from config.env_strategy import get_env_strategy
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 
 def create_app() -> FastAPI:
@@ -33,6 +35,11 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router)
+
+    # Serve the success directory for direct PDF access
+    success_dir = settings.SUCCESS_DIR
+    if os.path.exists(success_dir):
+        app.mount("/files", StaticFiles(directory=success_dir), name="files")
 
     @app.get("/")
     def root():

@@ -22,37 +22,57 @@ def format_chunks_with_citations(docs: list[Document]) -> list[str]:
 
 def replace_citation_labels(output: str, docs: list[Document]) -> str:
     """
-    Replaces [source1], [source2], ... or (source1), (source2), ... with human-readable citations
-    like [filename.pdf, page X], and appends a deduplicated source summary at the end.
+    Replaces [source1], [source2], ... with clickable Markdown links
+    pointing to the original PDF in the /files/ route.
     """
     # Use OrderedDict to maintain discovery order for filenames
     seen_files = OrderedDict()
+
+    # Base URL for file access (linked to FastAPI backend)
+    # We use localhost:8000 by default since that's where api_gpu serves /files
+    api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
 
     for i, doc in enumerate(docs):
         source_num = i + 1
         bracket_label = f"[source{source_num}]"
         paren_label = f"(source{source_num})"
 
-        source = doc.metadata.get("source_file", "unknown")
+        # Handle source file mapping: if it's the .md, we want to link to the .pdf
+        source_path = doc.metadata.get("source_file", "unknown")
+        filename = os.path.basename(source_path)
+
+        # If it's the normalized markdown, map it back to the original PDF
+        # e.g. outline-of-history-pt1-4e82d6f5.md -> outline_of_history_pt1.pdf
+        if filename.endswith(".md"):
+            # We can check if the original filename is in the metadata
+            original = doc.metadata.get("original_filename")
+            if original:
+                filename = original
+            else:
+                # Fallback: hope it matches the standard naming convention or keep .md
+                pass
+
         page = doc.metadata.get("page", "N/A")
+        file_url = f"{api_url}/files/{filename}"
 
-        # Inline citation (precise with page)
+        # Inline citation with Markdown Link
         if str(page).isdigit() and int(page) >= 0:
-            resolved = f"[{source}, page {page}]"
+            resolved = f"[[{filename}, page {page}]({file_url})]"
         else:
-            resolved = f"[{source}]"
+            resolved = f"[[{filename}]({file_url})]"
 
-        # Record file for unique list at bottom (de-duplicated by name)
-        if source not in seen_files:
-            seen_files[source] = True
+        # Record file for unique list at bottom
+        if filename not in seen_files:
+            seen_files[filename] = file_url
 
         # Replace tags in content
         output = output.replace(bracket_label, resolved)
         output = output.replace(paren_label, resolved)
 
-    # Append deduplicated list of unique source files at the end
+    # Append deduplicated list of unique source links at the end
     if seen_files:
-        output += "\n\n---\n**Sources:** " + ", ".join(seen_files.keys())
+        links = [f"[{name}]({url})" for name, url in seen_files.items()]
+        output += "\n\n---\n**Sources:** " + ", ".join(links)
 
     return output.strip()
 
