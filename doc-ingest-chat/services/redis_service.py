@@ -86,6 +86,12 @@ class RedisService:
                 log.info(f"🔁 Still waiting to enqueue {rel_path} (queue: {queue_name}, length: {qlen}) [waited {total_wait_time:.1f}s]")
 
 
+_REDIS_CLIENT_CACHE = None
+
+
 def get_redis_client() -> redis.Redis:
-    """Get Redis client instance."""
-    return redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    """Get Redis client instance with lazy initialization and caching for fork safety."""
+    global _REDIS_CLIENT_CACHE
+    if _REDIS_CLIENT_CACHE is None:
+        _REDIS_CLIENT_CACHE = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    return _REDIS_CLIENT_CACHE

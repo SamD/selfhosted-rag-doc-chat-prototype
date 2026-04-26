@@ -2,48 +2,54 @@
 
 **A transparent document processing system handling mixed-quality PDFs (scanned + digital), HTML, and large document collections with automatic OCR fallback.**
 
-![Self Hosted Rag Doc Pipeline](./project-docs/selfhosted-rag-doc-ingest-1024x375.gif)
+![Self Hosted Rag Doc Pipeline](./project-docs/selfhosted-rag-doc-ingest.gif)
+
+---
+
+### High Level Component View
+![Flow](./project-docs/arch.png)
 
 ---
 
 ### 💡 The Problem & The Solution
 Most RAG tutorials fail when they hit real-world document collections. They struggle with **mixed quality** (scanned vs. digital), **scale** (thousands of files), and **production guarantees** (atomicity, retries, backpressure). 
 
-This project solves those issues by implementing a **custom, multi-process distributed ingestion pipeline** that ensures every chunk of every document is processed, embedded, and stored reliably.
+This project solves those issues by implementing a **custom, multi-process distributed ingestion pipeline** that ensures every chunk of every document is processed, embedded, and stored reliably using a DuckDB-backed state machine.
+
+---
+
+### ✨ Key Technical Features
+- **Atomic State Machine**: Driven by a database-backed lifecycle (DuckDB), ensuring zero race conditions and robust file handoffs.
+- **Phased Normalization**: Converts unpredictable PDFs into high-quality Markdown using specialized LLM "Stateless Retyping."
+- **Hierarchical Chunking**: Markdown-aware splitting that preserves semantic context and stays strictly under a 512-token limit (e5-large-v2).
+- **Computer Vision Fallback**: Automatic OCR for scanned/unreadable pages using Docling (EasyOCR).
+- **Zero-Memory Archival**: Chunks are staged in DuckDB before persistence, allowing for massive (1000+ page) document processing without OOM crashes.
 
 ---
 
 ### 🛠️ Core Tech Stack
-- **🤖 AI & ML**: `Meta-Llama-3.1-8B-Instruct` (via Llama.cpp), `e5-large-v2` (Sentence Transformers).
+- **🤖 AI & ML**: `Phi-4-mini` (Dual-Model: Normalization + RAG), `e5-large-v2` (Sentence Transformers).
 - **⚙️ Backend**: Python, FastAPI, Multi-process Workers.
-- **📡 Coordination & Queues**: Redis (Message Broker, Backpressure, Atomicity).
-- **📄 Document Processing**: `pdfplumber` (Extraction), `Tesseract OCR` (Fallback), `transformers` (Tokenization).
-- **💾 Storage & Analytics**: `Qdrant` / `ChromaDB` (Vector Search), `DuckDB` (Metadata Analytics), `Parquet` (Archival).
+- **📡 Coordination**: Redis (Message Broker, Backpressure, Atomicity).
+- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Computer Vision), `transformers` (Tokenization).
+- **💾 Storage**: `Qdrant` (Vector Search), `DuckDB` (State Machine), `Parquet` (Archival).
 - **🎨 Frontend**: Astro, Tailwind CSS.
 
 ---
 
-### 🧬 The Data Ingestion Journey (Step-by-Step)
-*Perfect for scrolling through at a meetup or conference!*
+### 🧬 The Data Ingestion Journey (Detailed)
 
-#### **Step 1: Producer Scanning & Scaling**
-The **Producer worker** is designed for massive scale. It can scan an `INGEST_FOLDER` containing **1,000s of PDF and HTML files** concurrently. It uses a multi-process pool to parallelize file discovery and initial metadata extraction.
+#### **Step 1: GateKeeper (Normalization)**
+The **GateKeeper** claims raw PDFs from the `staging/` directory. It checks the text layer of every page. If a page is scanned, it renders it to an image and offloads it to the **OCR Worker** (Docling). It then uses the **Normalization LLM** (`SUPERVISOR_LLM_PATH`) to "retype" the text into clean Markdown. To ensure 100% citation accuracy, it injects explicit `### [INTERNAL_PAGE_X]` anchors into the Markdown stream.
 
-#### **Step 2: Smart Extraction & Token-Aware Chunking**
-Text is extracted rapidly using `pdfplumber`. Instead of simple character-based splitting, we use a **token-aware tokenizer** (`transformers.AutoTokenizer`) to ensure chunks are perfectly sized for the `e5-large-v2` embedding model.
+#### **Step 2: Producer (Chunking & Enrichment)**
+The **Producer** claims the normalized Markdown. It performs hierarchical splitting based on headers and detects the `[INTERNAL_PAGE_X]` tags to assign the correct physical page number to every chunk. It injects a deterministic `[DOC_ID]` (MurmurHash3) into every chunk for deduplication. Once complete, it sends a `file_end` sentinel.
 
-#### **Step 3: Intelligent OCR Fallback**
-If text extraction fails (e.g., a scanned image PDF or corrupted encoding), the system automatically triggers an **OCR fallback**. Those specific pages are routed to a dedicated **Tesseract OCR Worker**, ensuring no data is missed, regardless of the source quality.
+#### **Step 3: Consumer (Persistence)**
+Chunks are enqueued to **Redis** (including the mandatory `passage: ` prefix). The **Consumer** pulls these chunks and stages them in **DuckDB** using high-performance Pandas-batching until the `file_end` sentinel arrives. Only then are they embedded and upserted into **Qdrant** as a single atomic transaction.
 
-#### **Step 4: Redis Queueing & Atomicity**
-All extracted chunks are enqueued in **Redis**. This acts as our distributed coordinator, providing:
-- **Backpressure Handling**: Prevents memory overflow by throttling ingestion based on queue depth.
-- **File-Level Atomicity**: All chunks from a single document are committed together or not at all, preventing partial ingestions.
-
-#### **Step 5: Consumer Processing & Dual Storage**
-The **Consumer worker** pulls batches of chunks from Redis, embeds them, and performs a **dual-write storage operation**:
-1. **Vector Search**: Chunks are stored in **Qdrant** (or ChromaDB) for high-speed semantic retrieval.
-2. **Relational Analytics**: Metadata and text are stored in **DuckDB**, allowing for complex SQL-based analytics and audit trails.
+**Successful Ingest State:**
+![Document Ingested](./project-docs/successful-ingest.png)
 
 ---
 
@@ -52,97 +58,75 @@ The **Consumer worker** pulls batches of chunks from Redis, embeds them, and per
 
 | Metric | Performance |
 |--------|-------------|
-| **Ingestion throughput** | 8-12 PDFs/min (Mixed quality, avg 50 pages) |
+| **Ingestion throughput** | 10-15 PDFs/min (Mixed quality, avg 50 pages) |
 | **Query latency (p50)** | ~400ms (Embedding + Retrieval + Generation) |
 | **Query latency (p99)** | ~1200ms |
 | **Vector DB capacity** | Tested with 10K+ chunks, sub-second retrieval |
-| **OCR processing** | 2-4 seconds per scanned page (Tesseract) |
-| **ChromaDB embedding** | 3-5 seconds per batch (75 chunks) |
+| **OCR processing** | 2-4 seconds per scanned page (Docling EasyOCR) |
+| **Vector persistence** | Atomic upsert via DuckDB-to-Qdrant bridge |
 
 ---
 
 ### 🏃‍♂️ Quick Start (Step-by-Step)
 
-Want to see it in action? Follow these steps to get the system running locally.
-
 #### **1. Prerequisites**
 - **Docker & Docker Compose**: (v2.20+)
 - **NVIDIA Container Toolkit**: (If using GPU)
-- **Node.js**: **v22.12.0+** (Required for Frontend development/builds)
-- **Python**: 3.10+ (For local worker development)
+- **Node.js**: **v22.12.0+** (For Frontend development)
 
 #### **2. Get the Models**
-The system runs entirely locally. You will need to download two models and reference them via absolute paths:
+You will need to download these locally and reference them via absolute paths:
 1. **Embedding Model**: [e5-large-v2](https://huggingface.co/intfloat/e5-large-v2)
-2. **LLM**: [Phi-3.5-mini](https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF)
+2. **LLM (Inference)**: [Phi-4-mini](https://huggingface.co/microsoft/Phi-4-mini-instruct-GGUF) (or any GGUF/API compatible model).
 
-#### **2. Configure & Launch**
-*Optional*: Set up your environment variables to override defaults(see `doc-ingest-chat/ingest-svc.env` for defaults) and start the Docker Compose stack:
-
-**NOTE:** Depending on your system resources the ingestion process (chunking + tokenization + qdrant persist) and RAG (chat)
-may take longer than expected, information is updated on the console where docker-compose was started
+#### **3. Configure & Launch**
+Set up your environment variables. **Note:** `LLM_PATH` and `SUPERVISOR_LLM_PATH` support both absolute file paths (GGUF) and `http(s)` endpoints for remote `llama-server` or Ollama instances.
 
 ```bash
-# Export required env vars
+# REQUIRED: The root directory for all lifecycle stages (staging, success, etc.)
+export DEFAULT_DOC_INGEST_ROOT=/home/user/my-rag-docs
 
-# INGEST_FOLDER: Directory inside the container where files are read for ingestion. Must match the right side of the data volume mount.
-export INGEST_FOLDER=/home/samueldoyle/Projects/GitHub/SamD/selfhosted-rag-doc-chat-prototype/Docs
+# Staging directory where you drop your raw PDFs
+export STAGING_DIR=${DEFAULT_DOC_INGEST_ROOT}/staging
 
-# If you want some docs to test with 
-cd $INGEST_FOLDER
-curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o outline_of_history_pt1.pdf
-curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o outline_of_history_pt2.pdf
+# If you want some high-quality history docs to test with:
+mkdir -p $STAGING_DIR
+curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o $STAGING_DIR/outline_of_history_pt1.pdf
+curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o $STAGING_DIR/outline_of_history_pt2.pdf
 
-# Model Paths
-# EMBEDDING_MODEL_PATH: Path inside the container to the E5 model directory. Must match the right side of the E5 model volume mount.
-# Only tested with e5-large-v2
-# https://huggingface.co/intfloat/e5-large-v2/blob/main/model.safetensors
-export EMBEDDING_MODEL_PATH=/home/samueldoyle/AI_LOCAL/e5-large-v2
+# Model Paths (Local Path or Remote URL)
+export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
 
-# LLM_PATH: Path inside the container to the Llama model file. Must match the right side of the Llama model volume mount.
-# Last tested with Phi-3.5-mini
-# https://huggingface.co/bartowski/Phi-3.5-mini-instruct_Uncensored-GGUF
-export LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Phi/Phi-3.5-mini-instruct-Q4_K_M.gguf
-
-
-# SUPERVISOR_LLM_PATH: Supervisor agent used to create doc and per chunk context
-# Last tested with Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
-# https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
-export SUPERVISOR_LLM_PATH=/home/samueldoyle/AI_LOCAL/Models/Qwen2.5/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
-
-# Persistence Configuration
-# CHROMA_DATA_DIR: Where ChromaDB persisted data is stored.
-export CHROMA_DATA_DIR=${INGEST_FOLDER}/chroma_db
-
-# QDRANT_DATA_DIR / VECTOR_DB_DATA_DIR: Where Qdrant persisted data is stored.
-export QDRANT_DATA_DIR=${INGEST_FOLDER}/qdrant_data
-export VECTOR_DB_DATA_DIR=${INGEST_FOLDER}/qdrant_data
+# DUAL-LLM CONFIGURATION:
+export SUPERVISOR_LLM_PATH=http://192.168.1.50:8080/v1 # Normalization LLM
+export LLM_PATH=http://192.168.1.50:8080/v1            # RAG Chat LLM
 
 # Start the full stack (GPU mode is default)
-./doc-ingest-chat/run-compose.sh
-
-# open browser
-http://localhost:4321/
-# sample prompt
-"Who was Constantine the Great ?"
-
-# Or, start in CPU-only mode (much slower)
-./doc-ingest-chat/run-compose-cpu.sh
+./doc-ingest-chat/run-compose.sh --build
 ```
 
 **Successful Startup:**
 ![Successful Startup](./project-docs/compose-startup-complete.png)
 
-#### **3. Ingest Documents**
-Drop your documents into the `INGEST_FOLDER`. The system continuously scans this folder and processes them via the distributed pipeline.
+#### **4. Watch the Progress**
+Once the containers are up, the system automatically detects the files in `staging/`.
+- **Monitor Normalization**: `docker logs -f gatekeeper_worker`
+- **Monitor Embedding**: `docker logs -f consumer_worker_gpu`
 
-**Successful Ingest:**
-![Document Ingested](./project-docs/successful-ingest.png)
+#### **5. RAG Chat & UI Interaction**
+Once your documents reach the `success/` folder, they are fully indexed and searchable.
 
-#### **4. Chat!**
-Once running, open the Astro frontend at `http://localhost:4321`. Ask questions and the system will retrieve context and generate grounded answers.
+*   **Chat Interface**: Open [http://localhost:4321](http://localhost:4321) in your browser.
+*   **Backend API**: The UI communicates with a FastAPI service running at `http://localhost:8000`.
 
-![RAG](./project-docs/ui-doc-chatbox.png)
+**The RAG Conversation Flow:**
+1.  **User Query**: You ask a question (e.g., "Who was Constantine the Great?").
+2.  **Vector Search**: The system embeds your query and performs a similarity search in **Qdrant**, retrieving the most relevant Markdown chunks.
+3.  **Contextual Grounding**: The system injects these chunks into a specialized prompt, forcing the **RAG LLM** (`LLM_PATH`) to answer **only** using the provided text.
+4.  **Clickable Citations**: The UI displays the answer with clickable citations that are **direct Markdown links** back to the original PDF on the server.
+
+**Chat UI Console:**
+![RAG UI](./project-docs/ui-doc-chatbox.png)
 
 ---
 
@@ -150,15 +134,15 @@ Once running, open the Astro frontend at `http://localhost:4321`. Ask questions 
 
 Explore more technical details in our project documentation:
 
-- 🏗️ **[Architecture Overview: LangGraph Streaming Ingestion](./project-docs/architecture_overview.md)**: A deep dive into the state-machine-based orchestration and streaming data flow.
-- ⚖️ **[Why Custom Pipeline vs Langchain?](./project-docs/custom_vs_langchain.md)**: Explore the architectural decisions and why we built a custom distributed pipeline instead of using basic Langchain loaders.
-- 🛠️ **[Debugging, Inspection & Metrics](./project-docs/debugging_and_metrics.md)**: How to inspect Redis queues, query DuckDB, and analyze system performance metrics (JSONL).
+- 🏗️ **[Architecture Overview](./project-docs/architecture_overview.md)**: Deep dive into the LangGraph orchestration and DuckDB state machine.
+- ⚖️ **[Why Custom Pipeline vs Langchain?](./project-docs/custom_vs_langchain.md)**: Why we built a custom distributed pipeline instead of using basic Langchain loaders.
+- 🛠️ **[Debugging, Inspection & Metrics](./project-docs/debugging_and_metrics.md)**: How to inspect Redis queues, query DuckDB, and analyze system performance metrics.
 - 🏗️ **[Production Considerations](./project-docs/production_considerations.md)**: Strategies for scaling, cost analysis, and what features are needed for an enterprise deployment.
 - 🧮 **[AI Behavior & Usage](./project-docs/ai_behavior.md)**: Understand embedding bias and exactly how and where the LLM is utilized in the pipeline.
 
 ---
 
-### 🖥️ Hardware Used for Testing
+### 🖥️ Hardware Requirements (Tested)
 - **CPU**: Intel Core i9-14900KF (24-core)
 - **GPU**: NVIDIA RTX 4070 Dual 12GB
 - **RAM**: 32 GB DDR5

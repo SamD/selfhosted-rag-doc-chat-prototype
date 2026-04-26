@@ -21,16 +21,17 @@ def test_decode_image_node(mock_ocr_job):
     assert state["np_image"].shape == (10, 10)
 
 
-@patch("workers.ocr_graph.run_tesseract")
-def test_tesseract_ocr_node_success(mock_run, mock_ocr_job):
-    from workers.ocr_graph import tesseract_ocr_node
+@patch("workers.ocr_graph.run_ocr")
+def test_ocr_node_success(mock_run, mock_ocr_job):
+    from workers.ocr_graph import ocr_node
 
     mock_ocr_job["np_image"] = np.zeros((10, 10))
     mock_ocr_job["status"] = "processing"
-    mock_run.return_value = ("Extracted Text", "tesseract", 100.0)
-    state = tesseract_ocr_node(mock_ocr_job)
+    mock_run.return_value = ("Extracted Text", "docling_easyocr", 100.0)
+    state = ocr_node(mock_ocr_job)
     assert state["text"] == "Extracted Text"
     assert state["status"] == "success"
+    assert state["engine"] == "docling_easyocr"
 
 
 @patch("workers.ocr_graph.get_redis_client")
@@ -38,7 +39,7 @@ def test_respond_node(mock_redis, mock_ocr_job):
     from workers.ocr_graph import respond_node
 
     mock_ocr_job["text"] = "Extracted Text"
-    mock_ocr_job["engine"] = "tesseract"
+    mock_ocr_job["engine"] = "docling_easyocr"
     mock_ocr_job["status"] = "success"
     respond_node(mock_ocr_job)
     mock_redis.return_value.lpush.assert_called_once()

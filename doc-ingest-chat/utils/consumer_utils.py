@@ -31,21 +31,21 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
     try:
         db = get_db()
 
-        # Extract fields
-        all_texts = [entry["chunk"] for entry in chunks_to_store]
+        # Extract fields with safe defaults
+        all_texts = [entry.get("chunk", "[EMPTY CHUNK]") for entry in chunks_to_store]
         all_metadatas = [
             {
-                "source_file": entry["source_file"],
-                "type": entry["type"],
-                "engine": entry.get("engine", "unknown"),
-                "hash": entry["hash"],
+                "source_file": entry.get("source_file", source_file),
+                "type": entry.get("type", "unknown"),
+                "engine": entry.get("engine", "llamacpp"),
+                "hash": entry.get("hash", "unknown"),
                 "chunk_index": entry.get("chunk_index", i),
-                "id": entry["id"],
-                "page": int(entry["page"]) if isinstance(entry.get("page"), (int, str)) and str(entry["page"]).isdigit() else -1,
+                "id": entry.get("id", f"missing_id_{i}"),
+                "page": int(entry.get("page", -1)) if str(entry.get("page", "")).isdigit() else -1,
             }
             for i, entry in enumerate(chunks_to_store)
         ]
-        all_ids = [entry["id"] for entry in chunks_to_store]
+        all_ids = [m["id"] for m in all_metadatas]
 
         # Split and ingest in safe batches
         batches_count = 0

@@ -157,7 +157,7 @@ venv/
 env/
 */bin/
 */lib/
-*.env
+# *.env
 
 .factorypath
 
@@ -232,8 +232,8 @@ logs/
 *~
 
 # ─── Environment / secrets ────────────────────────────────────────────────────
-.env
-.env.*
+# .env
+# .env.*
 application-local.properties
 application-local.yml
 application-local.yaml

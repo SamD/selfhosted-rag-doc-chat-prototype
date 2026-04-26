@@ -19,12 +19,14 @@ class FlushFileHandler(logging.FileHandler):
 def setup_logging(log_file: Optional[str] = None, level: int = logging.INFO, include_default_filters: bool = False) -> logging.Logger:
     """
     Set up logging configuration. Should be called ONCE in the entry point (main).
+    Forced configuration ensures that our handlers are always applied even if
+    other libraries have already called basicConfig.
     """
     root_logger = logging.getLogger()
 
-    # If handlers are already set, don't re-configure (prevents 0-byte orphaned files)
-    if root_logger.hasHandlers():
-        return logging.getLogger("ingest")
+    # Clear existing handlers to ensure our configuration is applied
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
 
     handlers = [logging.StreamHandler(sys.stdout)]
 
@@ -35,12 +37,16 @@ def setup_logging(log_file: Optional[str] = None, level: int = logging.INFO, inc
     for handler in handlers:
         handler.setFormatter(formatter)
 
+    # Use basicConfig with force=True for extra safety
     logging.basicConfig(level=level, handlers=handlers, force=True)
 
     if include_default_filters:
         setup_pdf_logging()
 
-    return logging.getLogger("ingest")
+    # Ensure the root logger itself is set to the correct level
+    root_logger.setLevel(level)
+
+    return root_logger
 
 
 class SuppressCropBoxWarnings(logging.Filter):

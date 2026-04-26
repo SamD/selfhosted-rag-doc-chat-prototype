@@ -1,17 +1,25 @@
 # Builder stage
 FROM python:3.11.11-bookworm AS builder
 
-COPY ollama-requirements.txt .
-RUN pip install --upgrade pip \
- && pip install --no-cache-dir -r ollama-requirements.txt
+# Install uv
+RUN pip install --upgrade pip && pip install uv
+
+# Copy the configuration files from the project root into the container
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies using uv
+RUN uv pip install --system --no-cache-dir -r pyproject.toml
 
 # Runner stage
 FROM python:3.11.11-bookworm AS runner
 
-# Install poppler-utils (has apt now)
+# Install poppler-utils and system libraries for OpenCV and OCR
 RUN apt-get update && apt-get install -y \
     poppler-utils \
-    tesseract-ocr tesseract-ocr-eng tesseract-ocr-lat \
+    libgl1 \
+    libglib2.0-0 \
+    tesseract-ocr \
+    libtesseract-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # tesseract --list-langs

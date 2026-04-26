@@ -1,23 +1,159 @@
 #!/usr/bin/env python3
 """
 Utility functions for OCR processing.
+Uses Docling (EasyOCR backend) for robust extraction.
 """
 
+import base64
+import json
 import logging
 import os
 import time
+import traceback
+import uuid
+from typing import Optional, Tuple
 
-import pytesseract
-from config.settings import (
-    TESSDATA_PREFIX,
-    TESSERACT_LANGS,
-    TESSERACT_OEM,
-    TESSERACT_PSM,
-    TESSERACT_USE_SCRIPT_LATIN,
+import cv2
+import numpy as np
+import redis
+from config.settings import MAX_OCR_DIM, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import (
+    AcceleratorDevice,
+    AcceleratorOptions,
+    EasyOcrOptions,
+    PdfPipelineOptions,
 )
+from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 from PIL import Image
 
 log = logging.getLogger("ingest.ocr_utils")
+
+# Global Docling Converter (Lazy initialized)
+_DOCLING_CONVERTER = None
+_REDIS_CLIENT_CACHE = None
+
+
+def get_redis_client():
+    """Lazy initializer for the Redis client to ensure fork safety."""
+    global _REDIS_CLIENT_CACHE
+    if _REDIS_CLIENT_CACHE is None:
+        _REDIS_CLIENT_CACHE = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+    return _REDIS_CLIENT_CACHE
+
+
+def preprocess_image(pil_image):
+    """Preprocess image for OCR."""
+    if pil_image is None:
+        log.error("💥 preprocess_image received None")
+        return None
+    w, h = pil_image.size
+    if max(w, h) > MAX_OCR_DIM:
+        scale = MAX_OCR_DIM / max(w, h)
+        new_size = (int(w * scale), int(h * scale))
+        pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+    np_image = np.array(pil_image)
+    if len(np_image.shape) == 3:
+        if np_image.shape[2] == 4:  # RGBA
+            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGBA2GRAY)
+        else:  # RGB
+            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
+    return np_image
+
+
+def send_image_to_ocr(np_image, rel_path, page_num):
+    """Send image to OCR service and wait for response."""
+    start_time = time.perf_counter()
+    job_id = str(uuid.uuid4())
+    reply_key = f"ocr_reply:{job_id}"
+    job = {
+        "job_id": job_id,
+        "rel_path": rel_path,
+        "page_num": page_num,
+        "image_shape": np_image.shape,
+        "image_dtype": str(np_image.dtype),
+        "image_base64": base64.b64encode(np_image.tobytes()).decode(),
+        "reply_key": reply_key,
+    }
+    redis_client = get_redis_client()
+    redis_client.lpush(REDIS_OCR_JOB_QUEUE, json.dumps(job))
+
+    # HEARTBEAT POLLING: Instead of one long block, we poll and log status
+    result = None
+    wait_timeout = 300
+    start_wait = time.time()
+
+    while (time.time() - start_wait) < wait_timeout:
+        # Check for response in 30-second increments
+        result = redis_client.blpop(reply_key, timeout=30)
+        if result:
+            break
+
+        elapsed = int(time.time() - start_wait)
+        log.info(f"⏳ Waiting for OCR... {rel_path} P{page_num} ({elapsed}s elapsed)")
+
+    if not result:
+        raise TimeoutError(f"OCR timeout after {wait_timeout}s for {rel_path} page {page_num}")
+
+    ocr_roundtrip_ms = (time.perf_counter() - start_time) * 1000.0
+    _, data = result
+    result = json.loads(data)
+    return (
+        result.get("text"),
+        result.get("rel_path"),
+        result.get("page_num"),
+        result.get("engine"),
+        result.get("job_id"),
+        ocr_roundtrip_ms,
+    )
+
+
+def get_docling_converter():
+    """
+    Lazy initializer for Docling DocumentConverter with EasyOCR backend.
+    """
+    global _DOCLING_CONVERTER
+    if _DOCLING_CONVERTER is None:
+        try:
+            # Silence internal library noise
+            logging.getLogger("docling").setLevel(logging.WARNING)
+            logging.getLogger("easyocr").setLevel(logging.WARNING)
+            logging.getLogger("docling_parse").setLevel(logging.WARNING)
+
+            # OCR Options (EasyOCR)
+
+            log.info("🚀 Initializing Docling Converter (EasyOCR backend)...")
+
+            # Modern Docling 2.x Acceleration Setup
+            device_type = os.getenv("DEVICE", "cpu").lower()
+            accel_device = AcceleratorDevice.CUDA if device_type == "cuda" else AcceleratorDevice.CPU
+            log.info(f"⚡ Setting Docling acceleration to: {accel_device}")
+
+            # OCR Options (EasyOCR)
+            ocr_options = EasyOcrOptions(lang=["en"])
+
+            # Use PdfPipelineOptions for both to ensure compatibility with StandardPdfPipeline
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = True
+            pipeline_options.ocr_options = ocr_options
+            # Disable extra extractions for raw text speed
+            pipeline_options.do_table_structure = False
+
+            # Apply modern acceleration settings
+            pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
+
+            _DOCLING_CONVERTER = DocumentConverter(
+                allowed_formats=[InputFormat.IMAGE, InputFormat.PDF],
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                    InputFormat.IMAGE: ImageFormatOption(pipeline_options=pipeline_options),
+                },
+            )
+        except Exception as e:
+            log.error(f"💥 Failed to initialize Docling: {e}")
+            log.error(traceback.format_exc())
+            return None
+    return _DOCLING_CONVERTER
 
 
 def safe_image_save(pil_image, path, format=None):
@@ -39,46 +175,44 @@ def save_bad_image(np_image, debug_image_path, log_prefix):
     safe_image_save(pil_image, debug_image_path)
 
 
-def run_tesseract(np_image, rel_path, page_num):
+def run_ocr(np_image, rel_path, page_num) -> Tuple[Optional[str], str, float]:
     """
-    Executes Tesseract OCR on a NumPy image array.
-    Configures Tesseract based on project settings (PSM, OEM, Scripts).
+    Executes OCR using Docling (EasyOCR backend) on a NumPy image array.
     """
-    log.info(f"↪️ Running Tesseract for {rel_path} page {page_num}")
+    log.info(f"🔄 Running Docling (EasyOCR) for {rel_path} page {page_num}")
 
-    env = os.environ.copy()
-    if TESSDATA_PREFIX:
-        env["TESSDATA_PREFIX"] = TESSDATA_PREFIX
+    converter = get_docling_converter()
+    if not converter:
+        return None, "error_docling_not_init", 0.0
 
-    config_parts = [f"--psm {TESSERACT_PSM}", f"--oem {TESSERACT_OEM}"]
-    if TESSERACT_USE_SCRIPT_LATIN:
-        config_parts.append("-c tessedit_script=Latin")
-    config = " ".join(config_parts)
+    # Ensure a context-aware filename for the temporary file
+    # This prevents 'docling-parse' from logging generic 'Processing document tmp...' nonsense.
+    clean_name = os.path.basename(rel_path).replace(".", "_")
+    context_filename = f"page_{page_num}_{clean_name}.png"
+    tmp_path = os.path.join("/tmp", context_filename)
 
     start_time = time.perf_counter()
     try:
-        # Some versions of pytesseract do not support the env kwarg
+        # Save the NumPy array to a context-aware file
+        pil_image = Image.fromarray(np_image)
+        pil_image.save(tmp_path)
+
         try:
-            text = pytesseract.image_to_string(
-                np_image,
-                lang=TESSERACT_LANGS,
-                config=config,
-                env=env,
-            ).strip()
-        except TypeError:
-            text = pytesseract.image_to_string(
-                np_image,
-                lang=TESSERACT_LANGS,
-                config=config,
-            ).strip()
+            result = converter.convert(tmp_path)
+            # Result is a converted document. We export to markdown for better structure preservation.
+            full_text = result.document.export_to_markdown().strip()
 
-        execution_time_ms = (time.perf_counter() - start_time) * 1000.0
+            execution_time_ms = (time.perf_counter() - start_time) * 1000.0
 
-        if not text or not text.strip():
-            return None, "notext_tesseract", execution_time_ms
+            if not full_text:
+                return None, "notext_docling", execution_time_ms
 
-        return text, "tesseract", execution_time_ms
+            return full_text, "docling_easyocr", execution_time_ms
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     except Exception as e:
-        log.error(f"💥 Tesseract execution failed: {e}")
-        return None, "error_tesseract", 0.0
+        log.error(f"💥 Docling execution failed: {e}")
+        log.error(traceback.format_exc())
+        return None, "error_docling", 0.0

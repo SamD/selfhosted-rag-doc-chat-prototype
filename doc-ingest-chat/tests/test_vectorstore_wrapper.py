@@ -10,8 +10,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Set required environment variables
-os.environ.setdefault("INGEST_FOLDER", "/tmp/test")
-os.environ.setdefault("CHROMA_DATA_DIR", "/tmp/chroma")
+os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", "/tmp/test")
 os.environ.setdefault("EMBEDDING_MODEL_PATH", "intfloat/e5-large-v2")
 os.environ.setdefault("LLM_PATH", "/tmp/test.gguf")
 os.environ.setdefault("VECTOR_DB_HOST", "vector-db")

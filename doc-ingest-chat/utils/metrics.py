@@ -186,7 +186,7 @@ class JobMetrics:
             with metrics.timer("image_decode"):
                 # decode image
                 pass
-            metrics.add_field("engine", "tesseract")
+            metrics.add_field("engine", "docling_easyocr")
             metrics.add_field("text_length", 1024)
 
         metrics.emit(log)

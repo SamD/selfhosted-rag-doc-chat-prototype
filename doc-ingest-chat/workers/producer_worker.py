@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 """
 Producer Worker for processing documents and enqueuing them into Redis.
-Uses a shared pre-compiled LangGraph singleton inherited via fork.
+Refactored for database-driven state machine lifecycle.
 """
 
 import multiprocessing
 import os
+import random
+import shutil
 import signal
 import time
-import uuid
 from multiprocessing import Manager, Pool
 
-from config.settings import (
-    ALL_SUPPORTED_EXT,
-    DEBUG_IMAGE_DIR,
-    INGEST_FOLDER,
-    QUEUE_NAMES,
-)
+from config import settings
 from PIL import Image
-from services.job_service import init_job_db, is_file_processed
-from utils.file_utils import normalize_rel_path
+from services.job_service import STATUS_CONSUMING, STATUS_INGEST_FAILED, STATUS_INGESTING, STATUS_PREPROCESSING_COMPLETE, JobService, init_job_db
 from utils.logging_config import setup_logging
 
-os.makedirs(DEBUG_IMAGE_DIR, exist_ok=True)
+os.makedirs(settings.DEBUG_IMAGE_DIR, exist_ok=True)
 Image.MAX_IMAGE_PIXELS = 500_000_000
 
 # Shared State (Global in worker processes)
@@ -35,19 +30,79 @@ def get_next_queue():
     global queue_lock, queue_index
     with queue_lock:
         i = queue_index.value
-        queue_index.value = (i + 1) % len(QUEUE_NAMES)
-        return QUEUE_NAMES[i]
+        queue_index.value = (i + 1) % len(settings.QUEUE_NAMES)
+        return settings.QUEUE_NAMES[i]
 
 
-# Moved Redis instantiation to worker tasks to avoid fork-safety issues
 log = setup_logging("ingest_producer.log", include_default_filters=True)
 
 
-def run_ingest(job_tuple):
+def producer_worker_task(dummy_arg):
+    """
+    Worker process loop: Polls DB for PREPROCESSING_COMPLETE jobs, claims them, and performs work.
+    """
     from workers.producer_graph import run_ingest_graph
 
-    # We pass the global gpu_lock to the graph runner
-    return run_ingest_graph(job_tuple, gpu_lock_obj=gpu_lock)
+    # 0. STARTUP JITTER: Prevent 'Thundering Herd' on cold start
+    time.sleep(random.random() * 2.0)
+
+    while not SHUTDOWN.is_set():
+        # 1. ATOMIC CLAIM
+        job = JobService.claim_job(STATUS_PREPROCESSING_COMPLETE, STATUS_INGESTING)
+        if not job:
+            # JITTERED POLLING: Prevent workers from syncing up their heartbeats
+            time.sleep(5 + (random.random() * 2.0))
+            continue
+
+        job_id = job["id"]
+        pdf_path = job["pdf_path"]
+        md_path = job["md_path"]
+        filename = job["original_filename"]
+
+        log.info(f"👷 Producer (PID {os.getpid()}) claimed job {job_id} [{filename}]")
+
+        try:
+            # 2. MOVE TO CONSUMING ISOLATION
+            # Both files move in tandem
+            cons_pdf_path = os.path.join(settings.CONSUMING_DIR, filename)
+            cons_md_path = os.path.join(settings.CONSUMING_DIR, os.path.basename(md_path))
+
+            if os.path.exists(pdf_path):
+                shutil.move(pdf_path, cons_pdf_path)
+            if os.path.exists(md_path):
+                shutil.move(md_path, cons_md_path)
+
+            # Update DB with current location
+            JobService.transition_job(job_id, STATUS_INGESTING, new_pdf_path=cons_pdf_path, new_md_path=cons_md_path)
+
+            # 3. PERFORM CHUNKING & ENQUEUING (via Graph)
+            # The graph needs (job_id, full_path, rel_path) - we pass the MD path as the primary work file
+            job_tuple = (job_id, cons_md_path, filename)
+            success = run_ingest_graph(job_tuple, gpu_lock_obj=gpu_lock)
+
+            if success:
+                # 4. TRANSITION TO CONSUMING
+                # Chunks are in Redis, Consumer is picking them up
+                JobService.transition_job(job_id, STATUS_CONSUMING)
+                log.info(f"✅ Finished Ingesting (Producer phase): {filename}")
+            else:
+                raise Exception("Producer Graph returned failure.")
+
+        except Exception as e:
+            log.error(f"💥 Fatal error in producer worker for {filename}: {e}")
+            # MOVE TO FAILED
+            failed_pdf_path = os.path.join(settings.FAILED_DIR, filename)
+            failed_md_path = os.path.join(settings.FAILED_DIR, os.path.basename(md_path))
+
+            try:
+                if os.path.exists(cons_pdf_path):
+                    shutil.move(cons_pdf_path, failed_pdf_path)
+                if os.path.exists(cons_md_path):
+                    shutil.move(cons_md_path, failed_md_path)
+            except Exception:
+                pass
+
+            JobService.transition_job(job_id, STATUS_INGEST_FAILED, new_pdf_path=failed_pdf_path, new_md_path=failed_md_path, error=str(e))
 
 
 def init_worker(q_lock_obj, q_idx_obj, g_lock_obj):
@@ -74,70 +129,35 @@ def main(scan_interval=30):
     except RuntimeError:
         pass
 
-    # 1. PRE-COMPILE THE PRODUCER GRAPH IN PARENT
+    # Pre-compile Graph
     from workers.producer_graph import get_producer_app
 
-    log.info("🏗️ Pre-compiling Producer LangGraph in parent process...")
     get_producer_app()
-
     init_job_db()
 
-    # 2. Setup Manager for shared locks and indices
     with Manager() as manager:
         global_gpu_lock = manager.Lock()
         q_lock = manager.Lock()
         q_idx = manager.Value("i", 0)
 
-        # Persistent Pool to avoid constant re-spawning
         num_workers = min(4, os.cpu_count() or 1)
-        log.info(f"🚀 Starting persistent Producer Pool with {num_workers} workers")
+        log.info(f"🚀 Starting Producer Pool with {num_workers} workers (DB-driven)")
 
         with Pool(
             processes=num_workers,
             initializer=init_worker,
             initargs=(q_lock, q_idx, global_gpu_lock),
-            maxtasksperchild=10,  # Increased for better efficiency (re-loads models less often)
+            maxtasksperchild=5,
         ) as pool:
+            # Dispatch workers to their loops
+            for _ in range(num_workers):
+                pool.apply_async(producer_worker_task, (None,))
+
+            # Keep main loop alive for monitoring
             while not SHUTDOWN.is_set():
-                try:
-                    jobs = []
-                    job_id_base = str(uuid.uuid4())[:8]
-                    counter = 0
+                time.sleep(scan_interval)
 
-                    for root, _, files in os.walk(INGEST_FOLDER):
-                        for fname in files:
-                            if fname.lower().endswith(ALL_SUPPORTED_EXT):
-                                full_path = os.path.join(root, fname)
-                                _ingest_folder = INGEST_FOLDER.decode() if isinstance(INGEST_FOLDER, bytes) else INGEST_FOLDER
-                                rel_path = normalize_rel_path(os.path.relpath(full_path, _ingest_folder))
-
-                                if is_file_processed(rel_path):
-                                    continue
-
-                                jobs.append((f"{job_id_base}-{counter}", full_path, rel_path))
-                                counter += 1
-
-                    if jobs:
-                        log.info(f"📦 Found {len(jobs)} new file(s) to ingest")
-                        success = 0
-
-                        for result in pool.imap_unordered(run_ingest, jobs, chunksize=1):
-                            if SHUTDOWN.is_set():
-                                break
-                            if result:
-                                success += 1
-                        log.info(f"✅ Ingested {success}/{len(jobs)} file(s) this cycle")
-                    else:
-                        log.info("🔍 No new files found this cycle")
-
-                    if not SHUTDOWN.is_set():
-                        time.sleep(scan_interval)
-
-                except Exception as e:
-                    log.error(f"Unhandled error in producer loop: {e}")
-                    time.sleep(5)
-
-    log.info("🛑 Tree walker exiting cleanly.")
+    log.info("🛑 Producer Controller exiting cleanly.")
 
 
 if __name__ == "__main__":

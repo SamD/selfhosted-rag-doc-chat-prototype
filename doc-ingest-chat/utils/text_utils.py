@@ -3,13 +3,34 @@
 Text processing utility functions.
 """
 
+import logging
 import re
 import string
 import unicodedata
+from typing import Any
 
 import regex  # third-party regex with Unicode script support
-from config.settings import ALLOW_LATIN_EXTENDED, LATIN_SCRIPT_MIN_RATIO
+from config.settings import ALLOW_LATIN_EXTENDED, EMBEDDING_MODEL_PATH, LATIN_SCRIPT_MIN_RATIO
 from ftfy import fix_text
+from transformers import AutoTokenizer
+
+log = logging.getLogger("ingest.text_utils")
+
+# Global tokenizer cache (Lazy initialized per process)
+_CACHED_TOKENIZER = None
+
+
+def get_tokenizer():
+    """Lazy initializer for the shared tokenizer."""
+    global _CACHED_TOKENIZER
+    if _CACHED_TOKENIZER is None:
+        try:
+            log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
+            _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH, use_fast=True, trust_remote_code=True, local_files_only=True)
+        except Exception as e:
+            log.error(f"💥 Failed to load tokenizer: {e}")
+            return None
+    return _CACHED_TOKENIZER
 
 
 class TextUtils:
@@ -94,13 +115,24 @@ class TextUtils:
     @staticmethod
     def is_low_quality(text: str, tokenizer, min_tokens: int = 5) -> bool:
         """Check if text has too few tokens."""
+        if not tokenizer:
+            return False
         tokens = tokenizer.encode(text, add_special_tokens=False)
         return len(tokens) < min_tokens
 
     @staticmethod
-    def is_bad_ocr(text: str, tokenizer) -> bool:
-        """Check if OCR text is of poor quality."""
-        return not text or not text.strip() or TextUtils.is_gibberish(text) or TextUtils.is_visibly_corrupt(text) or TextUtils.is_low_quality(text, tokenizer)
+    def is_bad_ocr(text: str, tokenizer: Any = None) -> bool:
+        """Check if OCR text is of poor quality.
+
+        Args:
+            text: The text to check.
+            tokenizer: Optional tokenizer instance. If not provided, the global one is used.
+        """
+        if not text or not text.strip():
+            return True
+        if not tokenizer:
+            tokenizer = get_tokenizer()
+        return TextUtils.is_gibberish(text) or TextUtils.is_visibly_corrupt(text) or TextUtils.is_low_quality(text, tokenizer)
 
     @staticmethod
     def is_invalid_text(text: str) -> bool:

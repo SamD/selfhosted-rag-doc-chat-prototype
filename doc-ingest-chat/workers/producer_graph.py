@@ -8,51 +8,40 @@ import hashlib
 import json
 import logging
 import os
-from typing import Any, Optional, TypedDict
+from typing import List, Optional, TypedDict
 
-from config.settings import SUPPORTED_MEDIA_EXT
+import duckdb
+from config.settings import GATEKEEPER_FAILURE_DB, MAX_TOKENS, SUPPORTED_MEDIA_EXT
 from langgraph.graph import END, StateGraph
-from processors.text_processor import TextProcessor, make_chunk_id, split_doc
+from processors.text_processor import TextProcessor, make_chunk_id, split_markdown_doc
 from services.job_service import STATUS_ENQUEUED, STATUS_FAILED, STATUS_PROCESSING, update_job_status
 from services.redis_service import get_redis_client
 from utils.producer_utils import (
     blocking_push_with_backpressure,
-    extract_text_from_html,
-    extract_text_from_media,
-    fallback_ocr,
-    process_pdf_by_page,
+    handle_error,
+    send_file_end_sentinel,
 )
-from utils.text_utils import is_valid_pdf
-from workers.producer_worker import get_next_queue
 
 log = logging.getLogger("ingest.producer_graph")
 
-# Global cache for the compiled graph
-_COMPILED_PRODUCER_APP = None
-
-# Global reference for the multiprocessing GPU lock
-_GPU_LOCK = None
-
 
 class IngestState(TypedDict):
-    """Represents the internal state of a single file ingestion job."""
+    """Represents the internal state of the ingestion graph."""
 
-    job_id: str
     full_path: str
     rel_path: str
+    job_id: str
+    queue_name: str
+    document_id: Optional[str]
     file_type: str
-    total_chunks_sent: int
-    queue_name: Optional[str]
-    requires_ocr: bool
+    chunks: List[str]
+    metadata: List[dict]
     status: str
     error: Optional[str]
-    document_id: Optional[str]
-    metrics: Optional[Any]
-    pages_processed: int
 
 
 def scan_file_node(state: IngestState) -> IngestState:
-    """Initial validation and type detection."""
+    """Initial validation and type detection for normalized documents."""
     full_path = state["full_path"]
     rel_path = state["rel_path"]
     log.info(f"🔍 [Node: Scan] {rel_path}")
@@ -61,46 +50,66 @@ def scan_file_node(state: IngestState) -> IngestState:
     if not os.path.exists(full_path):
         return {**state, "status": STATUS_FAILED, "error": "File does not exist"}
 
-    # CALCULATE DOCUMENT ID ONCE (Deterministic hash of file bytes)
-    try:
-        with open(full_path, "rb") as f:
-            file_bytes = f.read()
-        document_id = TextProcessor.get_document_id(file_bytes)
-        log.info(f"🆔 [Node: Scan] Generated ID: {document_id} for {rel_path}")
-    except Exception as e:
-        log.error(f"💥 Failed to generate ID for {rel_path}: {e}")
-        return {**state, "status": STATUS_FAILED, "error": f"ID generation failed: {e}"}
+    # --- GATEKEEPER RACE CONDITION PROTECTION ---
+    # If this is a markdown file, we must ensure the Gatekeeper is finished
+    if full_path.endswith(".md"):
+        file_slug = os.path.basename(full_path).replace(".md", "")
+        try:
+            con = duckdb.connect(GATEKEEPER_FAILURE_DB)
+            res = con.execute("SELECT status FROM gatekeeper_history WHERE slug = ?", [file_slug]).fetchone()
+            con.close()
+
+            if not res or res[0] != "SUCCESS":
+                log.info(f"⏳ Normalization incomplete, waiting for Gatekeeper: {file_slug}")
+                # We return a specific status that the worker can handle to retry later
+                return {**state, "status": "pending"}
+        except Exception as e:
+            log.warning(f"⚠️ Could not verify Gatekeeper status for {file_slug}: {e}")
+    # -------------------------------------------
 
     file_ext = os.path.splitext(full_path)[1].lower()
-    if file_ext == ".pdf":
-        file_type = "pdf"
-    elif file_ext in (".html", ".htm"):
-        file_type = "html"
-    elif file_ext in SUPPORTED_MEDIA_EXT:
-        file_type = "media"
+    if file_ext != ".md":
+        # We only process .md files from the gatekeeper now
+        # But we might still support media/html later if they bypass gatekeeper
+        if file_ext in (".html", ".htm"):
+            file_type = "html"
+        elif file_ext in SUPPORTED_MEDIA_EXT:
+            file_type = "media"
+        else:
+            return {**state, "status": STATUS_FAILED, "error": f"Unsupported extension: {file_ext}"}
     else:
-        return {**state, "status": STATUS_FAILED, "error": f"Unsupported file type: {file_ext}"}
+        file_type = "markdown"
 
-    return {**state, "file_type": file_type, "document_id": document_id, "status": STATUS_PROCESSING, "queue_name": get_next_queue()}
+    return {**state, "file_type": file_type, "status": "processing"}
 
 
-def stream_chunks_to_redis(chunks_with_engine, state: IngestState) -> int:
-    if not chunks_with_engine:
-        return 0
+def _push_chunks_to_redis(state: IngestState, chunks_with_engine: List[tuple]) -> int:
+    """Helper to format and push chunks to partitioned Redis queues."""
+    queue_name = state["queue_name"]
     rel_path = state["rel_path"]
     file_type = state["file_type"]
-    queue_name = state["queue_name"]
-    start_idx = state["total_chunks_sent"]
+
     entries = []
-    for i, (chunk, engine, page) in enumerate(chunks_with_engine):
+    start_idx = 0
+    doc_id = state["document_id"]
+    # Mandatory RAG prefix for Vector DB consistency
+    enrichment_prefix = f"passage: [{doc_id}] "
+
+    for i, (chunk_text, engine, page) in enumerate(chunks_with_engine):
         idx = start_idx + i
+
+        # WE PREPEND THE PREFIX HERE: This is what the Consumer will validate
+        # and what Qdrant will store.
+        final_chunk = f"{enrichment_prefix}{chunk_text}"
+
         entry = {
-            "chunk": chunk,
-            "id": make_chunk_id(rel_path, idx, chunk),
+            "chunk": final_chunk,
+            "id": make_chunk_id(rel_path, idx, final_chunk, document_id=doc_id),
             "source_file": rel_path,
-            "document_id": state["document_id"],
-            "type": file_type,
-            "hash": hashlib.md5(chunk.encode()).hexdigest(),
+            "document_id": doc_id,
+            "source_type": file_type,
+            "chunk_format": "MD" if file_type == "markdown" else "TEXT",
+            "hash": hashlib.md5(final_chunk.encode()).hexdigest(),
             "engine": engine,
             "page": page,
             "chunk_index": idx,
@@ -111,215 +120,147 @@ def stream_chunks_to_redis(chunks_with_engine, state: IngestState) -> int:
     return len(entries)
 
 
-def pdf_extract_node(state: IngestState) -> IngestState:
+def markdown_extract_node(state: IngestState) -> IngestState:
+    """Extracts and splits content from normalized Markdown files."""
     if state["status"] == STATUS_FAILED:
         return state
     full_path = state["full_path"]
     rel_path = state["rel_path"]
-    document_id = state["document_id"]
 
-    log.info(f"📄 [Node: PDF Extract] {rel_path}")
-    if not is_valid_pdf(full_path):
-        return {**state, "status": STATUS_FAILED, "error": "Invalid PDF"}
-    total_sent = 0
-    pages_seen = set()
-
-    def on_chunks(batch):
-        nonlocal total_sent
-        if total_sent == 0 and batch:
-            sample = batch[0][0]
-            # Show enough characters to see the full enrichment tag and some content
-            msg = f"✨ [Enrichment Sample] {rel_path} Chunk 0: {sample[:500]}..."
-            logging.getLogger("ingest").info(msg)
-            print(msg, flush=True)
-
-        # Chunks are now already enriched by split_doc
-        count = stream_chunks_to_redis(batch, {**state, "total_chunks_sent": total_sent})
-        total_sent += count
-        for _, _, p in batch:
-            pages_seen.add(p)
-
+    log.info(f"📝 [Node: Markdown Extract] {rel_path}")
     try:
-        process_pdf_by_page(full_path, rel_path, "pdf", chunk_callback=on_chunks, document_id=document_id)
-        if total_sent == 0:
-            return {**state, "requires_ocr": True}
-        return {**state, "total_chunks_sent": total_sent, "pages_processed": len(pages_seen), "requires_ocr": False}
-    except Exception:
-        return {**state, "requires_ocr": True}
+        with open(full_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+        # Deterministic document_id from normalized content
+        doc_id = TextProcessor.get_document_id(text.encode())
+
+        # Use new prefix-aware splitting to prevent Consumer dropping oversized chunks
+        chunks, metadatas = split_markdown_doc(text, rel_path, budget=MAX_TOKENS, prefix="passage: ", document_id=doc_id)
+        if not chunks:
+            return {**state, "status": STATUS_FAILED, "error": "Empty Markdown or split failed"}
+
+        total_chunks = len(chunks)
+
+        # In Markdown mode, headers are preserved in metadatas, but we use a simple tuple format
+        # compatible with the _push helper
+        chunks_with_engine = []
+        for i, chunk in enumerate(chunks):
+            # Extract page from metadata if available (added by Gatekeeper in YAML)
+            page = metadatas[i].get("page", 1)
+            chunks_with_engine.append((chunk, "llamacpp", page))
+
+        pushed_count = _push_chunks_to_redis({**state, "document_id": doc_id}, chunks_with_engine)
+        log.info(f"🚀 [Node: Markdown] Pushed {pushed_count}/{total_chunks} chunks for {rel_path}")
+
+        return {**state, "status": "processing", "document_id": doc_id, "chunks": chunks}
+    except Exception as e:
+        return handle_error(state, f"Markdown processing error: {e}", log)
 
 
 def html_extract_node(state: IngestState) -> IngestState:
+    """HTML processing node (Placeholder for now)."""
     if state["status"] == STATUS_FAILED:
         return state
-    full_path = state["full_path"]
-    rel_path = state["rel_path"]
-    document_id = state["document_id"]
-
-    log.info(f"🌐 [Node: HTML Extract] {rel_path}")
-    text = extract_text_from_html(full_path)
-    if not text or len(text.strip()) < 10:
-        return {**state, "status": STATUS_FAILED, "error": "Empty HTML"}
-    chunks, _ = split_doc(text, rel_path, "html", page_num=-1, document_id=document_id)
-    chunks_with_engine = [(c, "html", -1) for c in chunks]
-    count = stream_chunks_to_redis(chunks_with_engine, state)
-    return {**state, "total_chunks_sent": count, "pages_processed": 1}
+    return {**state, "status": STATUS_FAILED, "error": "HTML extraction not yet implemented in LangGraph mode"}
 
 
 def media_extract_node(state: IngestState) -> IngestState:
+    """Media (Video/Audio) processing node (Placeholder for now)."""
     if state["status"] == STATUS_FAILED:
         return state
-    full_path = state["full_path"]
-    rel_path = state["rel_path"]
-    document_id = state["document_id"]
-
-    log.info(f"🎥 [Node: Media Extract] {rel_path}")
-    try:
-        segments = extract_text_from_media(full_path)
-        if not segments:
-            return {**state, "status": STATUS_FAILED, "error": "Transcription failed"}
-        text = " ".join([s["text"] for s in segments])
-        if not text or len(text.strip()) < 10:
-            return {**state, "status": STATUS_FAILED, "error": "Empty text"}
-        chunks, _ = split_doc(text, rel_path, "media", page_num=-1, document_id=document_id)
-        chunks_with_engine = [(c, "whisper", -1) for c in chunks]
-        count = stream_chunks_to_redis(chunks_with_engine, state)
-        return {**state, "total_chunks_sent": count, "pages_processed": 1}
-    except Exception as e:
-        return {**state, "status": STATUS_FAILED, "error": str(e)}
-
-
-def fallback_ocr_node(state: IngestState) -> IngestState:
-    if state["status"] == STATUS_FAILED:
-        return state
-    full_path = state["full_path"]
-    rel_path = state["rel_path"]
-    document_id = state["document_id"]
-
-    log.info(f"📸 [Node: OCR Fallback] {rel_path}")
-    total_sent = 0
-    pages_seen = set()
-
-    def on_chunks(batch):
-        nonlocal total_sent
-        # Chunks are already enriched by split_doc
-        count = stream_chunks_to_redis(batch, {**state, "total_chunks_sent": total_sent})
-        total_sent += count
-        for _, _, p in batch:
-            pages_seen.add(p)
-
-    try:
-        fallback_ocr(full_path, rel_path, state["job_id"], chunk_callback=on_chunks, document_id=document_id)
-        if total_sent == 0:
-            return {**state, "status": STATUS_FAILED, "error": "OCR failed"}
-        return {**state, "total_chunks_sent": total_sent, "pages_processed": len(pages_seen)}
-    except Exception as e:
-        return {**state, "status": STATUS_FAILED, "error": str(e)}
+    return {**state, "status": STATUS_FAILED, "error": "Media transcription not yet implemented in LangGraph mode"}
 
 
 def send_sentinel_node(state: IngestState) -> IngestState:
+    """Sends the file_end sentinel to the Consumer."""
     if state["status"] == STATUS_FAILED:
         return state
-    rel_path = state["rel_path"]
-    queue_name = state["queue_name"]
-    total_sent = state["total_chunks_sent"]
+
+    log.info(f"🏁 [Node: Finalize] Sending sentinel for {state['rel_path']}")
     try:
         redis_client = get_redis_client()
-        blocking_push_with_backpressure(rclient=redis_client, queue_name=queue_name, entries=[json.dumps({"type": "file_end", "source_file": rel_path, "expected_chunks": total_sent})], max_queue_length=50000, rel_path=rel_path)
-        return {**state, "status": STATUS_ENQUEUED}
+        send_file_end_sentinel(
+            rclient=redis_client,
+            queue_name=state["queue_name"],
+            source_file=state["rel_path"],
+            total_chunks=len(state["chunks"]),
+        )
+        return {**state, "status": "processing"}
     except Exception as e:
-        return {**state, "status": STATUS_FAILED, "error": str(e)}
+        return handle_error(state, f"Sentinel error: {e}", log)
 
 
 def finalize_state_node(state: IngestState) -> IngestState:
-    rel_path = state["rel_path"]
-    status = state["status"]
-    error = state["error"]
-    document_id = state["document_id"]
-    log.info(f"🏁 [Node: Finalize] {rel_path}: {status}")
-    update_job_status(rel_path, status, state["job_id"], error, document_id)
+    """Terminal node to update database status."""
+    if state["status"] == "pending":
+        # Don't update job status, just exit so it stays in queue
+        return state
+
+    final_status = STATUS_ENQUEUED if state["status"] == "processing" else STATUS_FAILED
+    update_job_status(state["rel_path"], final_status, state["job_id"], error_message=state["error"])
+    log.info(f"✨ [Node: Final State] {state['rel_path']} -> {final_status}")
     return state
 
 
-def create_producer_graph():
+def get_producer_app():
+    """Compiles the Producer LangGraph."""
     workflow = StateGraph(IngestState)
+
     workflow.add_node("scan_file_node", scan_file_node)
-    workflow.add_node("pdf_extract_node", pdf_extract_node)
+    workflow.add_node("markdown_extract_node", markdown_extract_node)
     workflow.add_node("html_extract_node", html_extract_node)
     workflow.add_node("media_extract_node", media_extract_node)
-    workflow.add_node("fallback_ocr_node", fallback_ocr_node)
     workflow.add_node("send_sentinel_node", send_sentinel_node)
     workflow.add_node("finalize_state_node", finalize_state_node)
+
     workflow.set_entry_point("scan_file_node")
 
     def route_scan(s):
         if s["status"] == STATUS_FAILED:
             return "finalize_state_node"
-        if s["file_type"] == "pdf":
-            return "pdf_extract_node"
+        if s["status"] == "pending":
+            log.info(f"⏳ Normalization incomplete, waiting for Gatekeeper: {s['rel_path']}")
+            return "finalize_state_node"
+        if s["file_type"] == "markdown":
+            return "markdown_extract_node"
         if s["file_type"] == "html":
             return "html_extract_node"
         return "media_extract_node"
 
-    workflow.add_conditional_edges(
-        "scan_file_node",
-        route_scan,
-        {
-            "pdf_extract_node": "pdf_extract_node",
-            "html_extract_node": "html_extract_node",
-            "media_extract_node": "media_extract_node",
-            "finalize_state_node": "finalize_state_node",
-        },
-    )
+    workflow.add_conditional_edges("scan_file_node", route_scan, {"markdown_extract_node": "markdown_extract_node", "html_extract_node": "html_extract_node", "media_extract_node": "media_extract_node", "finalize_state_node": "finalize_state_node"})
 
-    workflow.add_conditional_edges(
-        "pdf_extract_node",
-        lambda s: "finalize_state_node" if s["status"] == STATUS_FAILED else ("fallback_ocr_node" if s["requires_ocr"] else "send_sentinel_node"),
-        {"fallback_ocr_node": "fallback_ocr_node", "send_sentinel_node": "send_sentinel_node", "finalize_state_node": "finalize_state_node"},
-    )
-
-    workflow.add_conditional_edges("html_extract_node", lambda s: "finalize_state_node" if s["status"] == STATUS_FAILED else "send_sentinel_node", {"send_sentinel_node": "send_sentinel_node", "finalize_state_node": "finalize_state_node"})
-
-    workflow.add_conditional_edges("media_extract_node", lambda s: "finalize_state_node" if s["status"] == STATUS_FAILED else "send_sentinel_node", {"send_sentinel_node": "send_sentinel_node", "finalize_state_node": "finalize_state_node"})
-
-    workflow.add_conditional_edges("fallback_ocr_node", lambda s: "finalize_state_node" if s["status"] == STATUS_FAILED else "send_sentinel_node", {"send_sentinel_node": "send_sentinel_node", "finalize_state_node": "finalize_state_node"})
+    workflow.add_edge("markdown_extract_node", "send_sentinel_node")
+    workflow.add_edge("html_extract_node", "send_sentinel_node")
+    workflow.add_edge("media_extract_node", "send_sentinel_node")
 
     workflow.add_edge("send_sentinel_node", "finalize_state_node")
     workflow.add_edge("finalize_state_node", END)
     return workflow.compile()
 
 
-def get_producer_app():
-    global _COMPILED_PRODUCER_APP
-    if _COMPILED_PRODUCER_APP is None:
-        log.info("🔨 Compiling Shared Producer LangGraph...")
-        _COMPILED_PRODUCER_APP = create_producer_graph()
-    return _COMPILED_PRODUCER_APP
-
-
-def run_ingest_graph(job_tuple: tuple, gpu_lock_obj=None) -> bool:
-    global _GPU_LOCK
-    _GPU_LOCK = gpu_lock_obj
-    job_id, source_file, rel_path = job_tuple
+def run_ingest_graph(job_tuple, gpu_lock_obj=None) -> bool:
+    """Invokes the compiled LangGraph for a single document."""
+    job_id, full_path, rel_path = job_tuple
+    from workers.producer_worker import get_next_queue
 
     initial_state: IngestState = {
-        "job_id": job_id,
-        "full_path": source_file,
+        "full_path": full_path,
         "rel_path": rel_path,
-        "file_type": "unknown",
-        "total_chunks_sent": 0,
-        "queue_name": None,
-        "requires_ocr": False,
-        "status": STATUS_PROCESSING,
+        "job_id": job_id,
+        "queue_name": get_next_queue(),
+        "chunks": [],
+        "metadata": [],
+        "status": "pending",
         "error": None,
         "document_id": None,
-        "metrics": None,
-        "pages_processed": 0,
+        "file_type": "unknown",
     }
 
     try:
         app = get_producer_app()
         final_state = app.invoke(initial_state)
-        return final_state["status"] == STATUS_ENQUEUED
+        return final_state["status"] == "processing" or final_state["status"] == "pending"
     except Exception as e:
         log.error(f"💥 Graph fatal error: {e}")
         return False

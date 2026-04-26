@@ -11,13 +11,11 @@ import signal
 import sys
 import time
 import traceback
-from collections import defaultdict
 from typing import Any, Callable, List
 
-from config.settings import CHUNK_TIMEOUT, MAX_CHROMA_BATCH_SIZE, MAX_CHUNKS, QUEUE_NAMES
-from services.parquet_service import append_chunks, init_schema
+from config.settings import CHUNK_TIMEOUT, QUEUE_NAMES
+from services.parquet_service import init_schema
 from services.redis_service import get_redis_client
-from utils.consumer_utils import store_chunks_in_db
 from utils.logging_config import setup_logging
 from utils.metrics import FileMetrics
 
@@ -29,26 +27,27 @@ def current_time() -> int:
 
 
 def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
-    """Main consumer worker function."""
+    """Main consumer worker function using Zero-Memory staging."""
+    from services.parquet_service import get_staged_chunks, stage_chunks
     from workers.consumer_graph import run_consumer_graph
 
     try:
         r = get_redis_client()
-        buffer = defaultdict(list)
         timestamps = {}
+        chunk_buffer = []
 
-        log.info(f"🚀 Started shared-graph consumer for queue: {queue_name}")
+        log.info(f"🚀 Started shared-graph consumer for queue: {queue_name} (Staged Mode)")
 
         while not shared_data["shutdown_flag"]:
-            # Use a small timeout to allow frequent shutdown_flag checks
             res = r.blpop(queue_name, timeout=5)
 
-            # Periodically clean up stale buffers (TTL check)
+            # TTL check for stale staged data
             now = current_time()
             for file_path, first_seen in list(timestamps.items()):
                 if now - first_seen > CHUNK_TIMEOUT:
-                    log.warning(f"⌛ TTL expired for {file_path}, discarding buffer")
-                    buffer.pop(file_path, None)
+                    log.warning(f"⌛ TTL expired for {file_path}, cleaning up staged data")
+                    with parq_lock:
+                        get_staged_chunks(file_path, purge=True)
                     timestamps.pop(file_path, None)
 
             if res:
@@ -58,35 +57,33 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
 
                 if data.get("type") == "file_end":
                     expected = data.get("expected_chunks", 0)
-                    final_chunks = buffer.pop(source_file, [])
-                    timestamps.pop(source_file, None)
 
-                    log.info(f"📨 [{queue_name}] Received file_end for {source_file} (finalizing)")
+                    # 1. Flush any remaining chunks for this file from buffer
+                    if chunk_buffer:
+                        with parq_lock:
+                            stage_chunks(chunk_buffer)
+                        chunk_buffer = []
+
+                    # 2. RETRIEVE FROM PERSISTENT STAGING
+                    timestamps.pop(source_file, None)
+                    log.info(f"📨 [{queue_name}] Received file_end for {source_file}")
                     metrics = FileMetrics(worker="consumer", file=source_file, queue=queue_name)
+
                     with parq_lock:
+                        final_chunks = get_staged_chunks(source_file, purge=True)
+                        log.info(f"📨 [{queue_name}] Retrieved {len(final_chunks)} chunks for {source_file}")
                         run_consumer_graph(source_file, expected, final_chunks, metrics)
                     continue
 
                 if source_file not in timestamps:
                     timestamps[source_file] = current_time()
 
-                buffer[source_file].append(data)
-
-                if len(buffer[source_file]) >= MAX_CHROMA_BATCH_SIZE:
-                    try:
-                        active_batch = buffer[source_file]
-                        with parq_lock:
-                            append_chunks(active_batch)
-                            store_chunks_in_db(source_file, active_batch)
-                        buffer[source_file] = []
-                    except Exception as e:
-                        log.error(f"💥 Incremental ingestion failed for {source_file}: {e}")
-
-                if len(buffer[source_file]) >= MAX_CHUNKS:
-                    log.warning(f"🛘 Max chunks exceeded for {source_file} - discarding")
-                    buffer.pop(source_file, None)
-                    timestamps.pop(source_file, None)
-                    continue
+                # 3. BUFFER CHUNKS
+                chunk_buffer.append(data)
+                if len(chunk_buffer) >= 50:
+                    with parq_lock:
+                        stage_chunks(chunk_buffer)
+                    chunk_buffer = []
 
     except Exception as e:
         log.error(f"💥 Critical consumer error: {e}")
