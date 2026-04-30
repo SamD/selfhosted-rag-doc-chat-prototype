@@ -107,6 +107,7 @@ curl -LsS https://archive.org/download/youtube-VJ9veCEYUOc/VJ9veCEYUOc.mp4 -o $S
 
 # Model Paths (Local Path or Remote URL)
 export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
+export WHISPER_MODEL_PATH=/home/user/models/whisper
 
 # DUAL-LLM CONFIGURATION:
 export SUPERVISOR_LLM_PATH=http://192.168.1.50:8080/v1 # Normalization LLM
