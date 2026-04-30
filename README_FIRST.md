@@ -65,24 +65,7 @@ export SUPERVISOR_LLM_PATH=http://192.168.30.70:11434/v1
 
 ---
 
-## 📦 Critical Version Constraints
-
-### 🧨 The "Torch Trap" (2.5.1 vs 2.11.0+)
-We strictly pin the Torch family to **v2.5.1**.
-- **The Issue**: Newer versions (e.g., v2.11.0+) have moved or removed `torchaudio.AudioMetaData`. 
-- **The Consequence**: `pyannote-audio` (a core WhisperX dependency) will crash at import time because it expects this class to be at the root namespace.
-- **The Fix**: 
-    1. Keep `pyproject.toml` pins active.
-    2. We utilize a **Monkey-Patch** in `mp4_handler.py` and `mp3_handler.py` that injects a compatible `NamedTuple` if the environment ever drifts.
-
-### 🧩 Protobuf Compatibility
-- **Pinned**: `protobuf<4.21.0`.
-- **Reason**: Higher versions cause "TypeError: Descriptors" crashes when using Llama-CPP and Transformers simultaneously.
-
----
-
 ## 🧬 Architectural Guardrails
-
 ### 1. Zero-Drop Policy (Mathematical Parity)
 Chunks are **Hard-Truncated** at 511 tokens if they exceed the 512-token limit. Never delete the `TextProcessor.validate_chunk` truncation logic.
 
