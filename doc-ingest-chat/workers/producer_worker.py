@@ -15,7 +15,7 @@ from multiprocessing import Manager, Pool
 from config import settings
 from PIL import Image
 from services.job_service import STATUS_CONSUMING, STATUS_INGEST_FAILED, STATUS_INGESTING, STATUS_PREPROCESSING_COMPLETE, JobService, init_job_db
-from utils.logging_config import setup_logging
+from utils.trace_utils import get_logger, set_trace_id
 
 os.makedirs(settings.DEBUG_IMAGE_DIR, exist_ok=True)
 Image.MAX_IMAGE_PIXELS = 500_000_000
@@ -34,7 +34,7 @@ def get_next_queue():
         return settings.QUEUE_NAMES[i]
 
 
-log = setup_logging("ingest_producer.log", include_default_filters=True)
+log = get_logger("ingest_producer")
 
 
 def producer_worker_task(dummy_arg):
@@ -58,6 +58,9 @@ def producer_worker_task(dummy_arg):
         pdf_path = job["pdf_path"]
         md_path = job["md_path"]
         filename = job["original_filename"]
+        trace_id = job.get("trace_id", "UNKNOWN")
+        
+        set_trace_id(trace_id)
 
         log.info(f"👷 Producer (PID {os.getpid()}) claimed job {job_id} [{filename}]")
 
@@ -123,6 +126,23 @@ def signal_handler(sig, frame):
 def main(scan_interval=30):
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # 1. CORE PATH VALIDATION & CONFIRMATION
+    log.info("🔍 [Startup Audit] Verifying System Configuration:")
+
+    config_manifest = [
+        ("DEFAULT_DOC_INGEST_ROOT", settings.DEFAULT_DOC_INGEST_ROOT),
+        ("LLM_PATH", settings.LLM_PATH),
+        ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
+        ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
+        ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
+    ]
+    for name, value in config_manifest:
+        if value and value != "NOT_SET":
+            status = "✅" if os.path.exists(value) or value.startswith("http") else "❌"
+            log.info(f"   {status} {name:25} : {value}")
+        else:
+            log.info(f"   ⚠️ {name:25} : NOT CONFIGURED (Optional)")
 
     try:
         multiprocessing.set_start_method("fork")

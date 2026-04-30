@@ -13,13 +13,14 @@ import time
 import traceback
 from typing import Any, Callable, List
 
+from config import settings
 from config.settings import CHUNK_TIMEOUT, QUEUE_NAMES
 from services.parquet_service import init_schema
 from services.redis_service import get_redis_client
-from utils.logging_config import setup_logging
 from utils.metrics import FileMetrics
+from utils.trace_utils import get_logger, set_trace_id
 
-log = setup_logging("ingest_consumer.log", include_default_filters=True)
+log = get_logger("ingest_consumer")
 
 
 def current_time() -> int:
@@ -54,6 +55,10 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
                 _, job_raw = res
                 data = json.loads(job_raw)
                 source_file = data.get("source_file")
+                trace_id = data.get("trace_id")
+
+                if trace_id:
+                    set_trace_id(trace_id)
 
                 if data.get("type") == "file_end":
                     expected = data.get("expected_chunks", 0)
@@ -72,7 +77,9 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
                     with parq_lock:
                         final_chunks = get_staged_chunks(source_file, purge=True)
                         log.info(f"📨 [{queue_name}] Retrieved {len(final_chunks)} chunks for {source_file}")
-                        run_consumer_graph(source_file, expected, final_chunks, metrics)
+                        # Attempt to find trace_id in chunks if not in sentinel
+                        f_trace_id = trace_id or (final_chunks[0].get("trace_id") if final_chunks else None)
+                        run_consumer_graph(source_file, expected, final_chunks, metrics, trace_id=f_trace_id)
                     continue
 
                 if source_file not in timestamps:
@@ -109,6 +116,23 @@ def make_sigint_handler(processes: List[multiprocessing.Process], ppid: int, sha
 
 
 def main() -> None:
+    # 1. CORE PATH VALIDATION & CONFIRMATION
+    log.info("🔍 [Startup Audit] Verifying System Configuration:")
+
+    config_manifest = [
+        ("DEFAULT_DOC_INGEST_ROOT", settings.DEFAULT_DOC_INGEST_ROOT),
+        ("LLM_PATH", settings.LLM_PATH),
+        ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
+        ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
+        ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
+    ]
+    for name, value in config_manifest:
+        if value and value != "NOT_SET":
+            status = "✅" if os.path.exists(value) or value.startswith("http") else "❌"
+            log.info(f"   {status} {name:25} : {value}")
+        else:
+            log.info(f"   ⚠️ {name:25} : NOT CONFIGURED (Optional)")
+
     parent_pid = os.getpid()
     init_schema()
 

@@ -4,8 +4,12 @@ Configuration settings for the document ingestion system.
 Implementing a database-driven state machine architecture.
 """
 
+import logging
 import os
+import sys
 from typing import Any, Callable
+
+log = logging.getLogger("ingest.settings")
 
 # ---------------------------------------------------------------------------
 # Helper: Environment Getters
@@ -30,8 +34,8 @@ def _require_abs_path(key: str, default: str = None) -> str:
         if default:
             val = default
         else:
-            raise ValueError(f"❌ CRITICAL ERROR: Environment variable '{key}' is NOT set. This is required for the system to function.")
-
+            log.error(f"❌ CRITICAL ERROR: Environment variable '{key}' is NOT set. This is required for the system to function.")
+            sys.exit(1)
     if val.startswith(("http://", "https://")):
         return val
     return os.path.abspath(val)
@@ -97,7 +101,7 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "SUCCESS_DIR": lambda: _abs_path("SUCCESS_DIR", os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "success")),
     # [STAGE 5] Final terminal location for failures
     "FAILED_DIR": lambda: _abs_path("FAILED_DIR", os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "failed")),
-    # --- COMPATIBILITY ALIASES (Deprecated) ---
+    # --- COMPATIBILITY ALIASES (Derived from Master Root) ---
     "INGEST_FOLDER": lambda: _SETTINGS["INGESTION_DIR"](),
     "STAGING_FOLDER": lambda: _SETTINGS["STAGING_DIR"](),
     # Path to the DuckDB database used for lifecycle and history tracking
@@ -108,6 +112,10 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "LLM_PATH": lambda: _require_abs_path("LLM_PATH"),
     # [REQUIRED] Path to supervisor Llama GGUF or remote llama-server URL
     "SUPERVISOR_LLM_PATH": lambda: _require_abs_path("SUPERVISOR_LLM_PATH"),
+    # [OPTIONAL] Path to local Whisper models. If missing, media transcription is skipped.
+    "WHISPER_MODEL_PATH": lambda: _abs_path("WHISPER_MODEL_PATH", "NOT_SET"),
+    # Mandatory files required for offline WhisperX (CTranslate2 format)
+    "WHISPER_REQUIRED_FILES": lambda: ["model.bin", "config.json", "vocabulary.txt"],
     # Model name required by OpenAI-compatible API (e.g. for Ollama routing)
     "SUPERVISOR_REMOTE_MODEL_NAME": lambda: os.getenv("SUPERVISOR_REMOTE_MODEL_NAME", "local-model"),
     # Creativity setting for the supervisor agent
@@ -130,6 +138,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "REDIS_PORT": lambda: int(os.environ.get("REDIS_PORT") or os.getenv("REDIS_PORT", "6379")),
     # Queue name used for offloading images to the OCR workers
     "REDIS_OCR_JOB_QUEUE": lambda: os.getenv("REDIS_OCR_JOB_QUEUE", "ocr_processing_job"),
+    # Queue name used for offloading media to the WhisperX workers
+    "REDIS_WHISPER_JOB_QUEUE": lambda: os.getenv("REDIS_WHISPER_JOB_QUEUE", "whisper_processing_job"),
     # Main queue used for sending semantic chunks to the consumer workers
     "REDIS_INGEST_QUEUE": lambda: os.getenv("REDIS_INGEST_QUEUE", "chunk_ingest_queue"),
     # List of Redis queues to monitor (supports partitioning)

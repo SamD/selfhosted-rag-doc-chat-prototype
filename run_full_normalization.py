@@ -71,7 +71,12 @@ def run_production():
     start_t = time.time()
 
     try:
-        from workers.gatekeeper_logic import get_slug; from pathlib import Path; slug = get_slug(Path(target_file).stem); md_path = os.path.join(INGEST_DIR, f"{slug}.md"); success, _ = gatekeeper_extract_and_normalize("full-norm-job", target_file, md_path)
+        from pathlib import Path
+
+        from workers.gatekeeper_logic import get_slug
+        slug = get_slug(Path(target_file).stem)
+        md_path = os.path.join(INGEST_DIR, f"{slug}.md")
+        success, _ = gatekeeper_extract_and_normalize("full-norm-job", target_file, md_path)
 
         duration = time.time() - start_t
         if success:

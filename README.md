@@ -23,15 +23,16 @@ This project solves those issues by implementing a **custom, multi-process distr
 - **Phased Normalization**: Converts unpredictable PDFs into high-quality Markdown using specialized LLM "Stateless Retyping."
 - **Hierarchical Chunking**: Markdown-aware splitting that preserves semantic context and stays strictly under a 512-token limit (e5-large-v2).
 - **Computer Vision Fallback**: Automatic OCR for scanned/unreadable pages using Docling (EasyOCR).
+- **Media Transcription**: High-fidelity transcription for `.mp4` and `.mp3` files using a dedicated WhisperX container, ensuring dependency isolation and GPU acceleration.
 - **Zero-Memory Archival**: Chunks are staged in DuckDB before persistence, allowing for massive (1000+ page) document processing without OOM crashes.
 
 ---
 
 ### 🛠️ Core Tech Stack
-- **🤖 AI & ML**: `Phi-4-mini` (Dual-Model: Normalization + RAG), `e5-large-v2` (Sentence Transformers).
+- **🤖 AI & ML**: `Phi-4-mini` (Normalization + RAG), `e5-large-v2` (Embeddings), `WhisperX` (Transcription).
 - **⚙️ Backend**: Python, FastAPI, Multi-process Workers.
 - **📡 Coordination**: Redis (Message Broker, Backpressure, Atomicity).
-- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Computer Vision), `transformers` (Tokenization).
+- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Computer Vision), `WhisperX` (Media), `transformers` (Tokenization).
 - **💾 Storage**: `Qdrant` (Vector Search), `DuckDB` (State Machine), `Parquet` (Archival).
 - **🎨 Frontend**: Astro, Tailwind CSS.
 
@@ -40,7 +41,10 @@ This project solves those issues by implementing a **custom, multi-process distr
 ### 🧬 The Data Ingestion Journey (Detailed)
 
 #### **Step 1: GateKeeper (Normalization)**
-The **GateKeeper** claims raw PDFs from the `staging/` directory. It checks the text layer of every page. If a page is scanned, it renders it to an image and offloads it to the **OCR Worker** (Docling). It then uses the **Normalization LLM** (`SUPERVISOR_LLM_PATH`) to "retype" the text into clean Markdown. To ensure 100% citation accuracy, it injects explicit `### [INTERNAL_PAGE_X]` anchors into the Markdown stream.
+The **GateKeeper** claims raw assets from the `staging/` directory. It uses a **Chain of Responsibility** to dispatch files to specialized handlers:
+- **PDFs**: It checks the text layer of every page. If a page is scanned, it renders it to an image and offloads it to the **OCR Worker** (Docling).
+- **Media (MP4/MP3)**: It offloads the file to the dedicated **WhisperX Worker** for high-fidelity transcription and alignment.
+- **Normalization**: All raw text streams are sent to the **Normalization LLM** (`SUPERVISOR_LLM_PATH`) to "retype" the content into clean Markdown. To ensure 100% citation accuracy, it injects explicit `### [INTERNAL_PAGE_X]` or timestamp anchors into the Markdown stream.
 
 #### **Step 2: Producer (Chunking & Enrichment)**
 The **Producer** claims the normalized Markdown. It performs hierarchical splitting based on headers and detects the `[INTERNAL_PAGE_X]` tags to assign the correct physical page number to every chunk. It injects a deterministic `[DOC_ID]` (MurmurHash3) into every chunk for deduplication. Once complete, it sends a `file_end` sentinel.
@@ -90,9 +94,16 @@ export DEFAULT_DOC_INGEST_ROOT=/home/user/my-rag-docs
 export STAGING_DIR=${DEFAULT_DOC_INGEST_ROOT}/staging
 
 # If you want some high-quality history docs to test with:
+
+# PDF
 mkdir -p $STAGING_DIR
 curl -LsS https://archive.org/download/outlineofhistory01welluoft/outlineofhistory01welluoft.pdf -o $STAGING_DIR/outline_of_history_pt1.pdf
 curl -LsS https://archive.org/download/outlineofhistory02welluoft/outlineofhistory02welluoft.pdf -o $STAGING_DIR/outline_of_history_pt2.pdf
+
+# MP4
+curl -LsS https://archive.org/download/youtube-8Y0JogWTxFM/8Y0JogWTxFM.mp4 -o $STAGING_DIR/Comprehensive_History_of_the_World_pt1.mp4 
+curl -LsS https://archive.org/download/youtube-VJ9veCEYUOc/VJ9veCEYUOc.mp4 -o $STAGING_DIR/Comprehensive_History_of_the_World_pt2.mp4
+
 
 # Model Paths (Local Path or Remote URL)
 export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2

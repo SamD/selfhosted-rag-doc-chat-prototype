@@ -12,6 +12,15 @@
 
 Self-Hosted RAG Pipeline with distributed ingestion workers, Redis queuing, dual vector storage (Qdrant/ChromaDB), DuckDB analytics, and Astro frontend. Multi-process architecture with producer/consumer/OCR workers.
 
+## Content Handler Architecture (Chain of Responsibility)
+
+The Gatekeeper worker delegates raw text extraction to specialized handlers based on file type:
+- `PDFContentTypeHandler`: Handles `.pdf` files with OCR fallback.
+- `MP4ContentTypeHandler`: Handles `.mp4` files using WhisperX transcription.
+- `TextContentTypeHandler`: Handles `.txt`, `.md`, `.html` files.
+
+All handlers inherit from `BaseContentTypeHandler` and provide a streaming interface.
+
 ## Required Local Models
 
 Models MUST exist locally in these exact paths:
@@ -123,3 +132,20 @@ Supported media types: `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, 
 ## Critical Error Messages
 
 - `❌ CRITICAL ERROR: Environment variable '{key}' is NOT set. This is required for the system to function.`
+
+## Logic & Relationship Flow
+
+### 🔄 Pipeline Orchestration (The "How")
+
+The system operates as a distributed state machine using Redis as the message broker:
+
+1.  **Ingestion Phase**: `producer_worker` $\rightarrow$ `producer_graph` (adds files to `INGEST_QUEUE`).
+2.  **Routing Phase**: `gatekeeper_worker` $\rightarrow$ `gatekeeper_logic` (monitors `INGEST_QUEUE`, inspects file extensions, and dispatches to specific `handlers/` or `ocr_worker`).
+3.  **Processing/Embedding Phase**: `consumer_worker` $\rightarrow$ `consumer_graph` (monitors `CONSUME_QUEUE`, calls `handlers/` for text extraction, then uses `rag_service` and `database` services to perform chunking, embedding, and storage).
+4.  **OCR Phase**: `ocr_worker` $\rightarrow$ `ocr_graph` (specifically for heavy media/image-based text extraction from PDFs).
+5.  **Media Phase**: `whisperx_worker` (dedicated container for transcribing media files via WhisperX).
+
+### 🛠️ Service-Worker Mapping
+- **`services/`**: Pure logic/data access (e.g., `rag_service` handles the logic of "what to do with text", `database` handles "how to talk to Qdrant").
+- **`workers/`**: The "loopers" (e.g., `consumer_worker` is the actual process running in Docker that calls the services).
+- **`handlers/`**: The "extractors" (e.g., `pdf_handler` provides the raw text/data needed by the service).

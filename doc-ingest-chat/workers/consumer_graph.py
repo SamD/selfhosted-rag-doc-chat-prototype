@@ -4,7 +4,6 @@ LangGraph implementation of the consumer batch processing workflow.
 Refactored for ZERO-MEMORY archival and database-driven lifecycle finalization.
 """
 
-import logging
 import os
 import shutil
 from typing import Any, Dict, List, Optional, TypedDict
@@ -21,8 +20,9 @@ from services.parquet_service import commit_to_parquet
 from utils.consumer_utils import store_chunks_in_db
 from utils.metrics import FileMetrics
 from utils.producer_utils import get_tokenizer
+from utils.trace_utils import get_logger, set_trace_id
 
-log = logging.getLogger("ingest.consumer_graph")
+log = get_logger("ingest.consumer_graph")
 
 # Global cache for the compiled graph
 _COMPILED_CONSUMER_APP = None
@@ -32,6 +32,7 @@ class ConsumerState(TypedDict):
     """Represents the state for finalization of a file."""
 
     source_file: str
+    trace_id: Optional[str]
     expected_chunks: int
     chunks: List[Dict[str, Any]]
     metrics: Optional[FileMetrics]
@@ -44,6 +45,10 @@ def validate_remaining_chunks_node(state: ConsumerState) -> ConsumerState:
     """Validates remaining chunks and finds job ID in DuckDB with lock retry."""
     source_file = state["source_file"]
     chunks = state["chunks"]
+    
+    trace_id = state.get("trace_id")
+    if trace_id:
+        set_trace_id(trace_id)
 
     log.info(f"🧐 [Node: Final Validate] {source_file}")
 
@@ -173,9 +178,9 @@ def get_consumer_app():
     return _COMPILED_CONSUMER_APP
 
 
-def run_consumer_graph(source_file: str, expected_chunks: int, chunks: List[Dict[str, Any]], metrics: Optional[FileMetrics]) -> bool:
+def run_consumer_graph(source_file: str, expected_chunks: int, chunks: List[Dict[str, Any]], metrics: Optional[FileMetrics], trace_id: str = None) -> bool:
     """Invokes the cached graph to finalize a document."""
-    initial_state: ConsumerState = {"source_file": source_file, "expected_chunks": expected_chunks, "chunks": chunks, "metrics": metrics, "status": "pending", "error": None, "job_id": None}
+    initial_state: ConsumerState = {"source_file": source_file, "trace_id": trace_id, "expected_chunks": expected_chunks, "chunks": chunks, "metrics": metrics, "status": "pending", "error": None, "job_id": None}
     try:
         app = get_consumer_app()
         final_state = app.invoke(initial_state)

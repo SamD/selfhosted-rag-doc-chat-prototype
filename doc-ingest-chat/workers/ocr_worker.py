@@ -15,9 +15,10 @@ from multiprocessing import Manager, Pool
 from config.settings import REDIS_OCR_JOB_QUEUE
 from PIL import Image
 from services.redis_service import get_redis_client
-from utils.logging_config import setup_logging, setup_pdf_logging
+from utils.logging_config import setup_pdf_logging
+from utils.trace_utils import get_logger, set_trace_id
 
-log = setup_logging("ingest_ocr_worker.log", include_default_filters=True)
+log = get_logger("ingest_ocr_worker")
 
 
 def worker_task(job):
@@ -26,6 +27,10 @@ def worker_task(job):
     from the parent process via fork.
     """
     from workers.ocr_graph import run_ocr_graph
+
+    trace_id = job.get("trace_id")
+    if trace_id:
+        set_trace_id(trace_id)
 
     try:
         success = run_ocr_graph(job)

@@ -1,34 +1,67 @@
-# Builder stage
-FROM python:3.11.11-bookworm AS builder
+# syntax=docker/dockerfile:1.3
 
-# Install uv
-RUN pip install --upgrade pip && pip install uv
+# --- Stage 1: Builder ---
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04 AS builder
 
-# Copy the configuration files from the project root into the container
+ENV DEBIAN_FRONTEND=noninteractive
+ENV UV_LINK_MODE=copy
+
+# Install fuse-overlayfs and build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fuse-overlayfs python3-pip python3-venv python3-dev git wget \
+    poppler-utils libgl1 libglib2.0-0 tesseract-ocr libtesseract-dev ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/
+ENV PATH="/uv/bin:$PATH"
+
+WORKDIR /app
+RUN uv venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
-RUN uv pip install --system --no-cache-dir -r pyproject.toml
+# Exact parity resolution
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r pyproject.toml --python-version 3.12
 
-# Runner stage
-FROM python:3.11.11-bookworm AS runner
+# Warmup setup (using the shared mount path)
+RUN mkdir -p /usr/local/model_cache
+ENV HF_HOME=/usr/local/model_cache
+ENV TORCH_HOME=/usr/local/model_cache
 
-# Install poppler-utils and system libraries for OpenCV and OCR
-RUN apt-get update && apt-get install -y \
-    poppler-utils \
-    libgl1 \
-    libglib2.0-0 \
-    tesseract-ocr \
-    libtesseract-dev \
- && rm -rf /var/lib/apt/lists/*
+COPY doc-ingest-chat/ /app/doc-ingest-chat/
 
-# tesseract --list-langs
+# Run warmup (Downloads will stay in the build cache, not the image)
+RUN --mount=type=cache,target=/usr/local/model_cache \
+    PYTHONPATH=/app/doc-ingest-chat \
+    /opt/venv/bin/python /app/doc-ingest-chat/utils/warmup.py
+
+# --- Stage 2: Runner ---
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04 AS runner
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Runtime needs fuse-overlayfs to handle layers correctly
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fuse-overlayfs python3 poppler-utils libgl1 libglib2.0-0 \
+    tesseract-ocr libtesseract-dev ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+# Copy only the environment
+COPY --from=builder /opt/venv /opt/venv
 
-# Default command
-CMD ["python", "--version"]
+# Prepare the mount point for your shared model volume
+RUN mkdir -p /usr/local/model_cache && chmod 777 /usr/local/model_cache
+
+ENV PATH="/opt/venv/bin:$PATH"
+ENV HF_HOME=/usr/local/model_cache
+ENV TORCH_HOME=/usr/local/model_cache
+ENV HF_HUB_OFFLINE=1
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+CMD ["python", "main.py"]

@@ -6,23 +6,22 @@ Includes deterministic document_id generation and per-chunk enrichment.
 
 import hashlib
 import json
-import logging
 import os
 from typing import List, Optional, TypedDict
 
-import duckdb
-from config.settings import GATEKEEPER_FAILURE_DB, MAX_TOKENS, SUPPORTED_MEDIA_EXT
+from config.settings import MAX_TOKENS, SUPPORTED_MEDIA_EXT
 from langgraph.graph import END, StateGraph
 from processors.text_processor import TextProcessor, make_chunk_id, split_markdown_doc
-from services.job_service import STATUS_ENQUEUED, STATUS_FAILED, STATUS_PROCESSING, update_job_status
+from services.job_service import STATUS_FAILED
 from services.redis_service import get_redis_client
 from utils.producer_utils import (
     blocking_push_with_backpressure,
     handle_error,
     send_file_end_sentinel,
 )
+from utils.trace_utils import get_logger, get_trace_id, set_trace_id
 
-log = logging.getLogger("ingest.producer_graph")
+log = get_logger("ingest.producer_graph")
 
 
 class IngestState(TypedDict):
@@ -31,6 +30,7 @@ class IngestState(TypedDict):
     full_path: str
     rel_path: str
     job_id: str
+    trace_id: Optional[str]
     queue_name: str
     document_id: Optional[str]
     file_type: str
@@ -44,33 +44,28 @@ def scan_file_node(state: IngestState) -> IngestState:
     """Initial validation and type detection for normalized documents."""
     full_path = state["full_path"]
     rel_path = state["rel_path"]
+    
+    # Retrieve trace_id from DB if not present in state
+    trace_id = state.get("trace_id")
+    if not trace_id:
+        try:
+            from services.job_service import JobService
+            query = "SELECT trace_id FROM ingestion_lifecycle WHERE id = ?"
+            res, _ = JobService._execute_with_retry(query, (state["job_id"],), fetch=True)
+            if res:
+                trace_id = res[0]
+        except Exception:
+            trace_id = "UNKNOWN"
+    
+    set_trace_id(trace_id)
     log.info(f"🔍 [Node: Scan] {rel_path}")
-    update_job_status(rel_path, STATUS_PROCESSING, state["job_id"])
 
     if not os.path.exists(full_path):
-        return {**state, "status": STATUS_FAILED, "error": "File does not exist"}
-
-    # --- GATEKEEPER RACE CONDITION PROTECTION ---
-    # If this is a markdown file, we must ensure the Gatekeeper is finished
-    if full_path.endswith(".md"):
-        file_slug = os.path.basename(full_path).replace(".md", "")
-        try:
-            con = duckdb.connect(GATEKEEPER_FAILURE_DB)
-            res = con.execute("SELECT status FROM gatekeeper_history WHERE slug = ?", [file_slug]).fetchone()
-            con.close()
-
-            if not res or res[0] != "SUCCESS":
-                log.info(f"⏳ Normalization incomplete, waiting for Gatekeeper: {file_slug}")
-                # We return a specific status that the worker can handle to retry later
-                return {**state, "status": "pending"}
-        except Exception as e:
-            log.warning(f"⚠️ Could not verify Gatekeeper status for {file_slug}: {e}")
-    # -------------------------------------------
+        return {**state, "status": STATUS_FAILED, "error": f"File does not exist: {full_path}"}
 
     file_ext = os.path.splitext(full_path)[1].lower()
     if file_ext != ".md":
         # We only process .md files from the gatekeeper now
-        # But we might still support media/html later if they bypass gatekeeper
         if file_ext in (".html", ".htm"):
             file_type = "html"
         elif file_ext in SUPPORTED_MEDIA_EXT:
@@ -92,6 +87,7 @@ def _push_chunks_to_redis(state: IngestState, chunks_with_engine: List[tuple]) -
     entries = []
     start_idx = 0
     doc_id = state["document_id"]
+    trace_id = state.get("trace_id") or get_trace_id()
     # Mandatory RAG prefix for Vector DB consistency
     enrichment_prefix = f"passage: [{doc_id}] "
 
@@ -107,6 +103,7 @@ def _push_chunks_to_redis(state: IngestState, chunks_with_engine: List[tuple]) -
             "id": make_chunk_id(rel_path, idx, final_chunk, document_id=doc_id),
             "source_file": rel_path,
             "document_id": doc_id,
+            "trace_id": trace_id,
             "source_type": file_type,
             "chunk_format": "MD" if file_type == "markdown" else "TEXT",
             "hash": hashlib.md5(final_chunk.encode()).hexdigest(),
@@ -136,7 +133,16 @@ def markdown_extract_node(state: IngestState) -> IngestState:
         doc_id = TextProcessor.get_document_id(text.encode())
 
         # Use new prefix-aware splitting to prevent Consumer dropping oversized chunks
-        chunks, metadatas = split_markdown_doc(text, rel_path, budget=MAX_TOKENS, prefix="passage: ", document_id=doc_id)
+        try:
+            chunks, metadatas = split_markdown_doc(text, rel_path, budget=MAX_TOKENS, prefix="passage: ", document_id=doc_id)
+        except Exception as e:
+            from utils.exceptions import ConfigurationError
+
+            if isinstance(e, ConfigurationError):
+                error_msg = f"Configuration Missing: {str(e)}"
+                log.error(f"🛑 {error_msg}")
+                return {**state, "status": STATUS_FAILED, "error": error_msg}
+            raise e
         if not chunks:
             return {**state, "status": STATUS_FAILED, "error": "Empty Markdown or split failed"}
 
@@ -192,14 +198,7 @@ def send_sentinel_node(state: IngestState) -> IngestState:
 
 
 def finalize_state_node(state: IngestState) -> IngestState:
-    """Terminal node to update database status."""
-    if state["status"] == "pending":
-        # Don't update job status, just exit so it stays in queue
-        return state
-
-    final_status = STATUS_ENQUEUED if state["status"] == "processing" else STATUS_FAILED
-    update_job_status(state["rel_path"], final_status, state["job_id"], error_message=state["error"])
-    log.info(f"✨ [Node: Final State] {state['rel_path']} -> {final_status}")
+    """Terminal node. (State transitions are managed by the calling Worker)."""
     return state
 
 
@@ -218,9 +217,6 @@ def get_producer_app():
 
     def route_scan(s):
         if s["status"] == STATUS_FAILED:
-            return "finalize_state_node"
-        if s["status"] == "pending":
-            log.info(f"⏳ Normalization incomplete, waiting for Gatekeeper: {s['rel_path']}")
             return "finalize_state_node"
         if s["file_type"] == "markdown":
             return "markdown_extract_node"
@@ -260,7 +256,7 @@ def run_ingest_graph(job_tuple, gpu_lock_obj=None) -> bool:
     try:
         app = get_producer_app()
         final_state = app.invoke(initial_state)
-        return final_state["status"] == "processing" or final_state["status"] == "pending"
+        return final_state["status"] == "processing"
     except Exception as e:
         log.error(f"💥 Graph fatal error: {e}")
         return False

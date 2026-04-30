@@ -18,17 +18,22 @@ sequenceDiagram
     participant File
     participant Gatekeeper
     participant OCRWorker
+    participant MediaWorker (WhisperX)
     participant Producer
     participant Consumer
     participant DuckDB
 
     alt Ingestion Flow
-        File->>Gatekeeper: New PDF (staging/)
-        alt Text layer is valid
+        File->>Gatekeeper: New Asset (staging/)
+        alt PDF (Digital)
             Gatekeeper->>NORM_LLM: Retype to Markdown
-        else Text layer is missing/scanned
+        else PDF/Image (Scanned)
             Gatekeeper->>OCRWorker: Request OCR for Page X
             OCRWorker->>Gatekeeper: Return OCR Text
+            Gatekeeper->>NORM_LLM: Retype to Markdown
+        else Media (MP4/MP3)
+            Gatekeeper->>MediaWorker: Request Transcription
+            MediaWorker->>Gatekeeper: Stream Segments
             Gatekeeper->>NORM_LLM: Retype to Markdown
         end
         Gatekeeper->>File: Write Markdown (ingestion/)
@@ -62,6 +67,8 @@ graph TD
     A[staging/] -->|NEW| B(Gatekeeper LLM)
     B -->|OCR Needed| C(OCR Worker)
     C --> B
+    B -->|Transcription Needed| W(WhisperX Worker)
+    W --> B
     B -->|SUPERVISOR_LLM_PATH| B
     B -->|PREPROCESSING_COMPLETE| D[ingestion/]
     D --> E(Producer Graph)
@@ -127,10 +134,13 @@ Embedding models like `e5-large-v2` look for the "essence" of a passage. Markdow
 
 #### **1. GateKeeper (The Normalizer)**
 *   **Input**: `staging/` (Status: `NEW`)
-*   **Role**: Claims raw PDFs and performs **Normalization**.
+*   **Role**: Claims raw assets and performs **Normalization** via a Handler Chain.
+*   **Fallback Workers**:
+    *   **OCR Worker**: Offloads scanned PDFs for Docling/EasyOCR processing.
+    *   **WhisperX Worker**: Offloads media files for high-fidelity transcription.
 *   **LLM Role**: Uses the **Normalization LLM** (`SUPERVISOR_LLM_PATH`) to "retype" the raw text into clean Markdown.
-*   **Page Tracking**: Injects explicit `### [INTERNAL_PAGE_X]` anchors into the Markdown file to preserve the physical PDF page boundaries across the LLM generation.
-*   **Outcome (The "Why")**: Critical for RAG quality. It denoises OCR artifacts, structures hierarchical headers, and "heals" misspellings before they reach the vector database.
+*   **Page Tracking**: Injects explicit `### [INTERNAL_PAGE_X]` or timestamp anchors to preserve source context.
+*   **Outcome (The "Why")**: Critical for RAG quality. It denoises artifacts, structures hierarchical headers, and "heals" misspellings before they reach the vector database.
 *   **Output**: `preprocessing/` -> `ingestion/` (Status: `PREPROCESSING_COMPLETE`)
 
 #### **2. Producer (The Chunker)**

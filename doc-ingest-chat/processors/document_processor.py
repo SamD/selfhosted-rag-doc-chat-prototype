@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
-from config.settings import COMPUTE_TYPE, DEVICE, MEDIA_BATCH_SIZE, SUPPORTED_MEDIA_EXT
+from config.settings import SUPPORTED_MEDIA_EXT
 from utils.logging_config import setup_logging
 
 log = setup_logging("document_processor.log")
@@ -38,22 +38,17 @@ class DocumentProcessor:
 
     @staticmethod
     def extract_text_from_media(filepath: str) -> Optional[List]:
-        """Extract text from media files using Whisper."""
+        """Extract text from media files by delegating to WhisperX worker."""
         if not filepath.lower().endswith(SUPPORTED_MEDIA_EXT):
             raise ValueError(f"Unsupported file type: {filepath}")
 
-        log.info(f" 🎥 Processing media {filepath}")
+        log.info(f" 🎥 Delegating media transcription for {filepath}")
 
-        # Use Whisper directly; it internally extracts audio from video
         try:
-            import whisperx
-
-            audio = whisperx.load_audio(filepath)
-            model = whisperx.load_model("large-v2", DEVICE, compute_type=COMPUTE_TYPE)
-            result = model.transcribe(audio, batch_size=MEDIA_BATCH_SIZE)
-            return result["segments"]
+            from utils.whisper_utils import send_media_to_whisperx
+            return list(send_media_to_whisperx(filepath))
         except Exception as e:
-            log.error(f"Transcription failed for {filepath}: {e}", exc_info=True)
+            log.error(f"Transcription delegation failed for {filepath}: {e}", exc_info=True)
             return None
 
 

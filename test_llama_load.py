@@ -1,7 +1,9 @@
 import os
 import sys
-from llama_cpp import Llama
+
 from config import settings
+from llama_cpp import Llama
+
 
 def test_load():
     print(f"🚀 Attempting to load model: {settings.SUPERVISOR_LLM_PATH}")

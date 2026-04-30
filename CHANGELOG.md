@@ -21,6 +21,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Conservative Safety Margin**: Lowered the hierarchical splitter budget to **450 tokens** to accommodate mandatory RAG prefixes and model special tokens.
   - **Zero-Drop Truncation Policy**: Replaced the "Drop if Oversized" boolean validator with a "Hard Truncation" filter that forcibly caps chunks at 511 tokens, ensuring 100% data persistence.
   - **Special-Token Parity**: Synchronized length calculations between Producer and Consumer to use `add_special_tokens=True`, ensuring mathematical parity with the embedding model's actual requirements.
+- **Chain of Responsibility Content Handlers**
+  - **Modular Architecture**: Introduced `BaseContentTypeHandler` and specialized handlers (`PDF`, `Text`, `MP3`, `MP4`) using the Chain of Responsibility pattern for cleaner, more extensible document processing.
+- **Multimedia Transcription Support**
+  - **WhisperX Integration**: Added a dedicated `whisperx_worker` for high-performance audio and video transcription with alignment and timestamp support.
+- **Enhanced Observability & Traceability**
+  - **Distributed Trace IDs**: Implemented `trace_utils` to propagate unique `trace_id`s across all distributed workers, allowing end-to-end visibility of a document's processing journey.
+- **Stream-Centric Processing**
+  - **Chunk-Level Streaming**: Refactored the ingestion pipeline to process data as a continuous stream of chunks, optimizing memory usage and enabling massive document support.
 - **Interactive RAG UI Enhancements**
   - **Clickable Document Citations**: Implemented a static file route (`/files`) in the FastAPI backend to serve ingested PDFs directly. 
   - **Markdown Link Mapping**: Refactored `chat_utils.py` and the AstroJS frontend to transform plain-text citations into interactive Markdown links pointing to the exact page of the original source.
@@ -37,6 +45,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **RAG History Leak**: Fixed a bug where user queries were being double-appended to the chat history, causing "Broken Record" LLM responses.
 - **Metadata KeyError**: Refactored `store_chunks_in_db` to use safe `.get()` defaults, preventing Consumer crashes when encountering inconsistent metadata fields.
 - **Indentation-Triggered Hallucinations**: Flattened the Gatekeeper prompt to zero-indentation to prevent models from interpreting whitespace as a "Compliance Report" requirement.
+- **Frontend CSS Resolution**: Resolved a critical breakage where `global.css` was missing, preventing Tailwind 4 from initializing.
+- **Frontend Docker Configuration**: Corrected `docker-compose.frontend.yaml` to point to the dedicated `Dockerfile.frontend` and fixed environment variable typos.
+- **Linting & Code Quality**: Fixed multiple `ruff` errors across `direct_integration_test.py` and `run_full_normalization.py` for better compliance and readability.
 
 ### Changed
 - **Stateless Retyping Philosophy**: Re-locked the Gatekeeper into a pure pass-through mode that trusts server-side parameters (Temperature/Tokens) and focuses exclusively on high-density structural transcription.

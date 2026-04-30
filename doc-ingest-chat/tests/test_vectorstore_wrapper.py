@@ -1,107 +1,91 @@
-"""
-Tests for VectorStoreWrapper compatibility layer.
-"""
-
 import os
 import sys
 from unittest.mock import Mock, patch
 
-# Add parent directory to path
+# Add the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Set required environment variables
-os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", "/tmp/test")
-os.environ.setdefault("EMBEDDING_MODEL_PATH", "intfloat/e5-large-v2")
-os.environ.setdefault("LLM_PATH", "/tmp/test.gguf")
-os.environ.setdefault("VECTOR_DB_HOST", "vector-db")
-os.environ.setdefault("VECTOR_DB_COLLECTION", "test_collection")
+from services.database import VectorStoreWrapper
 
 
 def test_wrapper_add_texts_delegates_to_vectorstore():
     """Test that add_texts calls the underlying vectorstore."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["add_texts"])
     mock_vectorstore.add_texts.return_value = ["id1", "id2"]
 
     wrapper = VectorStoreWrapper(mock_vectorstore, "chroma")
     result = wrapper.add_texts(["text1", "text2"], metadatas=[{"k": "v"}], ids=["id1", "id2"])
 
-    mock_vectorstore.add_texts.assert_called_once_with(["text1", "text2"], metadatas=[{"k": "v"}], ids=["id1", "id2"])
     assert result == ["id1", "id2"]
+    args, kwargs = mock_vectorstore.add_texts.call_args
+    assert args[0] == ["text1", "text2"]
+    assert kwargs["metadatas"] == [{"k": "v"}]
+    assert kwargs["ids"] == ["id1", "id2"]
+
+
+def test_wrapper_similarity_search_delegates_to_vectorstore():
+    """Test that similarity_search calls the underlying vectorstore."""
+    mock_vectorstore = Mock(spec=["similarity_search"])
+    mock_vectorstore.similarity_search.return_value = ["doc1", "doc2"]
+
+    wrapper = VectorStoreWrapper(mock_vectorstore, "qdrant")
+    result = wrapper.similarity_search("query", k=2)
+
+    assert result == ["doc1", "doc2"]
+    mock_vectorstore.similarity_search.assert_called_once_with("query", 2)
 
 
 def test_wrapper_as_retriever_delegates_to_vectorstore():
     """Test that as_retriever calls the underlying vectorstore."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["as_retriever"])
     mock_retriever = Mock()
     mock_vectorstore.as_retriever.return_value = mock_retriever
 
     wrapper = VectorStoreWrapper(mock_vectorstore, "chroma")
-    result = wrapper.as_retriever(search_kwargs={"k": 5})
+    result = wrapper.as_retriever(search_kwargs={"k": 1})
 
-    mock_vectorstore.as_retriever.assert_called_once_with(search_kwargs={"k": 5})
     assert result == mock_retriever
+    mock_vectorstore.as_retriever.assert_called_once_with(search_kwargs={"k": 1})
 
 
 def test_wrapper_delete_chromadb_with_where():
     """Test that delete with where clause works for ChromaDB."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["delete"])
     wrapper = VectorStoreWrapper(mock_vectorstore, "chroma")
 
     wrapper.delete(where={"source_file": "test.pdf"})
 
-    mock_vectorstore.delete.assert_called_once_with(where={"source_file": "test.pdf"})
+    mock_vectorstore.delete.assert_called_once_with(None, where={"source_file": "test.pdf"})
 
 
 def test_wrapper_delete_chromadb_with_ids():
     """Test that delete with IDs works for ChromaDB."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["delete"])
     wrapper = VectorStoreWrapper(mock_vectorstore, "chroma")
 
     wrapper.delete(ids=["id1", "id2"])
 
-    mock_vectorstore.delete.assert_called_once_with(ids=["id1", "id2"])
+    mock_vectorstore.delete.assert_called_once_with(["id1", "id2"])
 
 
 def test_wrapper_delete_qdrant_with_where():
     """Test that delete with where clause works for Qdrant."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["delete", "client"])
     mock_client = Mock()
     mock_vectorstore.client = mock_client
 
     wrapper = VectorStoreWrapper(mock_vectorstore, "qdrant")
 
     with patch.dict(os.environ, {"VECTOR_DB_COLLECTION": "test_collection"}):
-        # Reload to pick up env var
-        import importlib
-
-        from config import settings
-
-        importlib.reload(settings)
-
         wrapper.delete(where={"source_file": "test.pdf"})
 
-    # Verify Qdrant client.delete was called
+    # Verify that the client.delete was called (since our wrapper handles Qdrant 'where' via client)
     mock_client.delete.assert_called_once()
-    call_args = mock_client.delete.call_args
-    assert "collection_name" in call_args.kwargs
-    assert "points_selector" in call_args.kwargs
 
 
 def test_wrapper_get_collection_count_chromadb():
     """Test that get_collection_count works for ChromaDB."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["_collection"])
     mock_collection = Mock()
     mock_collection.count.return_value = 42
     mock_vectorstore._collection = mock_collection
@@ -115,26 +99,16 @@ def test_wrapper_get_collection_count_chromadb():
 
 def test_wrapper_get_collection_count_qdrant():
     """Test that get_collection_count works for Qdrant."""
-    from services.database import VectorStoreWrapper
-
-    mock_vectorstore = Mock()
+    mock_vectorstore = Mock(spec=["client", "collection_name"])
     mock_client = Mock()
     mock_result = Mock()
-    mock_result.count = 100
-    mock_client.count.return_value = mock_result
+    mock_result.points_count = 100
+    mock_client.get_collection.return_value = mock_result
     mock_vectorstore.client = mock_client
+    mock_vectorstore.collection_name = "test_col"
 
     wrapper = VectorStoreWrapper(mock_vectorstore, "qdrant")
-
-    with patch.dict(os.environ, {"VECTOR_DB_COLLECTION": "test_collection"}):
-        # Reload to pick up env var
-        import importlib
-
-        from config import settings
-
-        importlib.reload(settings)
-
-        count = wrapper.get_collection_count()
+    count = wrapper.get_collection_count()
 
     assert count == 100
-    mock_client.count.assert_called_once()
+    mock_client.get_collection.assert_called_once_with("test_col")

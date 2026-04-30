@@ -1,0 +1,31 @@
+Research the codbase and understand the architecture
+
+For this phase we want to refactor the gatekeeper_worker.py
+At the moment it supports monitoring a directory for pdf files and using pdfplumber to scan pages , reading the raw text
+If there is an issue with the text to sends via a redis queue to a fallback ocr_worker process that uses docling and easyocr to extract the text from images.
+After the text is extracted the gateway worker sends this to a SUPERVISOR_LLM that cleans it up and provides valid markdown
+The gateway process then takes this markdown and tokenizes chunks so that they stay within the 512 limit needed for Qdrant Vector DB
+These chunks are sent via redis to a consumer worker which stores in duckdb while it is accumulating the chunks
+Once the last chunk is sent a sentinel end of file is sent which is the trigger to consumer to move the whole thing into Qdrant
+All the stages, staging, preprocessing, consuming are stored for each file and the markdown generated in duckdb
+
+Your task is to focus on refactoring the existing gateway worker pdf handling.
+It now needs to take into account other media types such as mp3. mp4
+We need to introduce specific content handlers to delegate the extraction of the raw_text
+This likely will be the Chain of Responsibility pattern
+Having a chain which can be given a file to handle and then returns a stream (or provides) a stream which the gateway can keep pulling from 
+This stream of raw text the gateway will use to send to the LLM
+The role of these content handlers in the chain IS ONLY to deal with that content type, it is given a file , the correct handler is determined, and if accepted a 
+stream generator is provided to stream the data from
+The handlers need to be robust, understand how to close the streams when needed or on exception
+
+After this, the places in the code that now deal with types like PDF etc now need to easily support this new type
+
+The design needs be modular and  consider the addition of future media types. So each media content type handler should extend from a abstract BaseContentTypeHandler which will hold the type and have the required methods something like can_handle and stream_content (these are just suggestions). 
+
+The first new additional content handler will be for mp4. So as the flow happens now with PDF, the same also needs to work with mp4. 
+But essentially it is the same flow, just early on the correct content handler is invoked to stream the raw text to the gateway worker instead of it doing it itself as it dows now with PDFs. 
+
+The gateway doesn't know what is feeding it the raw_text, it doesn't care. It only needs to take that raw_text and send it to the LLM which cleans it up and retypes it into valid markdown
+
+Ensure no existing tests are broken, add new tests as needed, run `ruff` linting

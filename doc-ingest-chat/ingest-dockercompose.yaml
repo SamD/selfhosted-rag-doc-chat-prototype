@@ -17,8 +17,7 @@ x-base-service: &base-service
     - ${EMBEDDING_MODEL_PATH_MOUNT}:${EMBEDDING_MODEL_PATH_MOUNT}:ro
     - ${LLM_PATH_MOUNT}:${LLM_PATH_MOUNT}:ro
     - ${SUPERVISOR_LLM_PATH_MOUNT}:${SUPERVISOR_LLM_PATH_MOUNT}:ro
-#  networks:
-#    - rag-net
+    - ${WHISPER_MODEL_PATH_MOUNT}:${WHISPER_MODEL_PATH_MOUNT}:ro
 
 x-gpu-params: &gpu-params
   runtime: nvidia
@@ -28,21 +27,18 @@ x-gpu-params: &gpu-params
     dockerfile: doc-ingest-chat/Dockerfile.worker
     args:
       TARGET_TYPE: cuda
+      BUILDKIT_INLINE_CACHE: 1
   environment:
     - LLAMA_USE_GPU=true
     - PYTHONUNBUFFERED=1
+    - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     - REDIS_HOST=redis
     - REDIS_PORT=${REDIS_PORT:-6379}
+    - DEFAULT_DOC_INGEST_ROOT=${DEFAULT_DOC_INGEST_ROOT}
     - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
     - LLM_PATH=${LLM_PATH}
     - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
-    - DEFAULT_DOC_INGEST_ROOT=${DEFAULT_DOC_INGEST_ROOT}
-    - STAGING_DIR=${STAGING_DIR}
-    - PREPROCESSING_DIR=${PREPROCESSING_DIR}
-    - INGESTION_DIR=${INGESTION_DIR}
-    - CONSUMING_DIR=${CONSUMING_DIR}
-    - SUCCESS_DIR=${SUCCESS_DIR}
-    - FAILED_DIR=${FAILED_DIR}
+    - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
     - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
     - NVIDIA_VISIBLE_DEVICES=all
@@ -52,8 +48,6 @@ services:
   redis:
     image: redis:7
     command: --port ${REDIS_PORT:-6379} --save "" --appendonly no
-#    networks:
-#      - rag-net
     ports:
       - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
     volumes:
@@ -68,6 +62,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONUNBUFFERED=1
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
       - QDRANT__STORAGE__STORAGE_PATH=/qdrant/storage
@@ -106,6 +101,27 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  whisperx_worker:
+    <<: [*base-service]
+    container_name: whisperx_worker
+    profiles: [cuda]
+    runtime: nvidia
+    build:
+      context: ..
+      dockerfile: doc-ingest-chat/Dockerfile.whisperx
+    entrypoint: ["python", "run_whisperx_worker.py"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+      - PYTHONPATH=/app
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - DEVICE=cuda
+      - COMPUTE_TYPE=float16
+      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+    depends_on:
+      - redis
 
   gatekeeper_worker:
     <<: [*base-service, *gpu-params]
@@ -147,18 +163,13 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONUNBUFFERED=1
       - NODE_ENV=development
     command: ["./node_modules/.bin/astro", "dev", "--host", "0.0.0.0", "--port", "4321"]
     volumes:
       - ../astro-frontend:/app
       - /app/node_modules
       - /app/.astro
-#    networks:
-#      - rag-net
 
 volumes:
   redis_data:
-
-#networks:
-#  rag-net:
-#    driver: bridge

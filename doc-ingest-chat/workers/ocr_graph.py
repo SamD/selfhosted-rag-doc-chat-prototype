@@ -6,7 +6,6 @@ Uses Docling (EasyOCR) as the primary OCR engine.
 
 import base64
 import json
-import logging
 import os
 from typing import List, Optional, TypedDict
 
@@ -15,8 +14,9 @@ from config.settings import DEBUG_IMAGE_DIR
 from langgraph.graph import END, StateGraph
 from services.redis_service import get_redis_client
 from utils.ocr_utils import run_ocr, save_bad_image
+from utils.trace_utils import get_logger, set_trace_id
 
-log = logging.getLogger("ingest.ocr_graph")
+log = get_logger("ingest.ocr_graph")
 
 # Global cache for the compiled graph
 _COMPILED_OCR_APP = None
@@ -26,6 +26,7 @@ class OCRState(TypedDict):
     """Represents the internal state of an OCR job."""
 
     job_id: str
+    trace_id: Optional[str]
     rel_path: str
     page_num: int
     image_base64: str
@@ -42,6 +43,10 @@ class OCRState(TypedDict):
 
 def decode_image_node(state: OCRState) -> OCRState:
     """Decodes base64 string back into a NumPy array."""
+    trace_id = state.get("trace_id")
+    if trace_id:
+        set_trace_id(trace_id)
+        
     try:
         shape = tuple(state["image_shape"])
         dtype = state["image_dtype"]
@@ -112,11 +117,11 @@ def get_ocr_app():
         _COMPILED_OCR_APP = create_ocr_graph()
     return _COMPILED_OCR_APP
 
-
 def run_ocr_graph(job: dict) -> bool:
     """Invokes the cached graph for a single OCR job."""
     initial_state: OCRState = {
         "job_id": job.get("job_id", "unknown"),
+        "trace_id": job.get("trace_id"),
         "rel_path": job["rel_path"],
         "page_num": job["page_num"],
         "image_base64": job["image_base64"],

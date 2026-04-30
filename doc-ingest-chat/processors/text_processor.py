@@ -183,7 +183,7 @@ class TextProcessor:
     @staticmethod
     def normalize_metadata(entry: dict, default_values: dict = None) -> dict:
         """Normalize metadata entry with expected keys."""
-        expected_keys = ["chunk", "id", "source_file", "document_id", "type", "hash", "engine", "page", "chunk_index"]
+        expected_keys = ["chunk", "id", "source_file", "document_id", "trace_id", "type", "hash", "engine", "page", "chunk_index"]
         default_values = default_values or {}
         normalized = {}
         for key in expected_keys:

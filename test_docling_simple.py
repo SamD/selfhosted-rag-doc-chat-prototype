@@ -1,11 +1,12 @@
 import os
-import numpy as np
-from PIL import Image
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
-from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 import tempfile
 import time
+
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+from docling.document_converter import DocumentConverter, ImageFormatOption
+from PIL import Image
+
 
 def test_ocr():
     print("🚀 Initializing Docling...")
@@ -24,7 +25,7 @@ def test_ocr():
 
     # Create a small image with some text
     img = Image.new('RGB', (200, 100), color = (73, 109, 137))
-    from PIL import ImageDraw, ImageFont
+    from PIL import ImageDraw
     d = ImageDraw.Draw(img)
     d.text((10,10), "Hello World", fill=(255,255,0))
     

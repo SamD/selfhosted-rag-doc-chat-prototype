@@ -26,8 +26,9 @@ from docling.datamodel.pipeline_options import (
 )
 from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
 from PIL import Image
+from utils.trace_utils import get_logger, set_trace_id
 
-log = logging.getLogger("ingest.ocr_utils")
+log = get_logger("ingest.ocr_utils")
 
 # Global Docling Converter (Lazy initialized)
 _DOCLING_CONVERTER = None
@@ -61,8 +62,11 @@ def preprocess_image(pil_image):
     return np_image
 
 
-def send_image_to_ocr(np_image, rel_path, page_num):
+def send_image_to_ocr(np_image, rel_path, page_num, trace_id: str = None):
     """Send image to OCR service and wait for response."""
+    if trace_id:
+        set_trace_id(trace_id)
+
     start_time = time.perf_counter()
     job_id = str(uuid.uuid4())
     reply_key = f"ocr_reply:{job_id}"
@@ -74,9 +78,14 @@ def send_image_to_ocr(np_image, rel_path, page_num):
         "image_dtype": str(np_image.dtype),
         "image_base64": base64.b64encode(np_image.tobytes()).decode(),
         "reply_key": reply_key,
+        "trace_id": trace_id,
     }
-    redis_client = get_redis_client()
-    redis_client.lpush(REDIS_OCR_JOB_QUEUE, json.dumps(job))
+    try:
+        redis_client = get_redis_client()
+        redis_client.lpush(REDIS_OCR_JOB_QUEUE, json.dumps(job))
+    except Exception as e:
+        log.error(f"❌ Failed to submit OCR job to Redis: {e}")
+        raise RuntimeError(f"Redis submission failed: {e}")
 
     # HEARTBEAT POLLING: Instead of one long block, we poll and log status
     result = None
@@ -111,18 +120,22 @@ def send_image_to_ocr(np_image, rel_path, page_num):
 def get_docling_converter():
     """
     Lazy initializer for Docling DocumentConverter with EasyOCR backend.
+    Enforces strict offline mode for air-gapped environments.
     """
     global _DOCLING_CONVERTER
     if _DOCLING_CONVERTER is None:
         try:
+            # 1. ENFORCE AIR-GAP: Kill internet dependency for Docling/HuggingFace
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["HF_HOME"] = "/tmp"
+            os.environ["XDG_CACHE_HOME"] = "/tmp"
+
             # Silence internal library noise
             logging.getLogger("docling").setLevel(logging.WARNING)
             logging.getLogger("easyocr").setLevel(logging.WARNING)
             logging.getLogger("docling_parse").setLevel(logging.WARNING)
 
-            # OCR Options (EasyOCR)
-
-            log.info("🚀 Initializing Docling Converter (EasyOCR backend)...")
+            log.info("🚀 Initializing Docling Converter (STRICT OFFLINE MODE)...")
 
             # Modern Docling 2.x Acceleration Setup
             device_type = os.getenv("DEVICE", "cpu").lower()
@@ -130,7 +143,8 @@ def get_docling_converter():
             log.info(f"⚡ Setting Docling acceleration to: {accel_device}")
 
             # OCR Options (EasyOCR)
-            ocr_options = EasyOcrOptions(lang=["en"])
+            # download_enabled=False ensures it doesn't try to fetch languages from net
+            ocr_options = EasyOcrOptions(lang=["en"], download_enabled=False)
 
             # Use PdfPipelineOptions for both to ensure compatibility with StandardPdfPipeline
             pipeline_options = PdfPipelineOptions()
@@ -139,8 +153,14 @@ def get_docling_converter():
             # Disable extra extractions for raw text speed
             pipeline_options.do_table_structure = False
 
+            # 2. LOCAL ARTIFACTS: Pointing to HF_HOME for local loading
+            # This implicitly disables model downloads in Docling 2.x
+            pipeline_options.artifacts_path = os.getenv("HF_HOME", "/usr/local/model_cache")
+
             # Apply modern acceleration settings
-            pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
+            pipeline_options.accelerator_options = AcceleratorOptions(
+                device=accel_device
+            )
 
             _DOCLING_CONVERTER = DocumentConverter(
                 allowed_formats=[InputFormat.IMAGE, InputFormat.PDF],
@@ -175,10 +195,13 @@ def save_bad_image(np_image, debug_image_path, log_prefix):
     safe_image_save(pil_image, debug_image_path)
 
 
-def run_ocr(np_image, rel_path, page_num) -> Tuple[Optional[str], str, float]:
+def run_ocr(np_image, rel_path, page_num, trace_id: str = None) -> Tuple[Optional[str], str, float]:
     """
     Executes OCR using Docling (EasyOCR backend) on a NumPy image array.
     """
+    if trace_id:
+        set_trace_id(trace_id)
+
     log.info(f"🔄 Running Docling (EasyOCR) for {rel_path} page {page_num}")
 
     converter = get_docling_converter()

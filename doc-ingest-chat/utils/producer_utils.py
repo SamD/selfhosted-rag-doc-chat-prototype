@@ -15,10 +15,7 @@ import torch
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
 from config.settings import (
-    COMPUTE_TYPE,
-    DEVICE,
     EMBEDDING_MODEL_PATH,
-    MEDIA_BATCH_SIZE,
     REDIS_HOST,
     REDIS_PORT,
     SUPPORTED_MEDIA_EXT,
@@ -49,31 +46,20 @@ def get_redis_client():
     return _REDIS_CLIENT_CACHE
 
 
-def get_whisper_model():
-    import whisperx
-
-    return whisperx.load_model("large-v2", DEVICE, compute_type=COMPUTE_TYPE)
-
-
 def extract_text_from_media(filepath):
-    import whisperx
-
     if not filepath.lower().endswith(SUPPORTED_MEDIA_EXT):
         raise ValueError(f"Unsupported file type: {filepath}")
-    log.info(f" 🎥 Processing media {filepath}")
+    log.info(f" 🎥 Delegating media transcription for {filepath}")
     try:
-        audio = whisperx.load_audio(filepath)
-        model = get_whisper_model()
-        result = model.transcribe(audio, batch_size=MEDIA_BATCH_SIZE)
-        return result["segments"]
+        from utils.whisper_utils import send_media_to_whisperx
+
+        return list(send_media_to_whisperx(filepath))
     except Exception as e:
-        log.error(f"Transcription failed for {filepath}: {e}", exc_info=True)
+        log.error(f"Transcription delegation failed for {filepath}: {e}", exc_info=True)
         return None
     finally:
         gc.collect()
         torch.cuda.empty_cache()
-        if "model" in locals():
-            del model
 
 
 def extract_text_from_html(full_path: str) -> str:
@@ -134,7 +120,7 @@ def send_file_end_sentinel(rclient, queue_name: str, source_file: str, total_chu
     sentinel = {
         "source_file": source_file,
         "type": "file_end",
-        "total_chunks": total_chunks,
+        "expected_chunks": total_chunks,
     }
     rclient.rpush(queue_name, json.dumps(sentinel))
     log.info(f"🏁 Sent file_end sentinel for {source_file} ({total_chunks} chunks)")

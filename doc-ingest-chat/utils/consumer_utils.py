@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import torch
 from config.settings import MAX_CHROMA_BATCH_SIZE, USE_QDRANT
 from more_itertools import chunked
-from services.database import get_db
+from services.database import get_vectorstore
 
 log = logging.getLogger("ingest.consumer_utils")
 
@@ -29,7 +29,7 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
         return 0
 
     try:
-        db = get_db()
+        db = get_vectorstore()
 
         # Extract fields with safe defaults
         all_texts = [entry.get("chunk", "[EMPTY CHUNK]") for entry in chunks_to_store]
