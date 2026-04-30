@@ -35,7 +35,7 @@ This project solves those issues by implementing a **custom, multi-process distr
 - **🤖 AI & ML**: `Phi-4-mini` (Normalization + RAG), `e5-large-v2` (Embeddings), `WhisperX` (Transcription).
 - **⚙️ Backend**: Python, FastAPI, Multi-process Workers.
 - **📡 Coordination**: Redis (Message Broker, Backpressure, Atomicity).
-- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Computer Vision), `WhisperX` (Media), `transformers` (Tokenization).
+- **📄 Document Processing**: `pdfplumber` (Extraction), `Docling (EasyOCR)` (Computer Vision), `WhisperX` (MP3/MP4 Transcription), `transformers` (Tokenization).
 - **💾 Storage**: `Qdrant` (Vector Search), `DuckDB` (State Machine), `Parquet` (Archival).
 - **🎨 Frontend**: Astro, Tailwind CSS.
 
