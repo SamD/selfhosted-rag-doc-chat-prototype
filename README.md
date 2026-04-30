@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **New to this project?** Please read the **[README_FIRST.md](./README_FIRST.md)** first for critical setup instructions and environment requirements.
+
 # 🚀 Scalable RAG Pipeline (Self-Hosted)
 
 **A transparent document processing system handling mixed-quality PDFs (scanned + digital), HTML, and large document collections with automatic OCR fallback.**
