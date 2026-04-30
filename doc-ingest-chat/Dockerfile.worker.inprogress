@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1.4
+# 1. Use the SAME base for both to ensure glibc/libpython compatibility
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.10 (Ubuntu 22.04 default) to simplify library paths
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip python3-venv python3-dev git wget ca-certificates \
+    poppler-utils libgl1 libglib2.0-0 tesseract-ocr libtesseract-dev ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv directly
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/
+ENV PATH="/uv/bin:$PATH"
+
+WORKDIR /app
+
+# Create venv in a fixed location
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install dependencies with cache mounting for speed
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install -r pyproject.toml
+
+# Prepare model cache
+RUN mkdir -p /usr/local/model_cache
+ENV HF_HOME=/usr/local/model_cache
+ENV TORCH_HOME=/usr/local/model_cache
+
+# Bake models
+COPY doc-ingest-chat/ /app/doc-ingest-chat/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    PYTHONPATH=/app/doc-ingest-chat \
+    LD_LIBRARY_PATH=/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.10/site-packages/nvidia/cublas/lib:$LD_LIBRARY_PATH \
+    python /app/doc-ingest-chat/utils/warmup.py
+
+# --- Runner ---
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runner
+
+# Install the same basic system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 poppler-utils libgl1 libglib2.0-0 tesseract-ocr libtesseract-dev ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the venv and models
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /usr/local/model_cache /usr/local/model_cache
+
+# Environment Setup
+ENV PATH="/opt/venv/bin:$PATH"
+ENV HF_HOME=/usr/local/model_cache
+ENV TORCH_HOME=/usr/local/model_cache
+ENV HF_HUB_OFFLINE=1
+
+# Point to the specific sub-directories where the NVIDIA wheels store their .so files
+ENV LD_LIBRARY_PATH=\
+/opt/venv/lib/python3.10/site-packages/nvidia/cudnn/lib:\
+/opt/venv/lib/python3.10/site-packages/nvidia/cublas/lib:\
+/opt/venv/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:\
+/usr/local/cuda/lib64:\
+$LD_LIBRARY_PATH
+
+CMD ["python", "--version"]

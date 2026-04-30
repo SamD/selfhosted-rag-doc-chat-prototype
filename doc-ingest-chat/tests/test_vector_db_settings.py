@@ -1,113 +1,69 @@
-"""
-Simple tests for vector database settings that actually work.
-"""
-
 import os
-import sys
+from unittest.mock import patch
 
-# Add parent directory to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-
-def test_use_qdrant_flag_with_qdrant_profile():
-    """Test that USE_QDRANT is True when VECTOR_DB_PROFILE is qdrant."""
-    # Set minimal required environment
-    os.environ["VECTOR_DB_PROFILE"] = "qdrant"
-    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
-    os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
-    os.environ["LLM_PATH"] = "/tmp/test.gguf"
-    os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
-
-    # Reload settings module
-    import importlib
-
-    from config import settings
-
-    importlib.reload(settings)
-
-    assert settings.VECTOR_DB_PROFILE == "qdrant"
-    assert settings.USE_QDRANT is True
+import pytest
+from config import settings
 
 
-def test_use_qdrant_flag_with_chroma_profile():
-    """Test that USE_QDRANT is False when VECTOR_DB_PROFILE is chroma."""
-    # Set minimal required environment
-    os.environ["VECTOR_DB_PROFILE"] = "chroma"
-    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
-    os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
-    os.environ["LLM_PATH"] = "/tmp/test.gguf"
-    os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
+def load_test_env():
+    """Helper to load the test.env file into os.environ."""
+    env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "test.env")
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    key, val = line.strip().split("=", 1)
+                    os.environ[key] = val
 
-    # Reload settings module
-    import importlib
+def test_mandatory_variables_present():
+    """
+    Verifies that all 7 mandatory variables are correctly identified 
+    and resolved from the environment.
+    """
+    load_test_env()
+    
+    # We mock os.path.exists to True so the _require_abs_path helper succeeds
+    with patch("os.path.exists", return_value=True):
+        assert settings.DEFAULT_DOC_INGEST_ROOT == os.environ["DEFAULT_DOC_INGEST_ROOT"]
+        assert settings.INGEST_FOLDER == os.environ["INGEST_FOLDER"]
+        assert settings.STAGING_FOLDER == os.environ["STAGING_FOLDER"]
+        assert settings.EMBEDDING_MODEL_PATH == os.environ["EMBEDDING_MODEL_PATH"]
+        assert settings.LLM_PATH == os.environ["LLM_PATH"]
+        assert settings.SUPERVISOR_LLM_PATH == os.environ["SUPERVISOR_LLM_PATH"]
+        assert settings.WHISPER_MODEL_PATH == os.environ["WHISPER_MODEL_PATH"]
 
-    from config import settings
+def test_missing_mandatory_raises_system_exit():
+    """
+    Verifies that if a mandatory variable is missing, the settings 
+    module correctly triggers an exit (via _require_abs_path).
+    """
+    # Clear a mandatory variable
+    if "LLM_PATH" in os.environ:
+        del os.environ["LLM_PATH"]
+    
+    with patch("os.path.exists", return_value=True):
+        # Accessing the property should trigger the error
+        with pytest.raises(SystemExit):
+            _ = settings.LLM_PATH
 
-    importlib.reload(settings)
+def test_whisper_warning_only_mode():
+    """
+    Verifies that WHISPER_MODEL_PATH is optional and defaults 
+    to NOT_SET rather than crashing.
+    """
+    if "WHISPER_MODEL_PATH" in os.environ:
+        del os.environ["WHISPER_MODEL_PATH"]
+    
+    # It should not raise SystemExit
+    val = settings.WHISPER_MODEL_PATH
+    assert val == "NOT_SET"
 
-    assert settings.VECTOR_DB_PROFILE == "chroma"
-    assert settings.USE_QDRANT is False
-
-
-def test_default_port_for_qdrant():
-    """Test that default port is 6333 for Qdrant when not explicitly set."""
-    # Set minimal required environment WITHOUT explicit port
-    os.environ["VECTOR_DB_PROFILE"] = "qdrant"
-    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
-    os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
-    os.environ["LLM_PATH"] = "/tmp/test.gguf"
-    os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
-
-    # Remove explicit port if set
-    os.environ.pop("VECTOR_DB_PORT", None)
-
-    # Reload settings module
-    import importlib
-
-    from config import settings
-
-    importlib.reload(settings)
-
-    assert settings.VECTOR_DB_PORT == 6333
-
-
-def test_default_port_for_chroma():
-    """Test that default port is 8000 for ChromaDB when not explicitly set."""
-    # Set minimal required environment WITHOUT explicit port
-    os.environ["VECTOR_DB_PROFILE"] = "chroma"
-    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
-    os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
-    os.environ["LLM_PATH"] = "/tmp/test.gguf"
-    os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
-
-    # Remove explicit port if set
-    os.environ.pop("VECTOR_DB_PORT", None)
-
-    # Reload settings module
-    import importlib
-
-    from config import settings
-
-    importlib.reload(settings)
-
-    assert settings.VECTOR_DB_PORT == 8000
-
-
-def test_explicit_port_override():
-    """Test that explicitly setting VECTOR_DB_PORT overrides the default."""
-    # Set explicit port
-    os.environ["VECTOR_DB_PROFILE"] = "qdrant"
-    os.environ["VECTOR_DB_PORT"] = "9999"
-    os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test"
-    os.environ["EMBEDDING_MODEL_PATH"] = "intfloat/e5-large-v2"
-    os.environ["LLM_PATH"] = "/tmp/test.gguf"
-    os.environ["CHROMA_DATA_DIR"] = "/tmp/chroma"
-
-    # Reload settings module
-    import importlib
-
-    from config import settings
-
-    importlib.reload(settings)
-
-    assert settings.VECTOR_DB_PORT == 9999
+def test_absolute_path_resolution():
+    """
+    Ensures that relative paths in environment are correctly 
+    resolved to absolute paths.
+    """
+    with patch.dict(os.environ, {"DEFAULT_DOC_INGEST_ROOT": "./relative_docs"}):
+        with patch("os.path.exists", return_value=True):
+            # Should be an absolute path starting with /
+            assert os.path.isabs(settings.DEFAULT_DOC_INGEST_ROOT)

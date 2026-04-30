@@ -7,13 +7,8 @@ Implements a database-driven state machine for atomic lifecycle management.
 import datetime
 import logging
 import os
-import random
-import time
 import uuid
 from typing import Any, Dict, Optional
-
-import duckdb
-from config.settings import DUCKDB_FILE
 
 log = logging.getLogger("ingest.job_service")
 
@@ -43,78 +38,24 @@ class JobService:
     """
 
     @staticmethod
-    def _execute_with_retry(query: str, params: tuple = (), fetch: bool = False, fetch_all: bool = False) -> Any:
+    def _execute_with_retry(sql: str, params: tuple = (), fetch: bool = False, fetch_all: bool = False) -> Any:
         """
-        Executes a query with exponential backoff to handle 'Database is locked' errors.
+        Delegates to the centralized DatabaseService with robust multi-process safety.
         """
-        max_retries = 10
-        base_delay = 0.1
+        from services.database import execute, query
 
-        for attempt in range(max_retries):
-            con = None
-            try:
-                con = duckdb.connect(DUCKDB_FILE)
-                if fetch:
-                    res = con.execute(query, params).fetchone()
-                    cols = [desc[0] for desc in con.description] if con.description else []
-                    return res, cols
-                elif fetch_all:
-                    res = con.execute(query, params).fetchall()
-                    cols = [desc[0] for desc in con.description] if con.description else []
-                    return res, cols
-                else:
-                    con.execute(query, params)
-                    return True
-            except (duckdb.IOException, duckdb.InternalException) as e:
-                if "lock" in str(e).lower() or "used by another process" in str(e).lower():
-                    delay = base_delay * (2**attempt) + (random.random() * 0.1)
-                    # Use INFO for first 3 attempts to reduce log noise, only WARNING if it persists
-                    log_func = log.info if attempt < 3 else log.warning
-                    log_func(f"⏳ DuckDB locked, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(delay)
-                    continue
-                raise e
-            finally:
-                if con:
-                    con.close()
-
-        raise RuntimeError(f"💥 Failed to acquire DuckDB lock after {max_retries} attempts.")
+        if fetch or fetch_all:
+            return query(sql, params, fetch_all=fetch_all)
+        return execute(sql, params)
 
     @staticmethod
-    def ensure_schema(quiet: bool = False) -> None:
+    def ensure_schema(quiet: bool = False, db_path: str = None) -> None:
         """
-        Ensure the ingestion_lifecycle and legacy file_ingestion_jobs tables exist in DuckDB.
+        Delegates database initialization to the centralized DatabaseService.
         """
-        JobService._execute_with_retry("""
-            CREATE TABLE IF NOT EXISTS ingestion_lifecycle (
-                id VARCHAR PRIMARY KEY,
-                status VARCHAR,
-                original_filename VARCHAR,
-                pdf_path VARCHAR,
-                md_path VARCHAR,
-                worker_id VARCHAR,
-                error_log TEXT,
-                new_at TIMESTAMP,
-                preprocessing_at TIMESTAMP,
-                preprocessing_complete_at TIMESTAMP,
-                ingesting_at TIMESTAMP,
-                consuming_at TIMESTAMP,
-                finalized_at TIMESTAMP
-            )
-        """)
-        # Keep legacy table for compatibility
-        JobService._execute_with_retry("""
-            CREATE TABLE IF NOT EXISTS file_ingestion_jobs (
-                file_path VARCHAR PRIMARY KEY,
-                job_id VARCHAR,
-                document_id VARCHAR,
-                status VARCHAR,
-                error_message VARCHAR,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        if not quiet:
-            log.info("✅ Ensured database schemas in DuckDB")
+        from services.database import DatabaseService
+
+        DatabaseService.init_db(db_path=db_path)
 
     @staticmethod
     def create_job(original_pdf_path: str) -> Optional[str]:
@@ -129,16 +70,18 @@ class JobService:
             return None
 
         job_id = str(uuid.uuid4())
+        from utils.trace_utils import generate_trace_id
+        trace_id = generate_trace_id()
         now = datetime.datetime.now()
 
         JobService._execute_with_retry(
             """
-            INSERT INTO ingestion_lifecycle (id, status, original_filename, pdf_path, new_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO ingestion_lifecycle (id, status, original_filename, pdf_path, new_at, trace_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (job_id, STATUS_NEW, filename, original_pdf_path, now),
+            (job_id, STATUS_NEW, filename, original_pdf_path, now, trace_id),
         )
-        log.info(f"🆕 Created job {job_id} for {filename}")
+        log.info(f"🆕 [{trace_id}] Created job {job_id} for {filename}")
         return job_id
 
     @staticmethod

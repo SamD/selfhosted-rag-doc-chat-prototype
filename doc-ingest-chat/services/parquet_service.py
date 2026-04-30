@@ -6,13 +6,11 @@ Optimized for incremental DuckDB writes and disk-based Parquet exportation.
 
 import json
 import logging
-import random
-import time
 from typing import Any, Dict, List
 
-import duckdb
 import pandas as pd
-from config.settings import DUCKDB_FILE, PARQUET_FILE
+from config.settings import PARQUET_FILE
+from services.database import DatabaseService
 
 log = logging.getLogger("ingest.parquet")
 
@@ -22,61 +20,19 @@ class ParquetService:
 
     @staticmethod
     def ensure_schema() -> None:
-        """Ensures the persistent table exists in DuckDB."""
-        # 1. Main persistent archival table
-        ParquetService._execute_protected_query("""
-            CREATE TABLE IF NOT EXISTS parquet_chunks (
-              id VARCHAR PRIMARY KEY,
-              chunk TEXT,
-              source_file VARCHAR,
-              document_id VARCHAR,
-              type VARCHAR,
-              chunk_index INTEGER,
-              engine VARCHAR,
-              hash VARCHAR,
-              page INTEGER
-            )
-            """)
-        # 2. Transient staging table for zero-memory consumer
-        ParquetService._execute_protected_query("""
-            CREATE TABLE IF NOT EXISTS staged_chunks (
-                id VARCHAR PRIMARY KEY,
-                source_file VARCHAR,
-                document_id VARCHAR,
-                chunk TEXT,
-                metadata JSON,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        log.info("✅ Ensured parquet_chunks and staged_chunks schemas in DuckDB")
+        """Delegates database initialization to the centralized DatabaseService."""
+        DatabaseService.init_db()
 
     @staticmethod
-    def _execute_protected_query(query: str, params: tuple = (), fetch_all: bool = False) -> Any:
-        """Internal helper with aggressive locking retries for persistence nodes."""
-        max_retries = 20  # Increased ceiling for heavy parallel load
-        base_delay = 0.2
+    def _execute_protected_query(sql: str, params: tuple = (), fetch_all: bool = False) -> Any:
+        """
+        Delegates to the centralized DatabaseService with robust multi-process safety.
+        """
+        from services.database import execute, query
 
-        for attempt in range(max_retries):
-            con = None
-            try:
-                con = duckdb.connect(DUCKDB_FILE)
-                if fetch_all:
-                    res = con.execute(query, params).fetchall()
-                    return res
-                else:
-                    con.execute(query, params)
-                    return True
-            except (duckdb.IOException, duckdb.InternalException) as e:
-                if "lock" in str(e).lower() or "used by another process" in str(e).lower():
-                    delay = base_delay * (2**attempt) + (random.random() * 0.2)
-                    log.info(f"⏳ Persistence layer locked, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
-                    time.sleep(delay)
-                    continue
-                raise e
-            finally:
-                if con:
-                    con.close()
-        raise RuntimeError(f"💥 Persistence layer failed to acquire lock after {max_retries} attempts.")
+        if fetch_all:
+            return query(sql, params, fetch_all=True)
+        return execute(sql, params)
 
     @staticmethod
     def stage_chunks(entries: List[Dict[str, Any]]) -> None:
@@ -98,18 +54,20 @@ class ParquetService:
 
         # Use protected logic for the registration/insertion
         max_retries = 20
+        import random
+        import time
+
         for attempt in range(max_retries):
             con = None
             try:
-                con = duckdb.connect(DUCKDB_FILE)
+                con = DatabaseService.get_duckdb()
                 con.register("df_staged_temp", df_staged)
+                # Explicit column names ensure we don't hit column-count mismatches with timestamps
                 con.execute("INSERT OR REPLACE INTO staged_chunks (id, source_file, document_id, chunk, metadata) SELECT * FROM df_staged_temp")
                 return
-            except (duckdb.IOException, duckdb.InternalException) as e:
-                if "lock" in str(e).lower():
-                    import random
-                    import time
-
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "lock" in err_msg or "used by another process" in err_msg:
                     delay = 0.2 * (2**attempt) + (random.random() * 0.2)
                     log.warning(f"⏳ DuckDB locked during batch stage, retrying in {delay:.2f}s")
                     time.sleep(delay)
@@ -121,27 +79,24 @@ class ParquetService:
 
     @staticmethod
     def stage_chunk(entry: Dict[str, Any]) -> None:
-        """Persists a single chunk to the staging table using lock retries and idempotent replacement."""
-        # ENSURE TYPE and ENGINE exist to prevent 'Storage error' in consumer
+        """Persists a single chunk to the staging table using central execution helper."""
         entry["type"] = entry.get("type", "unknown")
         entry["engine"] = entry.get("engine", "llamacpp")
         entry["page"] = entry.get("page", 1)
 
         query = "INSERT OR REPLACE INTO staged_chunks (id, source_file, document_id, chunk, metadata) VALUES (?, ?, ?, ?, ?)"
-        params = [entry.get("id"), entry.get("source_file"), entry.get("document_id"), entry.get("chunk"), json.dumps(entry)]
-        try:
-            ParquetService._execute_protected_query(query, tuple(params))
-        except Exception as e:
-            log.error(f"💥 Critical failure staging chunk {entry.get('id')}: {e}")
+        params = (entry.get("id"), entry.get("source_file"), entry.get("document_id"), entry.get("chunk"), json.dumps(entry))
+        ParquetService._execute_protected_query(query, params)
 
     @staticmethod
     def get_staged_chunks(source_file: str, purge: bool = True) -> List[Dict[str, Any]]:
-        """Retrieves and optionally deletes all staged chunks for a file using lock retries."""
+        """Retrieves and optionally deletes all staged chunks for a file."""
         chunks = []
         try:
             # 1. Fetch
             query_select = "SELECT metadata FROM staged_chunks WHERE source_file = ? ORDER BY timestamp ASC"
-            res = ParquetService._execute_protected_query(query_select, (source_file,), fetch_all=True)
+            # execute_query returns (results, columns)
+            res, _ = ParquetService._execute_protected_query(query_select, (source_file,), fetch_all=True)
 
             if res:
                 for row in res:
@@ -167,7 +122,6 @@ class ParquetService:
         desired_cols = ["id", "chunk", "source_file", "document_id", "type", "chunk_index", "engine", "hash", "page"]
         for col in desired_cols:
             if col not in df.columns:
-                # Default values to prevent schema mismatch
                 if col == "page" or col == "chunk_index":
                     df[col] = 1
                 elif col == "type":
@@ -179,17 +133,22 @@ class ParquetService:
 
         df = df[desired_cols]
 
-        # Use protected logic for the registration/insertion
         max_retries = 20
+        import random
+        import time
+
         for attempt in range(max_retries):
             con = None
             try:
-                con = duckdb.connect(DUCKDB_FILE)
+                con = DatabaseService.get_duckdb()
                 con.register("df_temp", df)
-                con.execute("INSERT OR REPLACE INTO parquet_chunks SELECT * FROM df_temp")
+                # EXPLICIT COLUMN LIST: Prevents 'excluded' count mismatch with auto-timestamp columns
+                cols_str = ", ".join(desired_cols)
+                con.execute(f"INSERT OR REPLACE INTO parquet_chunks ({cols_str}) SELECT * FROM df_temp")
                 return
-            except (duckdb.IOException, duckdb.InternalException) as e:
-                if "lock" in str(e).lower():
+            except Exception as e:
+                err_msg = str(e).lower()
+                if "lock" in err_msg or "used by another process" in err_msg:
                     delay = 0.2 * (2**attempt) + (random.random() * 0.2)
                     time.sleep(delay)
                     continue

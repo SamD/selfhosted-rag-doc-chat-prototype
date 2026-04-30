@@ -23,17 +23,20 @@ from config.settings import (
 )
 
 try:
+    # Try the modern 0.3 path
     from langchain.chains import ConversationalRetrievalChain
 except (ImportError, ModuleNotFoundError):
     try:
-        from langchain_classic.chains import ConversationalRetrievalChain
-    except (ImportError, ModuleNotFoundError):
-        # Last resort fallback for some distributions
+        # Try community fallback (where many legacy chains moved)
         from langchain_community.chains import ConversationalRetrievalChain
+    except (ImportError, ModuleNotFoundError):
+        # Last resort fallback for some legacy distributions
+        from langchain_classic.chains import ConversationalRetrievalChain
+
 from langchain_ollama import ChatOllama
 from llama_cpp import Llama
 from prompts.chat_prompts import SHARED_CHAT_PROMPT
-from services.database import get_db
+from services.database import get_vectorstore as get_vdb
 
 log = logging.getLogger("ingest.llm_setup")
 
@@ -187,7 +190,7 @@ class RemoteLlama:
 
 
 def get_vectorstore():
-    return get_db()
+    return get_vdb()
 
 
 def get_retriever(vectorstore):
@@ -206,14 +209,20 @@ def get_chain_or_llama(retriever):
     else:
         if _LLAMA_MODEL_CACHE is None:
             params = LlamaParamStrategy().get_params()
-            model_path = params["model_path"]
+            model_path = params.get("model_path")
+            from utils.exceptions import ConfigurationError
+
+            if not model_path:
+                raise ConfigurationError("LLM_PATH was not set")
 
             if model_path.startswith(("http://", "https://")):
                 log.info(f"🚀 Connecting to Main Remote Llama: {model_path}")
                 _LLAMA_MODEL_CACHE = RemoteLlama(base_url=model_path)
             else:
+                if not os.path.exists(model_path):
+                    raise ConfigurationError(f"LLM_PATH file not found at {model_path}")
+
                 log.info(f"🚀 Loading Main Local Llama: {model_path}")
-                _LLAMA_MODEL_CACHE = Llama(**params)
 
         return None, _LLAMA_MODEL_CACHE
 
@@ -226,13 +235,18 @@ def get_supervisor_llm() -> Any:
     global _SUPERVISOR_LLM_CACHE
     _check_fork()
     if _SUPERVISOR_LLM_CACHE is None:
+        from utils.exceptions import ConfigurationError
+
         if not SUPERVISOR_LLM_PATH:
-            raise ValueError("❌ SUPERVISOR_LLM_PATH is not set in environment. Please set it to the absolute path or URL of your Supervisor model.")
+            raise ConfigurationError("SUPERVISOR_LLM_PATH was not set")
 
         if SUPERVISOR_LLM_PATH.startswith(("http://", "https://")):
             log.info(f"🧠 Connecting to Remote Supervisor LLM: {SUPERVISOR_LLM_PATH}")
             _SUPERVISOR_LLM_CACHE = RemoteLlama(base_url=SUPERVISOR_LLM_PATH)
         else:
+            if not os.path.exists(SUPERVISOR_LLM_PATH):
+                raise ConfigurationError(f"SUPERVISOR_LLM_PATH file not found at {SUPERVISOR_LLM_PATH}")
+
             log.info(f"🧠 Loading Local Supervisor LLM: {SUPERVISOR_LLM_PATH}")
             _SUPERVISOR_LLM_CACHE = Llama(
                 model_path=SUPERVISOR_LLM_PATH,

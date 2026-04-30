@@ -50,6 +50,12 @@ When implementation is blocked or execution is required, utilize these specific 
 * [ ] Finalize `MurmurHash` integration for chunk-level deduplication.
 * [ ] Verify stability in a fully air-gapped configuration.
 
+### Phase 4: Modular Content Handlers
+* [ ] Implement `BaseContentTypeHandler` (Chain of Responsibility).
+* [ ] Implement `PDFContentTypeHandler` (Migrate existing logic).
+* [ ] Implement `MP4ContentTypeHandler` (WhisperX for MP4).
+* [ ] Refactor `gatekeeper_logic.py` to consume raw text streams.
+
 ---
 
 ## 5. Factual Constraints

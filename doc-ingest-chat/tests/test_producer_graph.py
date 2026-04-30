@@ -1,7 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from services.job_service import STATUS_ENQUEUED
 from workers.producer_graph import (
     finalize_state_node,
     markdown_extract_node,
@@ -18,12 +17,10 @@ def test_scan_file_node_success():
         "rel_path": "test.md",
         "job_id": "job123",
         "status": "pending",
+        "trace_id": "trace-123"
     }
 
-    with patch("os.path.exists", return_value=True), patch("workers.producer_graph.update_job_status"), patch("duckdb.connect") as mock_duck:
-        # Mock Gatekeeper SUCCESS
-        mock_duck.return_value.execute.return_value.fetchone.return_value = ("SUCCESS",)
-
+    with patch("os.path.exists", return_value=True):
         new_state = scan_file_node(state)
         assert new_state["status"] == "processing"
         assert new_state["file_type"] == "markdown"
@@ -33,7 +30,7 @@ def test_scan_file_node_success():
 @patch("workers.producer_graph.get_redis_client")
 @patch("workers.producer_graph.blocking_push_with_backpressure")
 def test_markdown_extract_node_success(mock_push, mock_redis, mock_split):
-    state = {"full_path": "/tmp/test.md", "rel_path": "test.md", "queue_name": "q1", "document_id": "DOC_123", "file_type": "markdown", "status": "processing"}
+    state = {"full_path": "/tmp/test.md", "rel_path": "test.md", "queue_name": "q1", "document_id": "DOC_123", "file_type": "markdown", "status": "processing", "trace_id": "trace-123"}
 
     mock_split.return_value = (["chunk1"], [{"page": 1}])
 
@@ -43,6 +40,12 @@ def test_markdown_extract_node_success(mock_push, mock_redis, mock_split):
         assert "chunks" in new_state
         assert len(new_state["chunks"]) == 1
         assert mock_push.called
+        # Verify trace_id in payload
+        _, kwargs = mock_push.call_args
+        entries = kwargs["entries"]
+        import json
+        entry = json.loads(entries[0])
+        assert entry["trace_id"] == "trace-123"
 
 
 @patch("workers.producer_graph.get_redis_client")
@@ -57,10 +60,9 @@ def test_send_sentinel_node(mock_send, mock_redis):
 
 def test_finalize_state_node_success():
     state = {"rel_path": "test.md", "job_id": "job123", "status": "processing", "error": None}
-
-    with patch("workers.producer_graph.update_job_status") as mock_update:
-        finalize_state_node(state)
-        mock_update.assert_called_once_with("test.md", STATUS_ENQUEUED, "job123", error_message=None)
+    # Node should simply return state now as worker handles transitions
+    new_state = finalize_state_node(state)
+    assert new_state == state
 
 
 @patch("workers.producer_graph.get_producer_app")
@@ -71,4 +73,6 @@ def test_run_ingest_graph_integration(mock_q, mock_get):
     mock_app.invoke.return_value = {"status": "processing"}
     mock_get.return_value = mock_app
 
-    assert run_ingest_graph(job_tuple) is True
+    # Mock JobService lookup for trace_id
+    with patch("services.job_service.JobService._execute_with_retry", return_value=(["trace-abc"], ["trace_id"])):
+        assert run_ingest_graph(job_tuple) is True

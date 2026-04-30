@@ -15,6 +15,8 @@ sequenceDiagram
     
     participant DB as DuckDB (Lifecycle)
     participant GK as Gatekeeper Worker (NORM_LLM)
+    participant OCR as OCR Worker (Docling)
+    participant WSP as WhisperX Worker
     participant PRD as Producer Worker
     participant CSN as Consumer Worker
     
@@ -24,8 +26,15 @@ sequenceDiagram
     Note over STG, SUC: Phase 1: Normalization (GK-LLM)
     GK->>DB: ATOMIC CLAIM (NEW -> PREPROCESSING)
     STG->>PRE: Physical MOVE
+    alt PDF/Image
+        GK->>OCR: Request OCR for Scanned Pages
+        OCR-->>GK: Return raw text
+    else Media (MP4/MP3)
+        GK->>WSP: Request Transcription
+        WSP-->>GK: Stream segments
+    end
     GK->>NORM_LLM: Request High-Fidelity Retyping (Unified User Prompt)
-    NORM_LLM-->>GK: Return Structured Markdown (with [INTERNAL_PAGE_X] tags)
+    NORM_LLM-->>GK: Return Structured Markdown (with anchors)
     PRE->>ING: Physical MOVE (.md)
     GK->>DB: TRANSITION (PREPROCESSING_COMPLETE)
 
@@ -72,7 +81,9 @@ The system is powered by two distinct Large Language Models using the **Unified 
 - **RAG LLM (`LLM_PATH`)**: Conversational reasoning and grounded retrieval. Prioritizes citation accuracy and adherence to context.
 
 ### 3. Engine Roles
-- **Gatekeeper LLM**: Handles OCR fallback and LLM-driven structural normalization with explicit page anchoring.
+- **Gatekeeper LLM**: Handles OCR/Media fallback and LLM-driven structural normalization with explicit page/timestamp anchoring.
+- **OCR Worker**: Dedicated Docling/EasyOCR engine for image-based text extraction.
+- **Media Worker (WhisperX)**: Dedicated container for high-fidelity audio transcription and alignment.
 - **Producer Engine**: Performs hierarchical semantic splitting (450-token limit) and mmh3 ID generation.
 - **Consumer Engine**: Validates and executes atomic multi-sink persistence with a zero-drop hard truncation policy.
 

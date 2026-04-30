@@ -15,6 +15,12 @@ set -euo pipefail
 #
 #######################################
 
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+export BUILDKIT_OCI_WORKER_SNAPSHOTTER=native
+#export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
+export DOCKER_HOST="${DOCKER_HOST:=unix://$XDG_RUNTIME_DIR/docker.sock}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd $SCRIPT_DIR
 
@@ -55,10 +61,27 @@ declare -A env_map
 
 if [[ -f "$ENV_FILE" ]]; then
   echo "🔄 Loading variables from $ENV_FILE"
-  while IFS='=' read -r key val; do
+  while IFS='=' read -r key val || [[ -n "$key" ]]; do
+    # 1. Skip comments and empty lines
     [[ -z "$key" || "$key" =~ ^# ]] && continue
-    env_map["$key"]="$val"
-  done < <(grep -Ev '^\s*#|^\s*$' "$ENV_FILE")
+    
+    # 2. STRIP trailing spaces and carriage returns (\r) from both key and val
+    clean_key=$(echo "$key" | xargs)
+    clean_val=$(echo "$val" | xargs | tr -d '\r')
+    
+    env_map["$clean_key"]="$clean_val"
+  done < "$ENV_FILE"
+fi
+
+# WHISPER CONFIGURATION GUARD (WARNING ONLY)
+WHISPER_PATH="${env_map[WHISPER_MODEL_PATH]:-${WHISPER_MODEL_PATH:-}}"
+if [[ -z "$WHISPER_PATH" ]]; then
+  echo "⚠️  WARNING: WHISPER_MODEL_PATH is not set."
+  echo "⚠️  Any .mp4 or .mp3 files found in staging will be automatically moved to 'failed' directory."
+  echo "⚠️  (PDF and Text ingestion will still function normally.)"
+  export WHISPER_MODEL_PATH="NOT_SET"
+else
+  export WHISPER_MODEL_PATH="$WHISPER_PATH"
 fi
 
 ######################################
@@ -89,11 +112,13 @@ validate_var_path() {
       ;;
     "dir")
       if [[ ! -d "$val" ]]; then
-        echo "❌ $var_name must be a directory"
+        echo "❌ $var_name must be a directory : $val"
         exit 1
       fi
       ;;
   esac
+  
+  echo "✅ $var_name is valid : $val"
   export "$var_name"="$val"
 }
 
@@ -111,11 +136,20 @@ for entry in "${REQUIRED_VARS[@]}"; do
   val="${!var_name}"
   mount_var_name="${var_name}_MOUNT"
   if [[ "$val" =~ ^https?:// ]]; then
-    export "$mount_var_name"="$DUMMY_MOUNT"
+    export "$mount_var_name"="/tmp"
+  elif [[ -f "$val" ]]; then
+    export "$mount_var_name"="$(dirname "$val")"
   else
     export "$mount_var_name"="$val"
   fi
 done
+
+# WHISPER MOUNT (Special check since it's optional with warning)
+if [[ "$WHISPER_MODEL_PATH" == "NOT_SET" ]]; then
+  export WHISPER_MODEL_PATH_MOUNT="/tmp"
+else
+  export WHISPER_MODEL_PATH_MOUNT="$WHISPER_MODEL_PATH"
+fi
 
 # Anchored paths for the Compose volumes
 export STAGING_DIR="${DEFAULT_DOC_INGEST_ROOT}/staging"

@@ -5,7 +5,7 @@ Tests for DocumentProcessor document processing functionality.
 
 import os
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -89,27 +89,22 @@ def test_extract_text_from_media_raises_on_unsupported_extension():
         DocumentProcessor.extract_text_from_media("document.pdf")
 
 
-def test_extract_text_from_media_returns_segments_on_success():
+@patch("utils.whisper_utils.send_media_to_whisperx")
+def test_extract_text_from_media_returns_segments_on_success(mock_send):
     """Returns transcription segments when whisperx succeeds."""
-    mock_whisperx = MagicMock()
-    mock_whisperx.load_audio.return_value = MagicMock()
-    mock_model = MagicMock()
-    mock_model.transcribe.return_value = {"segments": [{"text": "Hello world"}]}
-    mock_whisperx.load_model.return_value = mock_model
+    mock_send.return_value = iter(["Hello world"])
+    
+    result = DocumentProcessor.extract_text_from_media("audio.mp3")
+    
+    assert result == ["Hello world"]
+    mock_send.assert_called_once_with("audio.mp3")
 
-    with patch.dict("sys.modules", {"whisperx": mock_whisperx}):
-        result = DocumentProcessor.extract_text_from_media("audio.mp3")
-
-    assert result == [{"text": "Hello world"}]
-
-
-def test_extract_text_from_media_returns_none_on_whisperx_error():
+@patch("utils.whisper_utils.send_media_to_whisperx")
+def test_extract_text_from_media_returns_none_on_whisperx_error(mock_send):
     """Returns None when whisperx raises an exception."""
-    mock_whisperx = MagicMock()
-    mock_whisperx.load_audio.side_effect = RuntimeError("audio error")
-
-    with patch.dict("sys.modules", {"whisperx": mock_whisperx}):
-        result = DocumentProcessor.extract_text_from_media("audio.wav")
+    mock_send.side_effect = RuntimeError("audio error")
+    
+    result = DocumentProcessor.extract_text_from_media("audio.wav")
 
     assert result is None
 

@@ -1,0 +1,29 @@
+# Use the community pre-built WhisperX image as base
+FROM ghcr.io/jim60105/whisperx:no_model
+
+# Switch to root to install dependencies
+USER root
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/
+ENV PATH="/uv/bin:$PATH"
+
+# Install Redis client for communication
+RUN uv pip install redis
+
+# Set up the worker code
+WORKDIR /app
+COPY doc-ingest-chat/run_whisperx_worker.py /app/run_whisperx_worker.py
+COPY doc-ingest-chat/workers/whisperx_worker.py /app/workers/whisperx_worker.py
+COPY doc-ingest-chat/utils/trace_utils.py /app/utils/trace_utils.py
+
+# Ensure we can find the models and data
+# (These should be mounted via volumes in docker-compose)
+ENV WHISPER_MODEL_PATH=/models/whisper
+ENV REDIS_HOST=redis
+ENV DEVICE=cuda
+ENV COMPUTE_TYPE=float16
+ENV PYTHONPATH=/app
+
+# Run the worker
+ENTRYPOINT ["python", "/app/run_whisperx_worker.py"]

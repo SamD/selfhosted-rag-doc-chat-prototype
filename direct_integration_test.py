@@ -1,7 +1,7 @@
 import json
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 # Setup basic logging to stdout
@@ -11,9 +11,10 @@ log = logging.getLogger("direct_integration")
 # Add project paths
 sys.path.insert(0, os.path.join(os.getcwd(), "doc-ingest-chat"))
 
-from services.redis_service import get_redis_client
-from workers.ocr_graph import run_ocr_graph
-from workers.gatekeeper_logic import gatekeeper_extract_and_normalize, get_slug
+from services.redis_service import get_redis_client  # noqa: E402
+from workers.gatekeeper_logic import gatekeeper_extract_and_normalize, get_slug  # noqa: E402
+from workers.ocr_graph import run_ocr_graph  # noqa: E402
+
 
 def process_one_ocr_job():
     redis_client = get_redis_client()
