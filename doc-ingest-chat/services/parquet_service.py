@@ -120,15 +120,29 @@ class ParquetService:
         2. Have been staged for longer than the timeout period.
         """
         try:
-            sql = f"""
-            DELETE FROM staged_chunks 
+            from services.database import execute, query
+
+            where_clause = f"""
             WHERE source_file NOT IN (
                 SELECT md_path FROM ingestion_lifecycle WHERE status = 'CONSUMING'
             )
             OR timestamp < (CURRENT_TIMESTAMP - INTERVAL '{timeout_hours}' HOUR)
             """
-            from services.database import execute
-            execute(sql)
+
+            # 1. Audit
+            count_sql = f"SELECT COUNT(*) FROM staged_chunks {where_clause}"
+            res, _ = query(count_sql)
+            count = res[0][0] if res and res[0] else 0
+
+            if count > 0:
+                log.info(f"🧹 Audit detected {count} orphaned chunks in staging. Dropping stale data...")
+                # 2. Cleanup
+                delete_sql = f"DELETE FROM staged_chunks {where_clause}"
+                execute(delete_sql)
+                log.info(f"✅ Successfully dropped {count} stale chunks.")
+            else:
+                log.debug("🧹 Audit: No orphaned chunks detected in staging.")
+
             return True
         except Exception as e:
             log.error(f"💥 Failed to cleanup stale staging: {e}")

@@ -120,7 +120,6 @@ class DatabaseService:
             try:
                 from services.parquet_service import cleanup_stale_staging
                 cleanup_stale_staging()
-                log.info("🧹 Staging area audited and stale chunks purged.")
             except Exception as audit_err:
                 log.warning(f"⚠️  Startup staging audit failed: {audit_err}")
         except Exception as e:
