@@ -64,13 +64,25 @@ def validate_remaining_chunks_node(state: ConsumerState) -> ConsumerState:
 
     tokenizer = get_tokenizer()
     processed_chunks = []
+    from processors.text_processor import make_chunk_id
+    
     for entry in chunks:
         chunk_text = entry.get("chunk")
-        # Now returns the chunk itself (truncated if needed) instead of a bool
-        final_chunk = validate_chunk(chunk_text, tokenizer)
-        if final_chunk:
-            entry["chunk"] = final_chunk
-            processed_chunks.append(entry)
+        # Refactored: returns List[str] if oversized, preserving all data
+        validated_texts = validate_chunk(chunk_text, tokenizer)
+        
+        for i, text in enumerate(validated_texts):
+            if i == 0:
+                # Keep original entry but update text
+                entry["chunk"] = text
+                processed_chunks.append(entry)
+            else:
+                # Create a new entry for the overflow data
+                new_entry = entry.copy()
+                new_entry["chunk"] = text
+                # Generate a new unique ID for the sub-split chunk
+                new_entry["id"] = make_chunk_id(source_file, 9999 + i, text, entry.get("document_id"))
+                processed_chunks.append(new_entry)
 
     return {**state, "chunks": processed_chunks, "status": "processing", "job_id": job_id}
 
