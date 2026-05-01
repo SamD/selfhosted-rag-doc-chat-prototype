@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Indentation-Triggered Hallucinations**: Flattened the Gatekeeper prompt to zero-indentation to prevent models from interpreting whitespace as a "Compliance Report" requirement.
 - **Frontend CSS Resolution**: Resolved a critical breakage where `global.css` was missing, preventing Tailwind 4 from initializing.
 - **Frontend Docker Configuration**: Corrected `docker-compose.frontend.yaml` to point to the dedicated `Dockerfile.frontend` and fixed environment variable typos.
+- **Persistent Staging Leak**: Implemented a startup **Audit & Cleanup** mechanism in `ParquetService` that automatically purges orphaned chunks from `staged_chunks` if the service restarts before a file is finalized.
 - **Linting & Code Quality**: Fixed multiple `ruff` errors across `direct_integration_test.py` and `run_full_normalization.py` for better compliance and readability.
 
 ### Changed

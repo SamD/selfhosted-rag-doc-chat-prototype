@@ -115,6 +115,14 @@ class DatabaseService:
                 schema_sql = f.read()
             DatabaseService._run_statement(schema_sql, db_path=target_db)
             log.info("✅ DuckDB schema initialized.")
+
+            # Audit: Cleanup any orphaned chunks from previous crashes
+            try:
+                from services.parquet_service import cleanup_stale_staging
+                cleanup_stale_staging()
+                log.info("🧹 Staging area audited and stale chunks purged.")
+            except Exception as audit_err:
+                log.warning(f"⚠️  Startup staging audit failed: {audit_err}")
         except Exception as e:
             log.error(f"💥 Failed to initialize DuckDB schema: {e}")
 

@@ -248,7 +248,7 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None):
         "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
         "DO NOT summarize, infer, or add new information. "
         "Return only Markdown, with no preface or explanation. "
-        "Remove any OCR gibberish and unreadable characters.\n\n"
+        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings.\n\n"
         f"RAW_TEXT:\n{raw_content}"
     )
 

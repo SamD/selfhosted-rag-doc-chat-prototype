@@ -113,6 +113,28 @@ class ParquetService:
         return chunks
 
     @staticmethod
+    def cleanup_stale_staging(timeout_hours: int = 6) -> bool:
+        """
+        Deletes chunks from staged_chunks that are either:
+        1. Not represented in ingestion_lifecycle as 'CONSUMING'
+        2. Have been staged for longer than the timeout period.
+        """
+        try:
+            sql = f"""
+            DELETE FROM staged_chunks 
+            WHERE source_file NOT IN (
+                SELECT md_path FROM ingestion_lifecycle WHERE status = 'CONSUMING'
+            )
+            OR timestamp < (CURRENT_TIMESTAMP - INTERVAL '{timeout_hours}' HOUR)
+            """
+            from services.database import execute
+            execute(sql)
+            return True
+        except Exception as e:
+            log.error(f"💥 Failed to cleanup stale staging: {e}")
+            return False
+
+    @staticmethod
     def append_chunks(entries: List[Dict[str, Any]]) -> None:
         """Incrementally appends chunks to the DuckDB table."""
         if not entries:
@@ -171,3 +193,4 @@ commit_to_parquet = ParquetService.commit_to_parquet
 stage_chunk = ParquetService.stage_chunk
 stage_chunks = ParquetService.stage_chunks
 get_staged_chunks = ParquetService.get_staged_chunks
+cleanup_stale_staging = ParquetService.cleanup_stale_staging
