@@ -153,8 +153,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **WhisperX Integration**: Added a dedicated `whisperx_worker` for high-performance audio and video transcription with alignment and timestamp support.
 - **Enhanced Observability & Traceability**
   - **Distributed Trace IDs**: Implemented `trace_utils` to propagate unique `trace_id`s across all distributed workers, allowing end-to-end visibility of a document's processing journey.
-- **Stream-Centric Processing**
-  - **Chunk-Level Streaming**: Refactored the ingestion pipeline to process data as a continuous stream of chunks, optimizing memory usage and enabling massive document support.
+- **NiFi Native Orchestration**: Migrated the core RAG pipeline to Apache NiFi 2.x, replacing custom orchestration and Redis with native disk-backed persistence and backpressure.
+- **NiFi Python Processor**: Implemented `MarkdownSplitter.py` leveraging the NiFi 2.x `FlowFileTransform` API, porting the 'Zero-Loss Sub-Splitting' logic into an isolated virtual environment.
+- **Distributed LXC Support**: Standardized on `InvokeHTTP` for binary-stream communication with remote WhisperX and Docling worker nodes.
+- **Native Vector Store Integration**: Leveraged NiFi 2.0's `PutQdrant` processor for simplified, high-performance chunk persistence.
 - **Interactive RAG UI Enhancements**
   - **Clickable Document Citations**: Implemented a static file route (`/files`) in the FastAPI backend to serve ingested PDFs directly. 
   - **Markdown Link Mapping**: Refactored `chat_utils.py` and the AstroJS frontend to transform plain-text citations into interactive Markdown links pointing to the exact page of the original source.
