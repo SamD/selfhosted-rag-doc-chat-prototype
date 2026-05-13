@@ -30,6 +30,9 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
         log.info(f"⏭️ All {len(chunks)} chunks for {source_file} already in DB")
         return 0
 
+    db_type = "Qdrant" if USE_QDRANT else "ChromaDB"
+    log.info(f"📤 Writing {len(chunks_to_store)} chunks → {db_type} for {source_file}")
+
     try:
         db = get_vectorstore()
 

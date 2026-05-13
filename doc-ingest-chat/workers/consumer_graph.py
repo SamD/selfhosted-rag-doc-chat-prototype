@@ -96,6 +96,7 @@ def store_final_chunks_node(state: ConsumerState) -> ConsumerState:
         from services.parquet_service import append_chunks
 
         if state["chunks"]:
+            log.info(f"💾 [Node: Store Final] Writing {len(state['chunks'])} chunks — DuckDB + Qdrant for {state['source_file']}")
             append_chunks(state["chunks"])
             store_chunks_in_db(state["source_file"], state["chunks"], state["metrics"])
 
