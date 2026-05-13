@@ -14,7 +14,6 @@ import traceback
 from typing import Any, Callable, List
 
 from config import settings
-from config.settings import CHUNK_TIMEOUT, QUEUE_NAMES
 from services.parquet_service import init_schema
 from services.redis_service import get_redis_client
 from utils.metrics import FileMetrics
@@ -45,7 +44,7 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
             # TTL check for stale staged data
             now = current_time()
             for file_path, first_seen in list(timestamps.items()):
-                if now - first_seen > CHUNK_TIMEOUT:
+                if now - first_seen > settings.CHUNK_TIMEOUT:
                     log.warning(f"⌛ TTL expired for {file_path}, cleaning up staged data")
                     with parq_lock:
                         get_staged_chunks(file_path, purge=True)
@@ -125,11 +124,38 @@ def main() -> None:
         ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
         ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
         ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
+        ("OCR_PATH", settings.OCR_PATH),
+        ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
+        ("VECTOR_DB_USE_GRPC", settings.VECTOR_DB_USE_GRPC),
+        ("VECTOR_DB_TIMEOUT", settings.VECTOR_DB_TIMEOUT),
+        ("VECTOR_DB_BATCH_SIZE", settings.VECTOR_DB_BATCH_SIZE),
     ]
     for name, value in config_manifest:
-        if value and value != "NOT_SET":
-            status = "✅" if os.path.exists(value) or value.startswith("http") else "❌"
-            log.info(f"   {status} {name:25} : {value}")
+        if value is not None and value != "NOT_SET":
+            str_val = str(value).strip()
+            
+            # Determine Mode and Icon
+            mode_label = ""
+            icon = "✅"
+            
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_PATH", "OCR_PATH", "VECTOR_DB_URL"]:
+                if str_val.startswith(("http://", "https://")):
+                    mode_label = " [MODE: REMOTE]"
+                    icon = "📡"
+                elif name == "OCR_PATH" and str_val == "LOCAL":
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                elif os.path.exists(str_val):
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                else:
+                    icon = "❌"
+            
+            # Special hint for gRPC default
+            if name == "VECTOR_DB_USE_GRPC" and os.getenv("VECTOR_DB_USE_GRPC") is None:
+                mode_label = " (Default: gRPC)"
+
+            log.info(f"   {icon} {name:25} : {str_val}{mode_label}")
         else:
             log.info(f"   ⚠️ {name:25} : NOT CONFIGURED (Optional)")
 
@@ -154,7 +180,7 @@ def main() -> None:
 
         signal.signal(signal.SIGINT, make_sigint_handler(CHILD_PROCESSES, parent_pid, shared_dict))
 
-        for queue_name in QUEUE_NAMES:
+        for queue_name in settings.QUEUE_NAMES:
             p = multiprocessing.Process(target=consumer_worker, args=(queue_name, shared_dict, parq_lock))
             p.start()
             CHILD_PROCESSES.append(p)

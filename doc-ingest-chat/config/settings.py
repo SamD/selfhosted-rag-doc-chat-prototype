@@ -142,20 +142,32 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "REDIS_WHISPER_JOB_QUEUE": lambda: os.getenv("REDIS_WHISPER_JOB_QUEUE", "whisper_processing_job"),
     # Main queue used for sending semantic chunks to the consumer workers
     "REDIS_INGEST_QUEUE": lambda: os.getenv("REDIS_INGEST_QUEUE", "chunk_ingest_queue"),
+    # New dedicated queue for eager chunk staging into DuckDB
+    "REDIS_STAGING_QUEUE": lambda: os.getenv("REDIS_STAGING_QUEUE", "chunk_staging_queue"),
     # List of Redis queues to monitor (supports partitioning)
     "QUEUE_NAMES": lambda: os.getenv("QUEUE_NAMES", "chunk_ingest_queue:0,chunk_ingest_queue:1").split(","),
     # Active vector database ("qdrant" or "chroma")
     "VECTOR_DB_PROFILE": lambda: os.getenv("VECTOR_DB_PROFILE", "qdrant").lower(),
     # Boolean helper for Qdrant mode
     "USE_QDRANT": lambda: os.getenv("VECTOR_DB_PROFILE", "qdrant").lower() == "qdrant",
+    # [OPTIONAL] Full URL for the vector database server (overrides host/port)
+    "VECTOR_DB_URL": lambda: os.getenv("VECTOR_DB_URL"),
     # Hostname for the vector database server
     "VECTOR_DB_HOST": lambda: os.getenv("VECTOR_DB_HOST", os.getenv("CHROMA_HOST", "vector-db")),
     # Port for the vector database server
     "VECTOR_DB_PORT": _get_vector_db_port,
+    # [OPTIONAL] gRPC Port for the vector database server
+    "VECTOR_DB_GRPC_PORT": lambda: int(os.getenv("VECTOR_DB_GRPC_PORT", "6334")),
+    # Whether to prefer gRPC for Qdrant operations
+    "VECTOR_DB_USE_GRPC": lambda: os.getenv("VECTOR_DB_USE_GRPC", "true").lower() == "true",
     # Collection name used for storing vectors
     "VECTOR_DB_COLLECTION": lambda: os.getenv("VECTOR_DB_COLLECTION", "vector_base_collection"),
     # Number of chunks to process in a single embedding batch
-    "MAX_CHROMA_BATCH_SIZE": lambda: int(os.getenv("MAX_CHROMA_BATCH_SIZE", "75")),
+    "VECTOR_DB_BATCH_SIZE": lambda: int(os.getenv("VECTOR_DB_BATCH_SIZE", os.getenv("MAX_CHROMA_BATCH_SIZE", "20"))),
+    # Timeout (seconds) for vector database operations
+    "VECTOR_DB_TIMEOUT": lambda: float(os.getenv("VECTOR_DB_TIMEOUT", "60.0")),
+    # [DEPRECATED] Use VECTOR_DB_BATCH_SIZE instead
+    "MAX_CHROMA_BATCH_SIZE": lambda: int(os.getenv("VECTOR_DB_BATCH_SIZE", os.getenv("MAX_CHROMA_BATCH_SIZE", "20"))),
     # Time (seconds) before an incomplete chunk buffer is discarded
     "CHUNK_TIMEOUT": lambda: int(os.getenv("CHUNK_TIMEOUT", "300")),
     # Maximum chunks per file before discarding (safety limit)
@@ -167,7 +179,7 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     # [ALIAS] Compatibility with old Chroma-specific collection
     "CHROMA_COLLECTION": lambda: os.getenv("VECTOR_DB_COLLECTION", os.getenv("CHROMA_COLLECTION", "vector_base_collection")),
     # Strict limit for tokens stored in the Vector DB for RAG
-    "MAX_TOKENS": lambda: int(os.getenv("MAX_TOKENS", "512")),
+    "MAX_TOKENS": lambda: int(os.getenv("MAX_TOKENS", "256")),
     # Target character size for initial splitting logic
     "CHUNK_SIZE": lambda: int(os.getenv("CHUNK_SIZE", "512")),
     # Number of characters to overlap between chunks
@@ -176,6 +188,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "ALLOW_LATIN_EXTENDED": lambda: os.getenv("ALLOW_LATIN_EXTENDED", "true").lower() == "true",
     # Minimum ratio of Latin characters required before triggering OCR fallback
     "LATIN_SCRIPT_MIN_RATIO": lambda: float(os.getenv("LATIN_SCRIPT_MIN_RATIO", "0.7")),
+    # [OPTIONAL] Remote Docling endpoint or 'LOCAL'
+    "OCR_PATH": lambda: os.getenv("OCR_PATH", "LOCAL"),
     # Directory where OCR failure images are stored for debugging
     "DEBUG_IMAGE_DIR": lambda: _abs_path("DEBUG_IMAGE_DIR", os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "ocr_debug")),
     # Maximum dimension for images before resizing to save memory during OCR
@@ -196,6 +210,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "RETRIEVER_TOP_K": lambda: int(os.getenv("RETRIEVER_TOP_K", "4")),
     # Number of PDF pages to batch together for normalization
     "GATEKEEPER_BATCH_SIZE": lambda: int(os.getenv("GATEKEEPER_BATCH_SIZE", "5")),
+    # Whether to force OCR for all PDFs (high fidelity but slower)
+    "PDF_FORCE_OCR": lambda: os.getenv("PDF_FORCE_OCR", "false").lower() == "true",
 }
 
 

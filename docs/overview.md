@@ -1,0 +1,227 @@
+# Architecture Overview
+
+This document covers the complete system architecture, data flow, and component map for the Self-Hosted RAG Ingestion & Chat system. For setup instructions, see the [main README](../README.md). For deeper technical rationale, see [docs/deep-dive.md](deep-dive.md).
+
+---
+
+## System Philosophy
+
+The system is built for **air-gapped, high-fidelity document ingestion** on commodity hardware (minipcs, eGPU docks). It prioritizes data integrity and traceability over raw speed, using a **Database-Driven State Machine** to move files through a multi-stage pipeline.
+
+### Core Mandates
+
+- **Physical Isolation**: Files move between directories (staging → preprocessing → ingestion → consuming → success) to ensure the physical state matches the database state at every step.
+- **Dual-LLM Isolation**: The system separates the "Normalizer" from the "Chatter":
+  - **Supervisor LLM** (`SUPERVISOR_LLM_PATH`): Structural transcription and high-density retyping of raw text into clean Markdown.
+  - **RAG LLM** (`LLM_PATH`): Conversational reasoning and grounded retrieval with strict citation enforcement.
+- **Atomic Handoffs**: Every stage transition is a "Move-then-Update" transaction in DuckDB, ensuring no document is lost or double-processed.
+- **Memory Safety**: PDF handles and image buffers are explicitly cleared before model loading to prevent OOM on large documents.
+
+---
+
+## System Flow (Sequence Diagram)
+
+```mermaid
+sequenceDiagram
+    participant STG as staging/
+    participant PRE as preprocessing/
+    participant ING as ingestion/
+    participant CNS as consuming/
+    participant SUC as success/
+    
+    participant DB as DuckDB (Lifecycle)
+    participant GK as Gatekeeper Worker
+    participant OCR as OCR Worker (Docling)
+    participant WSP as WhisperX Worker
+    participant PRD as Producer Worker
+    participant CSN as Consumer Worker
+    
+    participant NORM_LLM as Supervisor LLM
+    participant RAG_LLM as RAG LLM
+
+    Note over STG, SUC: Phase 1 — Normalization (Gatekeeper)
+    GK->>DB: ATOMIC CLAIM (NEW → PREPROCESSING)
+    STG->>PRE: Physical MOVE
+    alt PDF (Digital)
+        GK->>GK: pdfplumber extracts text from each page
+    else PDF (Scanned/Gibberish)
+        GK->>OCR: Request OCR via Redis
+        OCR-->>GK: Return raw text
+    else Media (MP4/MP3)
+        GK->>WSP: Request Transcription via Redis
+        WSP-->>GK: Stream segments
+    end
+    GK->>NORM_LLM: Normalize raw text to Markdown (batched)
+    NORM_LLM-->>GK: Return clean Markdown
+    GK->>PRE: Write .md file (with page/timestamp anchors)
+    GK->>DB: TRANSITION (PREPROCESSING_COMPLETE)
+
+    Note over STG, SUC: Phase 2 — Chunking (Producer)
+    PRD->>DB: ATOMIC CLAIM (PREPROCESSING_COMPLETE → INGESTING)
+    PRE->>ING: Physical MOVE (.md + original)
+    PRD->>PRD: Hierarchical splitting (512-token budget)
+    PRD->>Redis: Enqueue chunks + file_end sentinel
+    PRD->>DB: TRANSITION (CONSUMING)
+
+    Note over STG, SUC: Phase 3 — Persistence (Consumer)
+    CSN->>Redis: Pull chunks
+    CSN->>DB: Stage chunks (DuckDB as WAL)
+    CSN->>Redis: Receive file_end sentinel
+    CSN->>DB: Retrieve all staged chunks for file
+    CSN->>CSN: Embed + batch-upsert to Qdrant
+    CSN->>DB: TRANSITION (INGEST_SUCCESS)
+    CNS->>SUC: Physical MOVE
+
+    Note over STG, SUC: Phase 4 — Query (RAG)
+    User->>Retriever: Ask Question
+    Retriever->>Qdrant: Asymmetric Search (query: prefix)
+    Qdrant-->>Retriever: Return relevant chunks
+    Retriever->>RAG_LLM: Grounded Generation (unified user prompt)
+    RAG_LLM-->>User: Final Response (with clickable citations)
+```
+
+---
+
+## Component Architecture
+
+```mermaid
+graph TD
+    A[staging/] -->|NEW| B(Gatekeeper Worker)
+    B -->|OCR Needed| C(OCR Worker)
+    C --> B
+    B -->|Transcription Needed| W(WhisperX Worker)
+    W --> B
+    B -->|Supervisor LLM| N[Normalization LLM]
+    N --> B
+    B -->|PREPROCESSING_COMPLETE| D[ingestion/]
+    D --> E(Producer Worker)
+    E -->|Split + Enqueue| F{Redis Queues}
+    F --> G(Consumer Worker)
+    G -->|Stage| H[(DuckDB)]
+    G -->|Embed + Upsert| I[(Qdrant)]
+    G -->|Archive| J[(Parquet)]
+    G -->|SUCCESS| K[success/]
+    
+    L[Chat UI] -->|Query| M(FastAPI Backend)
+    M -->|RAG LLM| R[LLM]
+    M -->|Search| I
+```
+
+---
+
+## Physical State Transitions
+
+Files move through directories on disk, and each move is mirrored by a status update in the DuckDB `ingestion_lifecycle` table.
+
+| From Dir | To Dir | Worker | State Transition | Description |
+|----------|--------|--------|-----------------|-------------|
+| (drop) | `staging/` | User | — | User drops a file into the staging area |
+| `staging/` | `preprocessing/` | Gatekeeper | `NEW → PREPROCESSING` | Gatekeeper claims the file for extraction |
+| `preprocessing/` | `preprocessing/` | Gatekeeper | `PREPROCESSING → PREPROCESSING_COMPLETE` | Normalization finished; `.md` file written |
+| `preprocessing/` | `ingestion/` | Gatekeeper | — | Files moved to ingestion directory for handoff |
+| `ingestion/` | `consuming/` | Producer | `PREPROCESSING_COMPLETE → INGESTING` | Producer claims, moves files to isolation |
+| `consuming/` | `consuming/` | Consumer | `INGESTING → CONSUMING` | Chunks enqueued; files remain in consuming/ |
+| `consuming/` | `consuming/` | Consumer | `CONSUMING → INGEST_SUCCESS` | Qdrant upsert complete; files ready to archive |
+| `consuming/` | `success/` | Consumer | — | Files moved to permanent success archive |
+| (any) | `failed/` | Any worker | `→ INGEST_FAILED` | Error occurred; files moved for debugging |
+
+---
+
+## Worker Roles
+
+| Worker | Entry Point | Queue(s) | Role |
+|--------|------------|----------|------|
+| **Gatekeeper** | `run_gatekeeper.py` | Claims from DuckDB | Extracts raw text via handler chain, normalizes to Markdown via Supervisor LLM, writes `.md` file |
+| **OCR** | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via Docling/EasyOCR |
+| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.mp4`, `.wav`, `.mov`, `.mkv`) |
+| **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
+| **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
+| **FastAPI** | `apimain.py` | HTTP :8000 | REST API for chat queries, status, and health checks |
+
+---
+
+## Content Handler Chain
+
+The Gatekeeper uses a **Chain of Responsibility** pattern to extract raw text from files. Handlers are chained in priority order:
+
+```
+PDFContentTypeHandler → MP4ContentTypeHandler → MP3ContentTypeHandler → TextContentTypeHandler
+```
+
+| Handler | Extensions | Method |
+|---------|-----------|--------|
+| `PDFContentTypeHandler` | `.pdf` | `pdfplumber` (fast text-layer check); falls back to Docling/EasyOCR via OCR worker for scanned/gibberish pages |
+| `MP4ContentTypeHandler` | `.mp4` | Delegates to WhisperX worker via Redis for transcription |
+| `MP3ContentTypeHandler` | `.mp3`, `.wav` | Delegates to WhisperX worker via Redis for transcription |
+| `TextContentTypeHandler` | `.txt`, `.md`, `.html` | Direct file read (charset-normalized for HTML) |
+
+All handlers return a **generator stream** of raw text strings, which the Gatekeeper batches and sends to the Supervisor LLM for normalization.
+
+---
+
+## DuckDB State Machine
+
+The `ingestion_lifecycle` table tracks every file through its complete journey:
+
+```
+NEW → PREPROCESSING → PREPROCESSING_COMPLETE → INGESTING → CONSUMING → INGEST_SUCCESS
+                                                                      → INGEST_FAILED
+```
+
+Key properties:
+- **Atomic claims**: Workers use `UPDATE ... RETURNING *` to atomically claim the next available job in a target state.
+- **Retry logic**: All DuckDB operations use a **20-retry exponential backoff** to resolve lock contention across parallel workers.
+- **Timestamp columns**: Each transition records a dedicated timestamp (`new_at`, `preprocessing_at`, `preprocessing_complete_at`, `ingesting_at`, `consuming_at`, `finalized_at`).
+
+---
+
+## Redis Queue Architecture
+
+Queues enforce the 1:1 producer-to-consumer mapping for file-level affinity:
+
+| Queue | Purpose |
+|-------|---------|
+| `REDIS_OCR_JOB_QUEUE` | Image-based pages sent from Gatekeeper to OCR Worker |
+| `REDIS_WHISPER_JOB_QUEUE` | Audio/video files sent from Gatekeeper/Producers to WhisperX Worker |
+| `QUEUE_NAMES` (e.g., `chunk_ingest_queue:0`, `:1`) | Partitioned queues — one per consumer process; Producer assigns a queue per file, so all chunks + the sentinel for a file arrive at the same consumer |
+
+This 1:1 mapping ensures a single consumer owns all chunks for a file, providing file-level atomicity without distributed coordination.
+
+---
+
+## Protections Against Failures
+
+1. **Partial Write Protection**: DuckDB acts as a Write-Ahead Log. Qdrant never sees half of a document — chunks are staged in DuckDB until the `file_end` sentinel arrives, then retrieved and upserted atomically.
+2. **Deterministic IDs**: Chunks use MurmurHash3 content-addressable IDs. Re-ingesting a file cleanly overwrites existing chunks in Qdrant rather than duplicating them.
+3. **IO Management**: Staging in DuckDB reduces simultaneous requests hitting Qdrant, protecting lower-powered hardware like minipcs.
+4. **Crash Recovery**: If the Consumer crashes mid-upsert, the staged chunks remain in DuckDB and can be replayed on restart.
+
+---
+
+## Directory Structure
+
+| Directory | Contents |
+|-----------|----------|
+| `doc-ingest-chat/workers/` | Worker entry points and LangGraph state machines |
+| `doc-ingest-chat/handlers/` | Chain of Responsibility content extractors |
+| `doc-ingest-chat/services/` | Business logic (database, Redis, RAG, jobs, parquet) |
+| `doc-ingest-chat/config/` | Lazy-evaluated settings, GPU/CPU strategy, llama parameters |
+| `doc-ingest-chat/api/` | FastAPI route definitions |
+| `doc-ingest-chat/chat/` | Core RAG chat logic (retrieval, citation mapping, LLM prompting) |
+| `doc-ingest-chat/processors/` | Text chunking, validation, zero-loss sub-splitting |
+| `doc-ingest-chat/prompts/` | LLM prompt templates |
+| `doc-ingest-chat/models/` | Pydantic/dataclass data structures |
+| `doc-ingest-chat/utils/` | LLM setup, OCR, Whisper, tracing, logging |
+| `doc-ingest-chat/sql/` | DuckDB schema definitions |
+| `astro-frontend/` | Astro + Tailwind chat UI |
+
+---
+
+## Deployment
+
+- **`./doc-ingest-chat/run-compose.sh --build`**: Full Docker Compose stack with profiles:
+  - `--profile gpu` (default) — NVIDIA GPU acceleration
+  - `--profile cpu` — CPU-only mode
+  - `--profile qdrant` or `--profile chroma` — vector database selection
+- **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)
+- **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation based on `LLAMA_USE_GPU`

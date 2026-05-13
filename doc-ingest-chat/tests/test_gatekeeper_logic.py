@@ -39,36 +39,30 @@ class TestGatekeeperLogic(unittest.TestCase):
 
             shutil.rmtree(self.test_ingest)
 
-    @patch("handlers.pdf_handler.pdfplumber.open")
+    @patch("workers.gatekeeper_logic.get_handler_chain")
     @patch("workers.gatekeeper_logic.process_chunk")
     @patch("workers.gatekeeper_logic.get_llm_and_grammar")
-    @patch("utils.text_utils.is_valid_pdf", return_value=True)
-    def test_streaming_flushes_periodic(self, mock_valid, mock_llm, mock_pc, mock_pdf_open):
-        """Verify that chunks are flushed periodically based on batch size."""
-        # Setup fake PDF with 15 pages, each having 200 chars
-        mock_pdf = MagicMock()
-        pages = []
-        for i in range(15):
-            p = MagicMock()
-            p.extract_text.return_value = "X" * 200
-            pages.append(p)
-        mock_pdf.pages = pages
-        mock_pdf_open.return_value.__enter__.return_value = mock_pdf
-
-        # Run normalization
-        # GATEKEEPER_BATCH_SIZE is likely 5 or 10
-        gatekeeper_extract_and_normalize("job-123", "test.pdf", "/tmp/test_ingest/test.md")
-
-        # Assertion: process_chunk called for batches
-        self.assertGreaterEqual(mock_pc.call_count, 2)
-
+    def test_streaming_flushes_periodic(self, mock_llm, mock_pc, mock_handler):
+        """Verify that batches are processed periodically based on batch size."""
+        # Mock 15 pages in the stream
+        mock_handler.return_value.handle.return_value = iter(["Page X"] * 15)
+        
+        # Mock process_chunk to return the new tuple format
+        mock_pc.return_value = ({"slug": "test-slug"}, "Normalized Content")
+    
+        # Run normalization (GATEKEEPER_BATCH_SIZE is 5 in conftest or default)
+        # We target 15 pages / 5 per batch = 3 batches
+        gatekeeper_extract_and_normalize("job-123", "test.pdf", "/tmp/test.md")
+    
+        # Assertion: process_chunk called for every 5 units + 1 possible final
+        self.assertGreaterEqual(mock_pc.call_count, 3)
     @patch("handlers.pdf_handler.convert_from_path")
     @patch("handlers.pdf_handler.pdfplumber.open")
     @patch("workers.gatekeeper_logic.process_chunk")
     @patch("workers.gatekeeper_logic.get_llm_and_grammar")
     @patch("utils.text_utils.is_valid_pdf", return_value=True)
-    def test_placeholder_for_failed_extraction(self, mock_valid, mock_llm, mock_pc, mock_pdf_open, mock_convert):
-        """Verify that a placeholder is added when page extraction returns None."""
+    def test_failure_on_failed_extraction(self, mock_valid, mock_llm, mock_pc, mock_pdf_open, mock_convert):
+        """Verify that the system fails correctly when page extraction returns None."""
         mock_pdf = MagicMock()
         mock_page = MagicMock()
         mock_page.extract_text.return_value = None  # Failed extraction
@@ -76,13 +70,13 @@ class TestGatekeeperLogic(unittest.TestCase):
         mock_pdf_open.return_value.__enter__.return_value = mock_pdf
         mock_convert.return_value = []  # Simulate no images found either
 
-        # Run normalization
-        gatekeeper_extract_and_normalize("job-123", "test.pdf", "/tmp/test_ingest/test.md")
+        # Run normalization - should return False
+        success, meta = gatekeeper_extract_and_normalize("job-123", "test.pdf", "/tmp/test_ingest/test.md")
 
-        # Verify that process_chunk was called with the placeholder
-        args, _ = mock_pc.call_args
-        raw_content = args[1]
-        self.assertIn("[DOCUMENT PAGE 1 EXTRACTION FAILED OR PAGE IS EMPTY]", raw_content)
+        self.assertFalse(success)
+        self.assertIsNone(meta)
+        # Verify that process_chunk was NEVER called
+        mock_pc.assert_not_called()
 
     def test_log_gatekeeper_result_success(self):
         slug = "test-document"
@@ -120,18 +114,17 @@ class TestGatekeeperLogic(unittest.TestCase):
         mock_handler.return_value.handle.return_value = iter(["Segment 1"])
         md_path = os.path.join(self.test_ingest, "test.md")
         tmp_path = f"{md_path}.tmp"
-        
-        # Mock process_chunk to 'create' the tmp file
+
+        # Mock process_chunk to 'create' the tmp file and return Tuple[dict, str]
         def fake_pc(idx, content, f_path, slug, out_path, trace_id=None):
             with open(out_path, "w") as f:
                 f.write("content")
-            return {}
+            return {"slug": "test-slug"}, "content"
         mock_pc.side_effect = fake_pc
 
         success, _ = gatekeeper_extract_and_normalize("job-1", "test.txt", md_path)
-        
+
         self.assertTrue(success)
-        # Verify shutil.move was called to finalize the file
         mock_move.assert_called_once_with(tmp_path, md_path)
 
     @patch("workers.gatekeeper_logic.get_handler_chain")

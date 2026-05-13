@@ -10,6 +10,7 @@ os.makedirs(CACHE_PATH, exist_ok=True)
 os.environ["HF_HOME"] = CACHE_PATH
 os.environ["TORCH_HOME"] = CACHE_PATH
 os.environ["XDG_CACHE_HOME"] = CACHE_PATH
+os.environ["EASYOCR_MODULE_PATH"] = CACHE_PATH
 os.environ["HF_HUB_OFFLINE"] = "0" # Allow download during build
 
 # 2. DUMMY ENV VARS FOR SETTINGS.PY
@@ -48,6 +49,15 @@ def warmup():
         )
         
         log.info("✅ COMPREHENSIVE Warmup complete. All assets baked into /usr/local/model_cache")
+        
+        # --- B. TOKENIZER WARMUP ---
+        log.info("📥 Downloading E5 Tokenizer (fallback model)...")
+        from transformers import AutoTokenizer
+        fallback_dir = os.path.join(CACHE_PATH, "e5-fallback")
+        tokenizer = AutoTokenizer.from_pretrained("intfloat/e5-large-v2")
+        tokenizer.save_pretrained(fallback_dir)
+        log.info(f"✅ Tokenizer warmup complete. Files saved to {fallback_dir}")
+        
     except Exception as e:
         log.error(f"❌ Warmup failed: {e}")
         import traceback

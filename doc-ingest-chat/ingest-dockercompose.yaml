@@ -39,14 +39,21 @@ x-gpu-params: &gpu-params
     - LLM_PATH=${LLM_PATH}
     - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
     - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+    - OCR_PATH=${OCR_PATH}
+    - VECTOR_DB_URL=${VECTOR_DB_URL:-}
     - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
+    - VECTOR_DB_USE_GRPC=${VECTOR_DB_USE_GRPC:-true}
+    - VECTOR_DB_GRPC_PORT=${VECTOR_DB_GRPC_PORT:-6334}
+    - VECTOR_DB_TIMEOUT=${VECTOR_DB_TIMEOUT:-60.0}
+    - VECTOR_DB_BATCH_SIZE=${VECTOR_DB_BATCH_SIZE:-20}
+    - PDF_FORCE_OCR=${PDF_FORCE_OCR:-false}
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
     - NVIDIA_VISIBLE_DEVICES=all
     - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 services:
   redis:
-    image: redis:7
+    image: redis:7-alpine
     command: --port ${REDIS_PORT:-6379} --save "" --appendonly no
     ports:
       - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
@@ -57,8 +64,8 @@ services:
       - .env
 
   qdrant:
-    image: qdrant/qdrant:latest
-    profiles: [qdrant, cuda-qdrant, cpu-qdrant]
+    image: qdrant/qdrant:v1.12.2
+    profiles: [local-qdrant]
     env_file:
       - .env
     environment:
@@ -88,7 +95,6 @@ services:
     command: ["python", "run_consumer.py"]
     depends_on:
       - redis
-      - qdrant
 
   ocr_worker:
     <<: [*base-service, *gpu-params]
@@ -117,9 +123,21 @@ services:
       - PYTHONPATH=/app
       - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT:-6379}
+      - DEFAULT_DOC_INGEST_ROOT=${DEFAULT_DOC_INGEST_ROOT}
+      - EMBEDDING_MODEL_PATH=${EMBEDDING_MODEL_PATH}
+      - LLM_PATH=${LLM_PATH}
+      - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
+      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+      - OCR_PATH=${OCR_PATH}
+      - VECTOR_DB_URL=${VECTOR_DB_URL:-}
+      - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
+      - VECTOR_DB_USE_GRPC=${VECTOR_DB_USE_GRPC:-true}
+      - VECTOR_DB_GRPC_PORT=${VECTOR_DB_GRPC_PORT:-6334}
+      - VECTOR_DB_TIMEOUT=${VECTOR_DB_TIMEOUT:-60.0}
+      - VECTOR_DB_BATCH_SIZE=${VECTOR_DB_BATCH_SIZE:-20}
+      - PDF_FORCE_OCR=${PDF_FORCE_OCR:-false}
       - DEVICE=cuda
       - COMPUTE_TYPE=float16
-      - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
     depends_on:
       - redis
 
@@ -150,7 +168,6 @@ services:
       - "8000:8000"
     depends_on:
       - redis
-      - qdrant
 
   frontend:
     build:

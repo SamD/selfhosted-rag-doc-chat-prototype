@@ -34,7 +34,7 @@ def test_markdown_splitting_safety_margin(mock_tokenizer):
     doc_id = "DOC_TEST_123"
     prefix = "passage: "
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         chunks, metas = split_markdown_doc(md_content, "test.md", tokenizer=mock_tokenizer, budget=MAX_TOKENS, prefix=prefix, document_id=doc_id)
 
     assert len(chunks) > 1
@@ -55,13 +55,17 @@ def test_validate_chunk_strictness(mock_tokenizer):
     assert len(mock_tokenizer.encode(boundary_text, add_special_tokens=False)) == 511
 
     # 2. Validator adds 2 special tokens -> 513.
-    # It should return a truncated string of length 510 + special tokens = 512.
-    final_chunk = validate_chunk(boundary_text, mock_tokenizer)
+    # It should return a list containing multiple sub-chunks.
+    final_chunks = validate_chunk(boundary_text, mock_tokenizer)
 
-    # Verify the result is a string and has the correct length
-    assert isinstance(final_chunk, str)
-    final_tokens = mock_tokenizer.encode(final_chunk, add_special_tokens=True)
-    assert len(final_tokens) <= MAX_TOKENS
+    # Verify the result is a list and has multiple pieces
+    assert isinstance(final_chunks, list)
+    assert len(final_chunks) > 1
+    # Every piece must be a string
+    for c in final_chunks:
+        assert isinstance(c, str)
+        # Verify sub-chunks are within limits
+        assert len(mock_tokenizer.encode(c, add_special_tokens=True)) <= MAX_TOKENS
 
 
 def test_splitter_validator_parity(mock_tokenizer):
@@ -69,7 +73,7 @@ def test_splitter_validator_parity(mock_tokenizer):
     dense_text = "Dense-sentence-repeated-to-test-boundaries " * 500
     doc_id = "DOC_PARITY"
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         chunks, _ = split_markdown_doc(dense_text, "parity.md", tokenizer=mock_tokenizer, document_id=doc_id)
 
     assert len(chunks) > 1
@@ -78,6 +82,8 @@ def test_splitter_validator_parity(mock_tokenizer):
         # The Producer now prepends the prefix
         stored_chunk = f"passage: [{doc_id}] {chunk}"
 
-        # The Validator should return the string UNTOUCHED because it's already safe
-        validated_chunk = validate_chunk(stored_chunk, mock_tokenizer)
-        assert validated_chunk == stored_chunk
+        # The Validator should return a list containing the string UNTOUCHED
+        validated_chunks = validate_chunk(stored_chunk, mock_tokenizer)
+        assert len(validated_chunks) == 1
+        assert validated_chunks[0] == stored_chunk
+

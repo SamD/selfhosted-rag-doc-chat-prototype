@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Robust Anchor Extraction**: Refactored the Producer to scan all metadata levels and hierarchical headers to extract these anchors, ensuring 100% accurate page-level metadata for every chunk.
 - **Hardened Token Budgeting**
   - **Conservative Safety Margin**: Lowered the hierarchical splitter budget to **450 tokens** to accommodate mandatory RAG prefixes and model special tokens.
-  - **Zero-Drop Truncation Policy**: Replaced the "Drop if Oversized" boolean validator with a "Hard Truncation" filter that forcibly caps chunks at 511 tokens, ensuring 100% data persistence.
+   - **Zero-Drop Sub-Splitting**: Replaced the "Drop if Oversized" boolean validator with recursive character-based sub-splitting at a sliding window. Oversized chunks are split into valid-sized pieces rather than truncated, ensuring 100% content preservation.
   - **Special-Token Parity**: Synchronized length calculations between Producer and Consumer to use `add_special_tokens=True`, ensuring mathematical parity with the embedding model's actual requirements.
 - **Chain of Responsibility Content Handlers**
   - **Modular Architecture**: Introduced `BaseContentTypeHandler` and specialized handlers (`PDF`, `Text`, `MP3`, `MP4`) using the Chain of Responsibility pattern for cleaner, more extensible document processing.
@@ -47,11 +47,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Indentation-Triggered Hallucinations**: Flattened the Gatekeeper prompt to zero-indentation to prevent models from interpreting whitespace as a "Compliance Report" requirement.
 - **Frontend CSS Resolution**: Resolved a critical breakage where `global.css` was missing, preventing Tailwind 4 from initializing.
 - **Frontend Docker Configuration**: Corrected `docker-compose.frontend.yaml` to point to the dedicated `Dockerfile.frontend` and fixed environment variable typos.
+- **Persistent Staging Leak**: Implemented a startup **Audit & Cleanup** mechanism in `ParquetService` that automatically purges orphaned chunks from `staged_chunks` if the service restarts before a file is finalized.
 - **Linting & Code Quality**: Fixed multiple `ruff` errors across `direct_integration_test.py` and `run_full_normalization.py` for better compliance and readability.
 
 ### Changed
 - **Stateless Retyping Philosophy**: Re-locked the Gatekeeper into a pure pass-through mode that trusts server-side parameters (Temperature/Tokens) and focuses exclusively on high-density structural transcription.
 - **Global mmh3 Standardization**: Standardized on MurmurHash3 across the entire pipeline for both document binary signatures and semantic chunk addressing.
+- **Documentation Consolidation**: Merged 20 scattered documentation files into 4 structured docs: QuickStart (`README.md`), Architecture (`docs/overview.md`), Deep Dive (`docs/deep-dive.md`), and Operations (`docs/operations.md`). Removed stale/outdated planning documents. All images and assets now live under `docs/`.
 
 ---
 ... [Previous legacy changes maintained below] ...

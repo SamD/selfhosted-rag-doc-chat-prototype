@@ -18,6 +18,7 @@ log = get_logger("ingest.whisper_utils")
 
 _REDIS_CLIENT_CACHE = None
 
+
 def get_redis_client():
     """Lazy initializer for the Redis client."""
     global _REDIS_CLIENT_CACHE
@@ -25,19 +26,21 @@ def get_redis_client():
         _REDIS_CLIENT_CACHE = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
     return _REDIS_CLIENT_CACHE
 
+
 def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str = None) -> Generator[str, None, None]:
     """
     Send media file path to WhisperX service and yield transcription segments.
+    Always uses Redis queue to ensure the flow remains unchanged.
     """
     if trace_id:
         set_trace_id(trace_id)
 
     job_id = str(uuid.uuid4())
     reply_key = f"whisper_reply:{job_id}"
-    
+
     # We send the absolute path so the worker (sharing volumes) can find it
     abs_file_path = os.path.abspath(file_path)
-    
+
     job = {
         "job_id": job_id,
         "file_path": abs_file_path,
@@ -45,9 +48,9 @@ def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str =
         "language": language,
         "trace_id": trace_id,
     }
-    
+
     log.info(f"📤 Sending {file_path} to WhisperX worker (Job: {job_id})")
-    
+
     try:
         redis_client = get_redis_client()
         redis_client.lpush(REDIS_WHISPER_JOB_QUEUE, json.dumps(job))
@@ -55,24 +58,18 @@ def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str =
         log.error(f"❌ Failed to submit WhisperX job to Redis: {e}")
         raise RuntimeError(f"Redis submission failed: {e}")
 
-    # WhisperX jobs can take a long time. 
-    # We expect the worker to push segments one by one or all at once?
-    # For simplicity and robust failure handling, let's have the worker 
-    # push segments to a list at the reply_key, and send a completion signal.
-    
+    # WhisperX jobs can take a long time.
     wait_timeout = 1800  # 30 minutes for long videos
     start_wait = time.time()
-    
+
     segments_received = 0
-    
+
     while (time.time() - start_wait) < wait_timeout:
-        # We use BLPOP on the reply_key. 
-        # The worker will push JSON objects: {"type": "segment", "text": "..."} or {"type": "done"} or {"type": "error"}
         res = redis_client.blpop(reply_key, timeout=30)
         if res:
             _, data_raw = res
             data = json.loads(data_raw)
-            
+
             if data.get("type") == "segment":
                 segments_received += 1
                 yield data.get("text")
@@ -90,3 +87,4 @@ def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str =
     else:
         log.error(f"⏰ WhisperX timeout for {file_path}")
         raise TimeoutError(f"WhisperX transcription timed out after {wait_timeout}s")
+

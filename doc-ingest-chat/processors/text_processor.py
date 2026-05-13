@@ -5,12 +5,13 @@ Text processing functionality.
 
 import logging
 import re
+from typing import List
 
 import mmh3
 import yaml
-from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
+from config.settings import MAX_TOKENS
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-from transformers import AutoTokenizer
+from utils.text_utils import get_tokenizer
 
 log = logging.getLogger("ingest.text_processor")
 
@@ -24,7 +25,7 @@ class TextProcessor:
         Parses Markdown with YAML metadata headers and performs hierarchical splitting.
         Zero-Drop Policy: Hard truncates chunks to ensure they ALWAYS pass validation.
         """
-        tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+        tokenizer = tokenizer or get_tokenizer()
         if budget is None:
             budget = MAX_TOKENS
 
@@ -66,8 +67,9 @@ class TextProcessor:
         def token_len(text):
             return prefix_len + len(tokenizer.encode(text, add_special_tokens=False))
 
-        # SAFETY: Target 450 tokens to minimize truncation events.
-        safe_budget = min(450, budget - prefix_len)
+        # DYNAMIC SAFETY BUDGET: Target ~85% of total tokens to minimize overflow events.
+        # This ensures we scale correctly whether MAX_TOKENS is 512 or 256.
+        safe_budget = int(budget * 0.85) - prefix_len
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=safe_budget,
@@ -81,10 +83,9 @@ class TextProcessor:
         chunks = []
         metadata = []
 
-        total_chunks = len(final_chunks)
-        current_page = 1
         for idx, chunk in enumerate(final_chunks):
             # EXTRACTION OF PAGE FROM ANCHOR
+            current_page = 1
             for key, value in chunk.metadata.items():
                 if "[INTERNAL_PAGE_" in str(value):
                     page_match = re.search(r"(\d+)", str(value))
@@ -93,35 +94,70 @@ class TextProcessor:
                         break
 
             chunk_text = chunk.page_content
-
-            # --- HARD TRUNCATION SAFETY NET ---
-            # If the splitter failed to stay under the budget, we truncate now.
+            
+            # --- NON-DESTRUCTIVE OVERFLOW HANDLING ---
+            # If the splitter somehow produced an oversized chunk, sub-split it 
+            # instead of truncating.
             full_encoded = tokenizer.encode(f"{enrichment_prefix}{chunk_text}", add_special_tokens=True)
-            if len(full_encoded) > MAX_TOKENS:
-                log.warning(f"🔨 Hard-truncating chunk {idx} ({len(full_encoded)} -> {MAX_TOKENS})")
-                # Truncate to 510 to allow for [SEP] token at the end
-                truncated_tokens = full_encoded[: MAX_TOKENS - 1]
-                chunk_text = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
-                # Remove the enrichment_prefix from the decoded text as it is re-added later
-                chunk_text = re.sub(rf"^{re.escape(enrichment_prefix)}", "", chunk_text)
+            
+            if len(full_encoded) <= MAX_TOKENS:
+                # Fits perfectly
+                chunks.append(chunk_text)
+                meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path, chunk_text, meta_id)
+                metadata.append(meta)
+            else:
+                # Oversized! Sub-split using a sliding window approach
+                log.warning(f"⚠️ Chunk {idx} is oversized ({len(full_encoded)} tokens). Sub-splitting to prevent data loss.")
+                
+                # Encode content without prefix and special tokens for manual slicing
+                content_tokens = tokenizer.encode(chunk_text, add_special_tokens=False)
+                available_budget = MAX_TOKENS - prefix_len - 2 # -2 for [CLS]/[SEP] safety
+                
+                start_tok = 0
+                while start_tok < len(content_tokens):
+                    end_tok = min(start_tok + available_budget, len(content_tokens))
+                    sub_chunk_tokens = content_tokens[start_tok:end_tok]
+                    sub_chunk_text = tokenizer.decode(sub_chunk_tokens, skip_special_tokens=True).strip()
+                    
+                    if sub_chunk_text:
+                        chunks.append(sub_chunk_text)
+                        meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path, sub_chunk_text, meta_id)
+                        metadata.append(meta)
+                    
+                    start_tok = end_tok
 
-            chunks.append(chunk_text)
-            meta = {
-                **file_metadata,
-                **chunk.metadata,
-                "page": current_page,
-                "chunk_index": idx,
-                "total_chunks": total_chunks,
-                "source_file": rel_path,
-            }
-            # Cleanup internal markers
-            for k in list(meta.keys()):
-                if "Internal_Page" in k or (isinstance(meta[k], str) and "[INTERNAL_PAGE_" in meta[k]):
-                    meta.pop(k, None)
-            metadata.append(meta)
+        # Update total_chunks in metadata after potential sub-splitting
+        actual_total = len(chunks)
+        for meta in metadata:
+            meta["total_chunks"] = actual_total
 
-        log.info(f"✅ Finished splitting {rel_path} → {len(chunks)} chunks")
+        log.info(f"✅ Finished splitting {rel_path} → {actual_total} chunks (Zero-Loss)")
         return chunks, metadata
+
+    @staticmethod
+    def _create_metadata(file_meta, chunk_meta, page, idx, rel_path, text, doc_id):
+        """Helper to construct clean metadata for a chunk, including ID and Hash."""
+        # Generate Deterministic ID
+        c_id = TextProcessor.make_chunk_id(rel_path, idx, text, doc_id)
+        # Generate Content Hash
+        c_hash = hex(mmh3.hash(text) & 0xFFFFFFFF)[2:].upper().zfill(8)
+
+        meta = {
+            **file_meta,
+            **chunk_meta,
+            "id": c_id,
+            "hash": c_hash,
+            "page": page,
+            "chunk_index": idx,
+            "source_file": rel_path,
+        }
+        if "document_id" not in meta:
+            meta["document_id"] = doc_id
+        # Cleanup internal markers
+        for k in list(meta.keys()):
+            if "Internal_Page" in k or (isinstance(meta[k], str) and "[INTERNAL_PAGE_" in meta[k]):
+                meta.pop(k, None)
+        return meta
 
     @staticmethod
     def get_document_id(file_bytes: bytes) -> str:
@@ -156,7 +192,7 @@ class TextProcessor:
     @staticmethod
     def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=None, overlap=50, page_num=None, document_id=None):
         """Split document into chunks with aggressive safety margin."""
-        tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+        tokenizer = tokenizer or get_tokenizer()
         if budget is None:
             budget = 450
 
@@ -191,19 +227,36 @@ class TextProcessor:
         return normalized
 
     @staticmethod
-    def validate_chunk(chunk: str, tokenizer) -> str:
-        """Zero-Drop Validator: Truncates oversized chunks instead of dropping them."""
+    def validate_chunk(chunk: str, tokenizer) -> List[str]:
+        """
+        Zero-Loss Validator: If a chunk is oversized, it sub-splits it into 
+        valid pieces instead of truncating.
+        Returns a List[str] of valid chunks.
+        """
         if not isinstance(chunk, str):
-            return ""
+            return []
 
         tokens = tokenizer.encode(chunk, add_special_tokens=True)
-        if len(tokens) > MAX_TOKENS:
-            log.warning(f"🔨 Validator hard-truncating oversized chunk ({len(tokens)} -> {MAX_TOKENS})")
-            # Truncate to 511 to allow for the final separator token
-            truncated_tokens = tokens[: MAX_TOKENS - 1]
-            return tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+        if len(tokens) <= MAX_TOKENS:
+            return [chunk]
 
-        return chunk
+        log.warning(f"⚠️ Validator detected oversized chunk ({len(tokens)} tokens). Sub-splitting to prevent loss.")
+        
+        # Non-destructive sub-split
+        content_tokens = tokenizer.encode(chunk, add_special_tokens=False)
+        # Conservative budget for sub-splitting without knowing prefix here
+        budget = MAX_TOKENS - 4 
+        
+        sub_chunks = []
+        start = 0
+        while start < len(content_tokens):
+            end = min(start + budget, len(content_tokens))
+            decoded = tokenizer.decode(content_tokens[start:end], skip_special_tokens=True).strip()
+            if decoded:
+                sub_chunks.append(decoded)
+            start = end
+            
+        return sub_chunks
 
 
 # Convenience aliases

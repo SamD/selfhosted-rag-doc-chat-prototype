@@ -32,9 +32,8 @@ ENV TORCH_HOME=/usr/local/model_cache
 
 COPY doc-ingest-chat/ /app/doc-ingest-chat/
 
-# Run warmup (Downloads will stay in the build cache, not the image)
-RUN --mount=type=cache,target=/usr/local/model_cache \
-    PYTHONPATH=/app/doc-ingest-chat \
+# Run warmup (Permanently bake into the image layer, no --mount=type=cache)
+RUN PYTHONPATH=/app/doc-ingest-chat \
     /opt/venv/bin/python /app/doc-ingest-chat/utils/warmup.py
 
 # --- Stage 2: Runner ---
@@ -52,11 +51,12 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 
 WORKDIR /app
 
-# Copy only the environment
+# Copy the environment AND the baked-in models
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /usr/local/model_cache /usr/local/model_cache
 
-# Prepare the mount point for your shared model volume
-RUN mkdir -p /usr/local/model_cache && chmod 777 /usr/local/model_cache
+# Prepare the mount point (keep permissions open)
+RUN chmod -R 777 /usr/local/model_cache
 
 ENV PATH="/opt/venv/bin:$PATH"
 ENV HF_HOME=/usr/local/model_cache

@@ -19,7 +19,7 @@ from services.job_service import (
 from services.parquet_service import commit_to_parquet
 from utils.consumer_utils import store_chunks_in_db
 from utils.metrics import FileMetrics
-from utils.producer_utils import get_tokenizer
+from utils.text_utils import get_tokenizer
 from utils.trace_utils import get_logger, set_trace_id
 
 log = get_logger("ingest.consumer_graph")
@@ -64,13 +64,25 @@ def validate_remaining_chunks_node(state: ConsumerState) -> ConsumerState:
 
     tokenizer = get_tokenizer()
     processed_chunks = []
+    from processors.text_processor import make_chunk_id
+    
     for entry in chunks:
         chunk_text = entry.get("chunk")
-        # Now returns the chunk itself (truncated if needed) instead of a bool
-        final_chunk = validate_chunk(chunk_text, tokenizer)
-        if final_chunk:
-            entry["chunk"] = final_chunk
-            processed_chunks.append(entry)
+        # Refactored: returns List[str] if oversized, preserving all data
+        validated_texts = validate_chunk(chunk_text, tokenizer)
+        
+        for i, text in enumerate(validated_texts):
+            if i == 0:
+                # Keep original entry but update text
+                entry["chunk"] = text
+                processed_chunks.append(entry)
+            else:
+                # Create a new entry for the overflow data
+                new_entry = entry.copy()
+                new_entry["chunk"] = text
+                # Generate a new unique ID for the sub-split chunk
+                new_entry["id"] = make_chunk_id(source_file, 9999 + i, text, entry.get("document_id"))
+                processed_chunks.append(new_entry)
 
     return {**state, "chunks": processed_chunks, "status": "processing", "job_id": job_id}
 
@@ -129,12 +141,12 @@ def finalize_consumer_node(state: ConsumerState) -> ConsumerState:
                 new_pdf = os.path.join(dest_dir, os.path.basename(old_pdf)) if old_pdf else None
                 new_md = os.path.join(dest_dir, os.path.basename(old_md)) if old_md else None
 
-                # MOVE PDF: Force overwrite if exists to prevent OSError
+                # MOVE SOURCE: Force overwrite if exists to prevent OSError
                 if old_pdf and os.path.exists(old_pdf):
                     if new_pdf and os.path.exists(new_pdf):
                         os.remove(new_pdf)
                     shutil.move(old_pdf, new_pdf)
-                    log.info(f"🚚 Moved PDF to {new_pdf}")
+                    log.info(f"🚚 Moved Source File to {new_pdf}")
 
                 # MOVE MD: Force overwrite if exists
                 if old_md and os.path.exists(old_md):
@@ -145,7 +157,7 @@ def finalize_consumer_node(state: ConsumerState) -> ConsumerState:
 
                 # Update DB with lock protection
                 JobService.transition_job(job_id, final_lifecycle_status, new_pdf_path=new_pdf, new_md_path=new_md, error=error)
-                log.info(f"✅ Document {job_id} transitioned to {final_lifecycle_status}")
+                log.info(f"📮 STATE TRANSITION: {source_file} | CONSUMING → {final_lifecycle_status} | {job_id}")
         except Exception as e:
             log.error(f"💥 Error during final file move: {e}")
     else:

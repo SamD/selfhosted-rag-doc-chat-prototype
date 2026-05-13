@@ -61,6 +61,7 @@ def gatekeeper_process_job(job: dict) -> bool:
             shutil.move(original_file_path, prep_file_path)
 
         # Update DB with current location
+        log.info(f"📮 STATE TRANSITION: {filename} | NEW → PREPROCESSING | {job_id}")
         JobService.transition_job(job_id, STATUS_PREPROCESSING, new_pdf_path=prep_file_path, new_md_path=prep_md_path)
 
         # 3. PERFORM NORMALIZATION
@@ -82,6 +83,7 @@ def gatekeeper_process_job(job: dict) -> bool:
             shutil.move(prep_md_path, ingest_md_path)
 
             # UPDATE TO PREPROCESSING_COMPLETE
+            log.info(f"📮 STATE TRANSITION: {filename} | PREPROCESSING → PREPROCESSING_COMPLETE | {job_id}")
             JobService.transition_job(job_id, STATUS_PREPROCESSING_COMPLETE, new_pdf_path=ingest_file_path, new_md_path=ingest_md_path)
             # Keep legacy log for compatibility
             log_gatekeeper_result(slug, "SUCCESS", metadata=metadata)
@@ -113,6 +115,7 @@ def gatekeeper_process_job(job: dict) -> bool:
             pass
 
         # RECORD SPECIFIC REASON IN DUCKDB
+        log.info(f"📮 STATE TRANSITION: {filename} | PREPROCESSING → INGEST_FAILED | {job_id}")
         JobService.transition_job(job_id, STATUS_INGEST_FAILED, new_pdf_path=failed_file_path, new_md_path=failed_md_path, error=error_reason)
         log_gatekeeper_result(slug, "FAILURE", error_msg=error_reason)
         return False
@@ -150,12 +153,39 @@ def main():
         ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
         ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
         ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
+        ("OCR_PATH", settings.OCR_PATH),
+        ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
+        ("VECTOR_DB_USE_GRPC", settings.VECTOR_DB_USE_GRPC),
+        ("VECTOR_DB_TIMEOUT", settings.VECTOR_DB_TIMEOUT),
+        ("VECTOR_DB_BATCH_SIZE", settings.VECTOR_DB_BATCH_SIZE),
     ]
 
     for name, value in config_manifest:
-        if value and value != "NOT_SET":
-            status = "✅" if os.path.exists(value) or value.startswith("http") else "❌"
-            log.info(f"   {status} {name:25} : {value}")
+        if value is not None and value != "NOT_SET":
+            str_val = str(value).strip()
+            
+            # Determine Mode and Icon
+            mode_label = ""
+            icon = "✅"
+            
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_PATH", "OCR_PATH", "VECTOR_DB_URL"]:
+                if str_val.startswith(("http://", "https://")):
+                    mode_label = " [MODE: REMOTE]"
+                    icon = "📡"
+                elif name == "OCR_PATH" and str_val == "LOCAL":
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                elif os.path.exists(str_val):
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                else:
+                    icon = "❌"
+            
+            # Special hint for gRPC default
+            if name == "VECTOR_DB_USE_GRPC" and os.getenv("VECTOR_DB_USE_GRPC") is None:
+                mode_label = " (Default: gRPC)"
+
+            log.info(f"   {icon} {name:25} : {str_val}{mode_label}")
         else:
             log.info(f"   ⚠️ {name:25} : NOT CONFIGURED (Optional)")
 
@@ -165,7 +195,9 @@ def main():
 
     # DEEP ASSET AUDIT: Whisper
     if settings.WHISPER_MODEL_PATH != "NOT_SET":
-        if not os.path.exists(settings.WHISPER_MODEL_PATH):
+        if settings.WHISPER_MODEL_PATH.startswith(("http://", "https://")):
+            log.info(f"🛰️  WHISPER_MODEL_PATH is a remote URL: {settings.WHISPER_MODEL_PATH}")
+        elif not os.path.exists(settings.WHISPER_MODEL_PATH):
             log.warning(f"⚠️  WHISPER_MODEL_PATH is set but the directory does not exist: {settings.WHISPER_MODEL_PATH}")
         else:
             missing = []

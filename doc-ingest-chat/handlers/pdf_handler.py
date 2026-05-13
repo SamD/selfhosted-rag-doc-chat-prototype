@@ -1,6 +1,7 @@
 from typing import Generator
 
 import pdfplumber
+from config.settings import PDF_FORCE_OCR
 from pdf2image import convert_from_path
 from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr
@@ -29,14 +30,17 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                 total_pages = len(pdf.pages)
                 for i, page in enumerate(pdf.pages):
                     page_num = i + 1
-                    try:
-                        t = page.extract_text()
-                    except Exception as e:
-                        log.warning(f"⚠️ Page {page_num} extraction failed: {e}")
-                        t = None
+                    t = None
+                    
+                    if not PDF_FORCE_OCR:
+                        try:
+                            t = page.extract_text()
+                        except Exception as e:
+                            log.warning(f"⚠️ Page {page_num} extraction failed: {e}")
+                            t = None
 
-                    if not t or is_bad_ocr(t):
-                        log.info(f"📸 Page {page_num}/{total_pages} delegating to OCR worker...")
+                    if PDF_FORCE_OCR or not t or is_bad_ocr(t):
+                        log.info(f"📸 Page {page_num}/{total_pages} delegating to OCR worker (Reason: {'Forced' if PDF_FORCE_OCR else 'Bad Extraction'})...")
                         images = convert_from_path(file_path, dpi=200, first_page=page_num, last_page=page_num)
                         if images:
                             np_image = preprocess_image(images[0])
@@ -48,8 +52,8 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                                 img.close()
 
                     if not t:
-                        log.warning(f"⚠️ No text could be extracted for page {page_num}. Adding placeholder.")
-                        t = f"[DOCUMENT PAGE {page_num} EXTRACTION FAILED OR PAGE IS EMPTY]"
+                        log.error(f"❌ Extraction failed for {file_path} page {page_num}. Stopping.")
+                        raise RuntimeError(f"Failed to extract text for page {page_num}")
 
                     yield t
 

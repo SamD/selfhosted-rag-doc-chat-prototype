@@ -16,9 +16,10 @@ def test_validate_remaining_chunks_node_success(mock_validate, mock_get_tokenize
     from workers.consumer_graph import validate_remaining_chunks_node
 
     mock_get_tokenizer.return_value = MagicMock()
-    mock_validate.return_value = True
+    mock_validate.return_value = ["text"]
 
     state = validate_remaining_chunks_node(mock_consumer_state)
+
     assert state["status"] == "processing"
     assert len(state["chunks"]) == 1
     mock_validate.assert_called_once()

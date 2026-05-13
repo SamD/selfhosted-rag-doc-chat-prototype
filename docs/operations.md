@@ -1,0 +1,252 @@
+# Operations, Debugging & Metrics
+
+This document covers operational procedures for monitoring, debugging, and maintaining the Self-Hosted RAG system. For architecture, see [docs/overview.md](overview.md).
+
+---
+
+## DuckDB — Lifecycle Inspection
+
+The `chunks.duckdb` database (in `$DEFAULT_DOC_INGEST_ROOT`) is the primary source of truth for all document state.
+
+```bash
+duckdb /path/to/Docs/chunks.duckdb
+```
+
+### Document Status Overview
+
+```sql
+SELECT original_filename, status, worker_id, new_at
+FROM ingestion_lifecycle
+ORDER BY new_at DESC;
+```
+
+### Find Stuck Jobs (In progress > 1 hour)
+
+```sql
+SELECT id, original_filename, status
+FROM ingestion_lifecycle
+WHERE status NOT LIKE '%SUCCESS%'
+  AND status NOT LIKE '%FAILED%'
+  AND new_at < (CURRENT_TIMESTAMP - INTERVAL 1 HOUR);
+```
+
+### Timing Breakdown (Per Document)
+
+```sql
+SELECT
+    original_filename,
+    preprocessing_complete_at - preprocessing_at AS normalization_time,
+    ingesting_at - preprocessing_complete_at AS chunking_time,
+    consuming_at - ingesting_at AS queue_time,
+    finalized_at - consuming_at AS persistence_time,
+    finalized_at - new_at AS total_turnaround
+FROM ingestion_lifecycle
+WHERE status = 'INGEST_SUCCESS';
+```
+
+### Inspect Errors
+
+```sql
+SELECT original_filename, error_log
+FROM ingestion_lifecycle
+WHERE status = 'INGEST_FAILED'
+ORDER BY finalized_at DESC;
+```
+
+### Verify Physical File Locations
+
+```sql
+SELECT status, pdf_path, md_path
+FROM ingestion_lifecycle
+WHERE original_filename LIKE '%my_document%';
+```
+
+### Lock Contention Audit
+
+```sql
+SELECT slug, status, error
+FROM gatekeeper_history
+WHERE status = 'FAILURE'
+ORDER BY timestamp DESC;
+```
+
+---
+
+## DuckDB — Chunk Distribution
+
+### Count Chunks by Type
+
+```sql
+SELECT type, count(*) AS chunk_count
+FROM parquet_chunks
+GROUP BY type;
+```
+
+### Largest Documents (by Chunk Count)
+
+```sql
+SELECT source_file, count(*) AS chunks
+FROM parquet_chunks
+GROUP BY source_file
+ORDER BY chunks DESC
+LIMIT 10;
+```
+
+### Page-Level Distribution
+
+```sql
+SELECT page, count(*) AS chunks_per_page
+FROM parquet_chunks
+WHERE source_file = 'my_document.pdf'
+GROUP BY page
+ORDER BY page ASC;
+```
+
+---
+
+## DuckDB — Staging Inspection
+
+The `staged_chunks` table acts as the Write-Ahead Log for chunks before Qdrant persistence.
+
+### Current Buffer Size
+
+```sql
+SELECT count(*) AS enqueued_chunks, count(DISTINCT source_file) AS active_files
+FROM staged_chunks;
+```
+
+### Chunk Size Check (Character-Length Proxy)
+
+```sql
+SELECT id, length(chunk) AS chars
+FROM staged_chunks
+ORDER BY chars DESC
+LIMIT 10;
+```
+
+### Integrity Check — Non-Deterministic IDs
+
+```sql
+SELECT id, source_file
+FROM parquet_chunks
+WHERE id NOT LIKE 'DOC_%';
+```
+
+---
+
+## Redis — Queue Inspection
+
+```bash
+docker exec -it doc-ingest-chat-redis-1 redis-cli
+```
+
+```redis
+> LLEN chunk_ingest_queue:0
+> LLEN chunk_ingest_queue:1
+> LLEN ocr_job_queue
+> LLEN whisper_job_queue
+```
+
+---
+
+## Qdrant — Vector Inspection
+
+### Point Count for a Document
+
+```bash
+curl -X POST http://<qdrant-host>:6333/collections/vector_base_collection/points/count \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filter": {
+      "must": [{"key": "source_file", "match": {"text": "my_document"}}]
+    }
+  }'
+```
+
+Replace `<qdrant-host>` with your Qdrant REST API endpoint (default port 6333, or as configured via `VECTOR_DB_URL`).
+
+### Sample Payloads
+
+```bash
+curl -X POST http://<qdrant-host>:6333/collections/vector_base_collection/points/scroll \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 3, "with_payload": true, "with_vector": false}'
+```
+
+### Qdrant Dashboard
+
+Visit `http://<qdrant-host>:6333/dashboard` for the built-in web UI.
+
+---
+
+## Metrics (JSONL)
+
+Metrics are recorded in `$DEFAULT_DOC_INGEST_ROOT/metrics.jsonl`.
+
+### Average Normalization Time
+
+```bash
+jq -r 'select(.event == "file_processing_complete") | .metrics.total_processing_time_ms' \
+  /path/to/Docs/metrics.jsonl | \
+  awk '{sum+=$1; count+=1} END {print "Avg: " sum/count " ms"}'
+```
+
+---
+
+## Schema Evolution
+
+The canonical schema is in `doc-ingest-chat/sql/schema.sql`. Update that file first, then apply changes:
+
+### Add a Column
+
+```sql
+ALTER TABLE ingestion_lifecycle ADD COLUMN language VARCHAR DEFAULT 'en';
+```
+
+### Create an Index
+
+```sql
+CREATE INDEX idx_source_file ON parquet_chunks (source_file);
+```
+
+### Wipe All State (Fresh Start)
+
+```sql
+DELETE FROM ingestion_lifecycle;
+DELETE FROM parquet_chunks;
+DELETE FROM staged_chunks;
+DELETE FROM file_ingestion_jobs;
+DELETE FROM gatekeeper_history;
+```
+
+---
+
+## War Room Scenarios
+
+### "Data not found" but file was ingested
+
+```sql
+SELECT status, error_log, pdf_path, md_path
+FROM ingestion_lifecycle
+WHERE original_filename = 'missing_file.pdf';
+```
+
+### DuckDB and Qdrant out of sync
+
+```sql
+-- Find chunks in DuckDB without deterministic IDs
+SELECT id, source_file
+FROM parquet_chunks
+WHERE id NOT LIKE 'DOC_%';
+```
+
+### Ingestion stalled — check for lock contention
+
+```sql
+SELECT slug, status, error
+FROM gatekeeper_history
+WHERE status = 'FAILURE'
+ORDER BY timestamp DESC;
+```
+
+Also check Redis queue lengths — if `LLEN chunk_ingest_queue:N` is growing without bound, the Consumer may be crashed or blocked.

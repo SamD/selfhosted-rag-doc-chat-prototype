@@ -136,9 +136,19 @@ class DatabaseServiceQdrantSparseTesting:
     def get_embeddings() -> Any:
         global _embeddings_cache
         if _embeddings_cache is None:
-            log.info(f"Loading embeddings model on {device}...")
-            _embeddings_cache = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_PATH, model_kwargs={"device": device, "trust_remote_code": True}, encode_kwargs={"normalize_embeddings": True})
-            log.info(f"Embeddings model loaded successfully on {device}")
+            if EMBEDDING_MODEL_PATH.startswith(("http://", "https://")):
+                from utils.llm_setup import RemoteEmbeddings
+
+                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_MODEL_PATH}")
+                _embeddings_cache = RemoteEmbeddings(base_url=EMBEDDING_MODEL_PATH)
+            else:
+                log.info(f"Loading embeddings model on {device}...")
+                _embeddings_cache = HuggingFaceEmbeddings(
+                    model_name=EMBEDDING_MODEL_PATH,
+                    model_kwargs={"device": device, "trust_remote_code": True},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
+                log.info(f"Embeddings model loaded successfully on {device}")
         return _embeddings_cache
 
     @staticmethod
