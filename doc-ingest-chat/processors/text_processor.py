@@ -179,8 +179,12 @@ class TextProcessor:
         available_budget = budget - prefix_len
 
         if available_budget <= 0:
-            log.error(f"{log_prefix}💥 Prefix tokens ({prefix_len}) exceed budget ({budget})!")
-            return 0, ""
+            log.error(f"{log_prefix}💥 Prefix tokens ({prefix_len}) exceed budget ({budget})! Emitting raw decode to avoid data loss.")
+            # Safety: emit as much as possible rather than dropping data
+            end = min(start + budget, len(full_tokens))
+            content_chunk = full_tokens[start:end]
+            decoded = tokenizer.decode(content_chunk, skip_special_tokens=True).strip()
+            return len(content_chunk), decoded
 
         end = min(start + available_budget, len(full_tokens))
         content_chunk = full_tokens[start:end]
@@ -208,6 +212,7 @@ class TextProcessor:
         while i < len(content_tokens):
             last, chunk_str = TextProcessor.make_chunk(prefix_tokens, i, content_tokens, tokenizer, 512, overlap)
             if not chunk_str or last <= 0:
+                log.warning(f"⚠️ make_chunk returned empty or zero advance at position {i}. Advancing by 1 token to avoid infinite loop.")
                 i += 1
                 continue
             chunks.append(chunk_str)
