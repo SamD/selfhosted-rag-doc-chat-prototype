@@ -8,81 +8,83 @@ set -euo pipefail
 #   - The parent directory for all lifecycle stages
 #
 # LLM_PATH
-#   - Must be a .gguf file or remote URL
+#   - Must be a valid .gguf file for local mode
+#   - OR an http(s) URL for remote mode
+#
+# SUPERVISOR_LLM_PATH
+#   - Must be a valid .gguf file for local mode
+#   - OR an http(s) URL for remote mode
 #
 # EMBEDDING_MODEL_PATH
-#   - Must be a directory containing config.json or tokenizer_config.json
+#   - Must be a directory containing config.json or remote URL
 #
 #######################################
 
-export DOCKER_BUILDKIT=1
-export COMPOSE_DOCKER_CLI_BUILD=1
-export BUILDKIT_OCI_WORKER_SNAPSHOTTER=native
-#export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/docker.sock"
 export DOCKER_HOST="${DOCKER_HOST:=unix://$XDG_RUNTIME_DIR/docker.sock}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd $SCRIPT_DIR
+cd "$SCRIPT_DIR"
 
-export COMPOSE_BAKE=true
-export LLAMA_TEMPERATURE='0.1'
-
-# redis host name since this docker-compose service
-export REDIS_HOST=redis
-export REDIS_PORT=6379
-
-COMPOSE_FILE="ingest-dockercompose.yaml"
-
-if [[ -z "${GPU_CPU_PROFILE:-}" ]]; then
-  GPU_CPU_PROFILE="cuda"
-fi
-
-if [[ -z "${VECTOR_DB_PROFILE:-}" ]]; then
-  VECTOR_DB_PROFILE="qdrant"
-fi
-
-export VECTOR_DB_PROFILE
-COMBINED_PROFILE="${GPU_CPU_PROFILE}-${VECTOR_DB_PROFILE}"
-COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --profile $VECTOR_DB_PROFILE --profile with-frontend"
-
+# 0. GLOBAL DEFINITIONS
 REQUIRED_VARS=(
   "DEFAULT_DOC_INGEST_ROOT:dir"
   "LLM_PATH:gguf"
   "SUPERVISOR_LLM_PATH:gguf"
   "EMBEDDING_MODEL_PATH:e5"
+  "WHISPER_MODEL_PATH:any"
+  "OCR_PATH:any"
+  "PDF_FORCE_OCR:any"
+  "VECTOR_DB_TIMEOUT:any"
+  "VECTOR_DB_BATCH_SIZE:any"
 )
 
-###################################
-# Setup script directory and env #
-###################################
-cd "$SCRIPT_DIR"
+# 1. PROFILE SELECTION
+GPU_CPU_PROFILE="cuda"
+if [[ "${1:-}" == "--cpu" ]]; then
+  GPU_CPU_PROFILE="cpu"
+  shift
+fi
+
+# 2. LOAD ENV FILE INTO MAP FIRST
 ENV_FILE="ingest-svc.env"
 declare -A env_map
 
 if [[ -f "$ENV_FILE" ]]; then
   echo "🔄 Loading variables from $ENV_FILE"
   while IFS='=' read -r key val || [[ -n "$key" ]]; do
-    # 1. Skip comments and empty lines
     [[ -z "$key" || "$key" =~ ^# ]] && continue
-    
-    # 2. STRIP trailing spaces and carriage returns (\r) from both key and val
     clean_key=$(echo "$key" | xargs)
     clean_val=$(echo "$val" | xargs | tr -d '\r')
-    
     env_map["$clean_key"]="$clean_val"
   done < "$ENV_FILE"
 fi
 
-# WHISPER CONFIGURATION GUARD (WARNING ONLY)
-WHISPER_PATH="${env_map[WHISPER_MODEL_PATH]:-${WHISPER_MODEL_PATH:-}}"
-if [[ -z "$WHISPER_PATH" ]]; then
-  echo "⚠️  WARNING: WHISPER_MODEL_PATH is not set."
-  echo "⚠️  Any .mp4 or .mp3 files found in staging will be automatically moved to 'failed' directory."
-  echo "⚠️  (PDF and Text ingestion will still function normally.)"
-  export WHISPER_MODEL_PATH="NOT_SET"
-else
-  export WHISPER_MODEL_PATH="$WHISPER_PATH"
+# 3. SET DEFAULTS AND EXPORTS
+if [[ -z "${VECTOR_DB_PROFILE:-}" ]]; then
+  VECTOR_DB_PROFILE="${env_map[VECTOR_DB_PROFILE]:-qdrant}"
 fi
+
+export VECTOR_DB_URL="${VECTOR_DB_URL:-${env_map[VECTOR_DB_URL]:-}}"
+export OCR_PATH="${OCR_PATH:-${env_map[OCR_PATH]:-LOCAL}}"
+export PDF_FORCE_OCR="${PDF_FORCE_OCR:-${env_map[PDF_FORCE_OCR]:-false}}"
+export VECTOR_DB_TIMEOUT="${VECTOR_DB_TIMEOUT:-${env_map[VECTOR_DB_TIMEOUT]:-60.0}}"
+export VECTOR_DB_BATCH_SIZE="${VECTOR_DB_BATCH_SIZE:-${env_map[VECTOR_DB_BATCH_SIZE]:-20}}"
+export VECTOR_DB_PROFILE
+
+# 4. PROFILE LOGIC
+COMBINED_PROFILE="${GPU_CPU_PROFILE}-${VECTOR_DB_PROFILE}"
+COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --profile $VECTOR_DB_PROFILE --profile with-frontend"
+
+case "$VECTOR_DB_URL" in
+  http://*|https://*)
+    echo "📡 Remote Vector DB detected: $VECTOR_DB_URL"
+    echo "📡 Skipping local Qdrant instance."
+    ;;
+  *)
+    echo "🏠 Using local Qdrant configuration."
+    COMPOSE_FILE_OPTS="$COMPOSE_FILE_OPTS --profile local-qdrant"
+    ;;
+esac
 
 ######################################
 # Function to validate and export   #
@@ -90,11 +92,16 @@ fi
 validate_var_path() {
   local var_name="$1"
   local required_type="$2"
-  local val="${env_map[$var_name]:-${!var_name:-}}"
+  # Priority: Shell Environment > .env file
+  local val="${!var_name:-${env_map[$var_name]:-}}"
 
   if [[ -z "$val" ]]; then
-    echo "❌ $var_name is not set in $ENV_FILE or environment"
-    exit 1
+    if [[ "$required_type" == "any" ]]; then
+        val="NOT_SET"
+    else
+        echo "❌ $var_name is not set in $ENV_FILE or environment"
+        exit 1
+    fi
   fi
 
   case "$required_type" in
@@ -105,8 +112,8 @@ validate_var_path() {
       fi
       ;;
     "e5")
-      if [[ ! -d "$val" ]]; then
-        echo "❌ $var_name must be a directory"
+      if [[ ! "$val" =~ ^https?:// ]] && [[ ! -d "$val" ]]; then
+        echo "❌ $var_name must be a directory or URL"
         exit 1
       fi
       ;;
@@ -118,25 +125,29 @@ validate_var_path() {
       ;;
   esac
   
-  echo "✅ $var_name is valid : $val"
+  local icon="✅"
+  if [[ "$val" =~ ^https?:// ]]; then icon="📡";
+  elif [[ "$val" == "LOCAL" || -f "$val" || -d "$val" ]]; then icon="🏠";
+  elif [[ "$val" == "NOT_SET" ]]; then icon="⚠️"; fi
+  
+  echo "$icon $var_name is valid : $val"
   export "$var_name"="$val"
 }
 
-#################################
-# Validate and export all vars #
-#################################
-DUMMY_MOUNT="/tmp/llm_remote_mount.gguf"
-touch "$DUMMY_MOUNT"
+# Run validation
+REMOTE_DUMMY_DIR="/tmp/rag_remote_mount"
+mkdir -p "$REMOTE_DUMMY_DIR"
 
 for entry in "${REQUIRED_VARS[@]}"; do
   var_name="${entry%%:*}"
   validation_type="${entry##*:}"
   validate_var_path "$var_name" "$validation_type"
 
+  # Setup MOUNT variables for Compose
   val="${!var_name}"
   mount_var_name="${var_name}_MOUNT"
-  if [[ "$val" =~ ^https?:// ]]; then
-    export "$mount_var_name"="/tmp"
+  if [[ "$val" =~ ^https?:// || "$val" == "NOT_SET" ]]; then
+    export "$mount_var_name"="$REMOTE_DUMMY_DIR"
   elif [[ -f "$val" ]]; then
     export "$mount_var_name"="$(dirname "$val")"
   else
@@ -144,14 +155,12 @@ for entry in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
-# WHISPER MOUNT (Special check since it's optional with warning)
+# WHISPER CONFIGURATION GUARD (FOR LOGS)
 if [[ "$WHISPER_MODEL_PATH" == "NOT_SET" ]]; then
-  export WHISPER_MODEL_PATH_MOUNT="/tmp"
-else
-  export WHISPER_MODEL_PATH_MOUNT="$WHISPER_MODEL_PATH"
+  echo "⚠️  WARNING: WHISPER_MODEL_PATH is not set. Media will fail."
 fi
 
-# Anchored paths for the Compose volumes
+# 6. Lifecycle Path Exports (Anchored to Root)
 export STAGING_DIR="${DEFAULT_DOC_INGEST_ROOT}/staging"
 export PREPROCESSING_DIR="${DEFAULT_DOC_INGEST_ROOT}/preprocessing"
 export INGESTION_DIR="${DEFAULT_DOC_INGEST_ROOT}/ingestion"
@@ -160,9 +169,8 @@ export SUCCESS_DIR="${DEFAULT_DOC_INGEST_ROOT}/success"
 export FAILED_DIR="${DEFAULT_DOC_INGEST_ROOT}/failed"
 export VECTOR_DB_DATA_DIR="${DEFAULT_DOC_INGEST_ROOT}/qdrant_data"
 
-#################################
-# Launch Docker Compose         #
-#################################
+COMPOSE_FILE="ingest-dockercompose.yaml"
+
 echo "🚀 Launching LifeCycle-Aware Stack"
 
 if command -v docker-compose &> /dev/null; then

@@ -16,15 +16,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import redis
-from config.settings import MAX_OCR_DIM, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import (
-    AcceleratorDevice,
-    AcceleratorOptions,
-    EasyOcrOptions,
-    PdfPipelineOptions,
-)
-from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
+from config.settings import MAX_OCR_DIM, OCR_PATH, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
 from PIL import Image
 from utils.trace_utils import get_logger, set_trace_id
 
@@ -63,7 +55,7 @@ def preprocess_image(pil_image):
 
 
 def send_image_to_ocr(np_image, rel_path, page_num, trace_id: str = None):
-    """Send image to OCR service and wait for response."""
+    """Send image to OCR service and wait for response. Always uses Redis queue."""
     if trace_id:
         set_trace_id(trace_id)
 
@@ -125,17 +117,31 @@ def get_docling_converter():
     global _DOCLING_CONVERTER
     if _DOCLING_CONVERTER is None:
         try:
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import (
+                AcceleratorDevice,
+                AcceleratorOptions,
+                EasyOcrOptions,
+                PdfPipelineOptions,
+            )
+            from docling.document_converter import DocumentConverter, ImageFormatOption, PdfFormatOption
+
             # 1. ENFORCE AIR-GAP: Kill internet dependency for Docling/HuggingFace
             os.environ["HF_HUB_OFFLINE"] = "1"
-            os.environ["HF_HOME"] = "/tmp"
-            os.environ["XDG_CACHE_HOME"] = "/tmp"
+            
+            # USE THE BAKED-IN CACHE: Do not point to /tmp
+            CACHE_PATH = "/usr/local/model_cache"
+            os.environ["HF_HOME"] = CACHE_PATH
+            os.environ["TORCH_HOME"] = CACHE_PATH
+            os.environ["XDG_CACHE_HOME"] = CACHE_PATH
+            os.environ["EASYOCR_MODULE_PATH"] = CACHE_PATH
 
             # Silence internal library noise
             logging.getLogger("docling").setLevel(logging.WARNING)
             logging.getLogger("easyocr").setLevel(logging.WARNING)
             logging.getLogger("docling_parse").setLevel(logging.WARNING)
 
-            log.info("🚀 Initializing Docling Converter (STRICT OFFLINE MODE)...")
+            log.info(f"🚀 Initializing Docling Converter (STRICT OFFLINE MODE) cache: {CACHE_PATH}")
 
             # Modern Docling 2.x Acceleration Setup
             device_type = os.getenv("DEVICE", "cpu").lower()
@@ -195,12 +201,115 @@ def save_bad_image(np_image, debug_image_path, log_prefix):
     safe_image_save(pil_image, debug_image_path)
 
 
+def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> Tuple[Optional[str], str, float]:
+    """
+    Executes OCR by sending the image to a remote docling-serve instance.
+    """
+    import io
+
+    import requests
+
+    if trace_id:
+        set_trace_id(trace_id)
+
+    log.info(f"🛰️ Sending remote OCR request to {url} for {rel_path} P{page_num}")
+
+    start_time = time.perf_counter()
+    try:
+        # Convert NumPy to PNG in memory
+        pil_image = Image.fromarray(np_image)
+        buf = io.BytesIO()
+        pil_image.save(buf, format="PNG")
+        buf.seek(0)
+
+        # Use 'files' as the primary key as indicated by the error message, 
+        # but try 'file' if the server expects a single file.
+        files = {"files": (f"page_{page_num}.png", buf, "image/png")}
+        
+        # docling-serve (FastAPI) handles multiple values for the same key as a list.
+        # We pass them as a list of tuples to ensure requests repeats the keys correctly.
+        data = [
+            ("ocr_engine", "easyocr"),
+            ("ocr_lang", "en"),
+            ("to_formats", "md"),
+            ("include_images", "false")
+        ]
+
+        log.info(f"📤 Remote OCR Payload: URL={url}, Field='files', Params={data}")
+        response = requests.post(url, files=files, data=data, timeout=300)
+
+        # Fallback to 'file' (singular) if the plural version is still rejected with a 422
+        if response.status_code == 422:
+            log.warning("⚠️ Server rejected 'files' field. Retrying with 'file' singular...")
+            buf.seek(0)
+            files_singular = {"file": (f"page_{page_num}.png", buf, "image/png")}
+            response = requests.post(url, files=files_singular, data=data, timeout=300)
+
+        execution_time_ms = (time.perf_counter() - start_time) * 1000.0
+
+        if response.status_code == 200:
+            result = response.json()
+            
+            # --- SIMPLIFIED RECURSIVE EXTRACTION ---
+            def find_text(obj, key_name=None):
+                """Visit every node. If it's a string and parent key is a text key, return it."""
+                # Whitelist of keys known to contain the final markdown/text
+                TEXT_KEYS = ["md", "markdown", "text", "content", "body", "md_content", "text_content"]
+                
+                def is_text_key(k):
+                    if not k:
+                        return False
+                    k_lower = k.lower()
+                    return k_lower in TEXT_KEYS or "markdown" in k_lower or k_lower.endswith("_content")
+
+                if isinstance(obj, str):
+                    if is_text_key(key_name) and len(obj.strip()) > 10:
+                        return obj
+                    return None
+                
+                if isinstance(obj, dict):
+                    # Check our direct children first
+                    for k, v in obj.items():
+                        if is_text_key(k) and isinstance(v, str) and len(v.strip()) > 10:
+                            return v
+                    # Recurse deeper
+                    for k, v in obj.items():
+                        res = find_text(v, k)
+                        if res:
+                            return res
+                elif isinstance(obj, list):
+                    for item in obj:
+                        res = find_text(item, key_name)
+                        if res:
+                            return res
+                return None
+
+            text = find_text(result)
+
+            if not text:
+                log.warning(f"⚠️ Remote OCR succeeded but text extraction failed. FULL RESPONSE: {json.dumps(result)}")
+                return None, "remote_ocr_no_text", execution_time_ms
+
+            log.info(f"✅ Remote OCR succeeded for {rel_path} P{page_num} ({len(text)} chars)")
+            return text, "remote_docling_serve", execution_time_ms
+        else:
+            log.error(f"💥 Remote OCR failed with status {response.status_code}: {response.text}")
+            return None, f"remote_ocr_error_{response.status_code}", execution_time_ms
+
+    except Exception as e:
+        log.error(f"💥 Remote OCR exception: {e}")
+        return None, "remote_ocr_exception", 0.0
+
+
 def run_ocr(np_image, rel_path, page_num, trace_id: str = None) -> Tuple[Optional[str], str, float]:
     """
     Executes OCR using Docling (EasyOCR backend) on a NumPy image array.
     """
     if trace_id:
         set_trace_id(trace_id)
+
+    if OCR_PATH.startswith(("http://", "https://")):
+        return run_remote_ocr(np_image, rel_path, page_num, OCR_PATH, trace_id)
 
     log.info(f"🔄 Running Docling (EasyOCR) for {rel_path} page {page_num}")
 

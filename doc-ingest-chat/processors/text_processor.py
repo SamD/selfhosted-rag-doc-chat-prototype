@@ -9,9 +9,9 @@ from typing import List
 
 import mmh3
 import yaml
-from config.settings import EMBEDDING_MODEL_PATH, MAX_TOKENS
+from config.settings import MAX_TOKENS
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-from transformers import AutoTokenizer
+from utils.text_utils import get_tokenizer
 
 log = logging.getLogger("ingest.text_processor")
 
@@ -25,7 +25,7 @@ class TextProcessor:
         Parses Markdown with YAML metadata headers and performs hierarchical splitting.
         Zero-Drop Policy: Hard truncates chunks to ensure they ALWAYS pass validation.
         """
-        tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+        tokenizer = tokenizer or get_tokenizer()
         if budget is None:
             budget = MAX_TOKENS
 
@@ -67,8 +67,9 @@ class TextProcessor:
         def token_len(text):
             return prefix_len + len(tokenizer.encode(text, add_special_tokens=False))
 
-        # SAFETY: Target 450 tokens to minimize truncation events.
-        safe_budget = min(450, budget - prefix_len)
+        # DYNAMIC SAFETY BUDGET: Target ~85% of total tokens to minimize overflow events.
+        # This ensures we scale correctly whether MAX_TOKENS is 512 or 256.
+        safe_budget = int(budget * 0.85) - prefix_len
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=safe_budget,
@@ -102,7 +103,7 @@ class TextProcessor:
             if len(full_encoded) <= MAX_TOKENS:
                 # Fits perfectly
                 chunks.append(chunk_text)
-                meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path)
+                meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path, chunk_text, meta_id)
                 metadata.append(meta)
             else:
                 # Oversized! Sub-split using a sliding window approach
@@ -120,7 +121,7 @@ class TextProcessor:
                     
                     if sub_chunk_text:
                         chunks.append(sub_chunk_text)
-                        meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path)
+                        meta = TextProcessor._create_metadata(file_metadata, chunk.metadata, current_page, len(chunks)-1, rel_path, sub_chunk_text, meta_id)
                         metadata.append(meta)
                     
                     start_tok = end_tok
@@ -134,15 +135,24 @@ class TextProcessor:
         return chunks, metadata
 
     @staticmethod
-    def _create_metadata(file_meta, chunk_meta, page, idx, rel_path):
-        """Helper to construct clean metadata for a chunk."""
+    def _create_metadata(file_meta, chunk_meta, page, idx, rel_path, text, doc_id):
+        """Helper to construct clean metadata for a chunk, including ID and Hash."""
+        # Generate Deterministic ID
+        c_id = TextProcessor.make_chunk_id(rel_path, idx, text, doc_id)
+        # Generate Content Hash
+        c_hash = hex(mmh3.hash(text) & 0xFFFFFFFF)[2:].upper().zfill(8)
+
         meta = {
             **file_meta,
             **chunk_meta,
+            "id": c_id,
+            "hash": c_hash,
             "page": page,
             "chunk_index": idx,
             "source_file": rel_path,
         }
+        if "document_id" not in meta:
+            meta["document_id"] = doc_id
         # Cleanup internal markers
         for k in list(meta.keys()):
             if "Internal_Page" in k or (isinstance(meta[k], str) and "[INTERNAL_PAGE_" in meta[k]):
@@ -182,7 +192,7 @@ class TextProcessor:
     @staticmethod
     def split_doc(text: str, rel_path: str, file_type: str, tokenizer=None, prefix="passage: ", budget=None, overlap=50, page_num=None, document_id=None):
         """Split document into chunks with aggressive safety margin."""
-        tokenizer = tokenizer or AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
+        tokenizer = tokenizer or get_tokenizer()
         if budget is None:
             budget = 450
 

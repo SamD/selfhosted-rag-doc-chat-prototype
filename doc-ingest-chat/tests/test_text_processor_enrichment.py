@@ -28,7 +28,7 @@ def test_split_doc_with_hash_enrichment():
     mock_tokenizer = MagicMock()
     mock_tokenizer.encode.return_value = [1, 2, 3]
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(3, "passage: [DOC_A1B2] chunk content")):
             chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=document_id, overlap=0)
 
@@ -44,7 +44,7 @@ def test_split_doc_without_document_id():
     mock_tokenizer = MagicMock()
     mock_tokenizer.encode.return_value = [1, 2, 3]
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(3, "passage: [DOC_UNKNOWN] original content")):
             chunks, _ = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=None, overlap=0)
 
@@ -61,7 +61,7 @@ def test_split_doc_preserves_metadata():
     mock_tokenizer = MagicMock()
     mock_tokenizer.encode.return_value = [1]
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         with patch.object(TextProcessor, "make_chunk", return_value=(1, "passage: [DOC_1234] Content")):
             chunks, metadata = TextProcessor.split_doc(text=text, rel_path=rel_path, file_type="pdf", document_id=doc_id, page_num=5, overlap=0)
 
@@ -86,7 +86,7 @@ Content on page 10.
     mock_tokenizer = MagicMock()
     mock_tokenizer.encode.return_value = [1, 2, 3]
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         chunks, metadata = TextProcessor.split_markdown_doc(text=text, rel_path=rel_path)
 
     assert len(chunks) > 0

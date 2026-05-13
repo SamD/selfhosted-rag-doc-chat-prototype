@@ -182,7 +182,9 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             if len(batch_text) >= settings.GATEKEEPER_BATCH_SIZE:
                 log.info(f"📊 Normalizing Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
                 full_content = "\n\n".join(batch_text)
-                meta = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+                
+                # A. Normalize via LLM
+                meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
                 if chunk_idx == 0:
                     first_chunk_meta = meta
 
@@ -193,7 +195,7 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         if batch_text:
             log.info(f"📊 Normalizing Final Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
             full_content = "\n\n".join(batch_text)
-            meta = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+            meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
             if chunk_idx == 0:
                 first_chunk_meta = meta
 
@@ -219,7 +221,7 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         return False, None
 
 
-def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None):
+def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> Tuple[dict, str]:
     """Stateless normalization using the exact prompt verified by the user."""
     meta = assemble_metadata(file_path, slug, idx, 9999)
 
@@ -258,6 +260,29 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None):
     log.info(f"🧠 Normalizing Batch {idx} (High-Fidelity Verified Prompt)...")
 
     llm, _ = get_llm_and_grammar()
+    from utils.text_utils import get_tokenizer
+    tokenizer = get_tokenizer()
+
+    # ENFORCE CONTEXT LIMIT: Truncate if batch is somehow massive (e.g. OCR error/leak)
+    # We target 80% of context size for safety
+    CONTEXT_LIMIT = int(settings.LLAMA_N_CTX * 0.8)
+    encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
+    
+    if len(encoded_prompt) > CONTEXT_LIMIT:
+        log.warning(f"⚠️ Batch {idx} is too large ({len(encoded_prompt)} tokens). Truncating to {CONTEXT_LIMIT} to fit context window.")
+        # Truncate raw_content instead of entire prompt for better model behavior
+        # Subtract prompt overhead (~200 tokens)
+        truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
+        raw_content = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+        
+        # Rebuild user_msg with truncated content
+        user_msg = (
+            "You are a Markdown formatter. Convert RAW_TEXT below into valid Markdown. "
+            "Preserve all content and structure as much as possible. "
+            "Return only Markdown.\n\n"
+            f"RAW_TEXT:\n{raw_content}"
+        )
+        messages = [{"role": "user", "content": user_msg}]
 
     response = llm.create_chat_completion(
         messages=messages,
@@ -277,7 +302,7 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None):
         os.fsync(f.fileno())
 
     log.info(f"📝 Wrote Chunk {idx} to {md_path}")
-    return meta
+    return meta, content
 
 
 def log_gatekeeper_result(slug: str, status: str, metadata: Optional[dict] = None, error_msg: Optional[str] = None):

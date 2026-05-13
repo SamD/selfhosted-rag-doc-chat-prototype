@@ -34,7 +34,7 @@ def test_markdown_splitting_safety_margin(mock_tokenizer):
     doc_id = "DOC_TEST_123"
     prefix = "passage: "
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         chunks, metas = split_markdown_doc(md_content, "test.md", tokenizer=mock_tokenizer, budget=MAX_TOKENS, prefix=prefix, document_id=doc_id)
 
     assert len(chunks) > 1
@@ -73,7 +73,7 @@ def test_splitter_validator_parity(mock_tokenizer):
     dense_text = "Dense-sentence-repeated-to-test-boundaries " * 500
     doc_id = "DOC_PARITY"
 
-    with patch("processors.text_processor.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
+    with patch("processors.text_processor.get_tokenizer", return_value=mock_tokenizer):
         chunks, _ = split_markdown_doc(dense_text, "parity.md", tokenizer=mock_tokenizer, document_id=doc_id)
 
     assert len(chunks) > 1

@@ -40,10 +40,45 @@ log = get_logger("whisperx_worker")
 
 SHUTDOWN = False
 
+
+class RemoteWhisper:
+    """
+    Wrapper for remote Whisper server.
+    Uses direct requests to allow for non-standard path structures.
+    """
+
+    def __init__(self, base_url: str):
+        self.url = base_url
+        log.info(f"🌐 Remote Whisper Target: {self.url}")
+
+    def transcribe_file(self, file_path: str, language: str = "en"):
+        """Transcribe file using remote API via direct POST."""
+        import requests
+
+        with open(file_path, "rb") as audio_file:
+            # Match the format from your successful curl command
+            files = {"file": (os.path.basename(file_path), audio_file, "audio/wav")}
+            data = {
+                "temperature": "0.0",
+                "response_format": "json",
+                "language": language,
+            }
+
+            log.info(f"📤 Sending POST to {self.url}...")
+            response = requests.post(self.url, files=files, data=data, timeout=300)
+            response.raise_for_status()
+
+            result = response.json()
+            # Normalize to WhisperX-like format
+            text = result.get("text", "")
+            return {"segments": [{"text": text}]}
+
+
 def signal_handler(sig, frame):
     global SHUTDOWN
     log.warning(f"💥 Received signal {sig}, initiating WhisperX shutdown...")
     SHUTDOWN = True
+
 
 def worker_loop():
     """Main loop that pops jobs and performs transcription."""
@@ -54,23 +89,30 @@ def worker_loop():
 
         # Lazy load whisperx to avoid overhead if redis fails
         import torchaudio
-        import whisperx
 
         # Monkey-patch torchaudio if needed (for older versions in some images)
         if not hasattr(torchaudio, "AudioMetaData"):
             from typing import NamedTuple
+
             class AudioMetaData(NamedTuple):
                 sample_rate: int
                 num_frames: int
                 num_channels: int
                 bits_per_sample: int
                 encoding: str
+
             torchaudio.AudioMetaData = AudioMetaData
             log.info("🩹 Applied monkey-patch for torchaudio.AudioMetaData")
 
         # Load model once
-        log.info(f"🏗️ Loading WhisperX model from {WHISPER_MODEL_PATH}...")
-        model = whisperx.load_model(WHISPER_MODEL_PATH, DEVICE, compute_type=COMPUTE_TYPE)
+        if WHISPER_MODEL_PATH.startswith(("http://", "https://")):
+            log.info(f"🏗️ Connecting to remote Whisper at {WHISPER_MODEL_PATH}...")
+            model = RemoteWhisper(base_url=WHISPER_MODEL_PATH)
+        else:
+            import whisperx
+
+            log.info(f"🏗️ Loading WhisperX model from {WHISPER_MODEL_PATH}...")
+            model = whisperx.load_model(WHISPER_MODEL_PATH, DEVICE, compute_type=COMPUTE_TYPE)
         log.info("✅ Model loaded successfully.")
 
         while not SHUTDOWN:
@@ -84,34 +126,36 @@ def worker_loop():
                     reply_key = job.get("reply_key")
                     language = job.get("language", "en")
                     trace_id = job.get("trace_id")
-                    
+
                     if trace_id:
                         set_trace_id(trace_id)
 
-                    log.info(f"🎬 Processing job {job_id} ({language}): {file_path}")
+                    mode = "REMOTE" if isinstance(model, RemoteWhisper) else "LOCAL"
+                    log.info(f"🎬 Processing job {job_id} ({language}) [MODE: {mode}]: {file_path}")
 
                     try:
                         if not os.path.exists(file_path):
                             raise FileNotFoundError(f"File not found: {file_path}")
 
-                        audio = whisperx.load_audio(file_path)
-                        result = model.transcribe(audio, batch_size=BATCH_SIZE, language=language)
+                        if isinstance(model, RemoteWhisper):
+                            result = model.transcribe_file(file_path, language=language)
+                        else:
+                            import whisperx
+
+                            audio = whisperx.load_audio(file_path)
+                            result = model.transcribe(audio, batch_size=BATCH_SIZE, language=language)
 
                         for segment in result["segments"]:
-                            redis_client.rpush(reply_key, json.dumps({
-                                "type": "segment",
-                                "text": segment["text"]
-                            }))
-                        
+                            redis_client.rpush(
+                                reply_key, json.dumps({"type": "segment", "text": segment["text"]})
+                            )
+
                         redis_client.rpush(reply_key, json.dumps({"type": "done"}))
                         log.info(f"✅ Job {job_id} complete.")
 
                     except Exception as e:
                         log.error(f"💥 Error processing job {job_id}: {e}")
-                        redis_client.rpush(reply_key, json.dumps({
-                            "type": "error",
-                            "error": str(e)
-                        }))
+                        redis_client.rpush(reply_key, json.dumps({"type": "error", "error": str(e)}))
 
             except json.JSONDecodeError:
                 log.error("💥 Malformed Job received")

@@ -4,6 +4,7 @@ Text processing utility functions.
 """
 
 import logging
+import os
 import re
 import string
 import unicodedata
@@ -25,8 +26,33 @@ def get_tokenizer():
     global _CACHED_TOKENIZER
     if _CACHED_TOKENIZER is None:
         try:
-            log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
-            _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH, use_fast=True, trust_remote_code=True, local_files_only=True)
+            model_path = EMBEDDING_MODEL_PATH
+            # Determine if we should allow remote downloads
+            hub_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+            local_only = hub_offline
+
+            if model_path.startswith(("http://", "https://")):
+                log.warning(
+                    f"⚠️ EMBEDDING_MODEL_PATH is a URL ({model_path}). "
+                    f"Falling back to 'intfloat/e5-large-v2' for local tokenization."
+                )
+                
+                # Try explicit baked-in path first
+                fallback_path = "/usr/local/model_cache/e5-fallback"
+                if os.path.exists(fallback_path):
+                    model_path = fallback_path
+                else:
+                    model_path = "intfloat/e5-large-v2"
+                
+                # Even if falling back, respect the offline mandate
+                local_only = hub_offline
+
+            log.info(f"🚀 Loading tokenizer from {model_path} (local_only={local_only})")
+            _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(
+                model_path, use_fast=True, trust_remote_code=True, local_files_only=local_only
+            )
+            # Prevent noisy warnings when counting tokens for large documents/pages
+            _CACHED_TOKENIZER.model_max_length = 100000 
         except Exception as e:
             log.error(f"💥 Failed to load tokenizer: {e}")
             return None

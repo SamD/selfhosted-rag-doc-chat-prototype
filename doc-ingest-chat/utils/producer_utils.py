@@ -15,27 +15,15 @@ import torch
 from bs4 import BeautifulSoup
 from charset_normalizer import from_path
 from config.settings import (
-    EMBEDDING_MODEL_PATH,
     REDIS_HOST,
     REDIS_PORT,
     SUPPORTED_MEDIA_EXT,
 )
-from transformers import AutoTokenizer
 
 log = logging.getLogger("ingest.producer_utils")
 
-# Global tokenizer and redis client (Lazy initialized per process)
-_CACHED_TOKENIZER = None
+# Global redis client (Lazy initialized per process)
 _REDIS_CLIENT_CACHE = None
-
-
-def get_tokenizer():
-    """Lazy initializer for the shared tokenizer."""
-    global _CACHED_TOKENIZER
-    if _CACHED_TOKENIZER is None:
-        log.info(f"🚀 Loading tokenizer from {EMBEDDING_MODEL_PATH}")
-        _CACHED_TOKENIZER = AutoTokenizer.from_pretrained(EMBEDDING_MODEL_PATH)
-    return _CACHED_TOKENIZER
 
 
 def get_redis_client():

@@ -12,8 +12,12 @@ from config.settings import (
     LLAMA_USE_GPU,
     USE_QDRANT,
     VECTOR_DB_COLLECTION,
+    VECTOR_DB_GRPC_PORT,
     VECTOR_DB_HOST,
     VECTOR_DB_PORT,
+    VECTOR_DB_TIMEOUT,
+    VECTOR_DB_URL,
+    VECTOR_DB_USE_GRPC,
 )
 from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
@@ -27,7 +31,7 @@ log = logging.getLogger("ingest.database")
 device = "cuda" if LLAMA_USE_GPU else "cpu"
 
 # Per-process singletons
-_EMBEDDINGS_CACHE: Optional[HuggingFaceEmbeddings] = None
+_EMBEDDINGS_CACHE: Optional[Embeddings] = None
 _QDRANT_CLIENT_CACHE: Optional[QdrantClient] = None
 _CHROMA_CLIENT_CACHE: Optional[chromadb.HttpClient] = None
 
@@ -133,33 +137,59 @@ class DatabaseService:
     # --- VECTOR STORE LOGIC (Semantic Search) ---
 
     @staticmethod
-    def get_embeddings() -> HuggingFaceEmbeddings:
+    def get_embeddings() -> Embeddings:
         """Get or initialize the singleton embedding model (per process)."""
         global _EMBEDDINGS_CACHE
         if _EMBEDDINGS_CACHE is None:
             from utils.exceptions import ConfigurationError
 
-            if not os.path.exists(EMBEDDING_MODEL_PATH):
-                raise ConfigurationError(f"EMBEDDING_MODEL_PATH not found at {EMBEDDING_MODEL_PATH}")
+            if EMBEDDING_MODEL_PATH.startswith(("http://", "https://")):
+                from utils.llm_setup import RemoteEmbeddings
 
-            log.info(f"🚀 Loading embedding model into {device}: {EMBEDDING_MODEL_PATH}")
-            _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_PATH, model_kwargs={"device": device, "trust_remote_code": True}, encode_kwargs={"normalize_embeddings": True})
+                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_MODEL_PATH}")
+                _EMBEDDINGS_CACHE = RemoteEmbeddings(base_url=EMBEDDING_MODEL_PATH)
+            else:
+                if not os.path.exists(EMBEDDING_MODEL_PATH):
+                    raise ConfigurationError(f"EMBEDDING_MODEL_PATH not found at {EMBEDDING_MODEL_PATH}")
+
+                log.info(f"🚀 Loading local embedding model into {device}: {EMBEDDING_MODEL_PATH}")
+                _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(
+                    model_name=EMBEDDING_MODEL_PATH,
+                    model_kwargs={"device": device, "trust_remote_code": True},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
         return _EMBEDDINGS_CACHE
 
     @staticmethod
     def get_qdrant_client() -> QdrantClient:
         global _QDRANT_CLIENT_CACHE
         if _QDRANT_CLIENT_CACHE is None:
-            log.info(f"🛰️ Initializing Qdrant client: {VECTOR_DB_HOST}:{VECTOR_DB_PORT}")
-            _QDRANT_CLIENT_CACHE = QdrantClient(host=VECTOR_DB_HOST, port=VECTOR_DB_PORT)
+            if VECTOR_DB_URL:
+                log.info(f"🛰️ Initializing Qdrant client via URL: {VECTOR_DB_URL} (gRPC: {VECTOR_DB_USE_GRPC}, Timeout: {VECTOR_DB_TIMEOUT}s)")
+                _QDRANT_CLIENT_CACHE = QdrantClient(url=VECTOR_DB_URL, prefer_grpc=VECTOR_DB_USE_GRPC, timeout=VECTOR_DB_TIMEOUT)
+            else:
+                port = VECTOR_DB_GRPC_PORT if VECTOR_DB_USE_GRPC else VECTOR_DB_PORT
+                log.info(f"🛰️ Initializing Qdrant client: {VECTOR_DB_HOST}:{port} (gRPC: {VECTOR_DB_USE_GRPC}, Timeout: {VECTOR_DB_TIMEOUT}s)")
+                _QDRANT_CLIENT_CACHE = QdrantClient(host=VECTOR_DB_HOST, port=port, prefer_grpc=VECTOR_DB_USE_GRPC, timeout=VECTOR_DB_TIMEOUT)
         return _QDRANT_CLIENT_CACHE
 
     @staticmethod
     def get_chroma_client() -> chromadb.HttpClient:
         global _CHROMA_CLIENT_CACHE
         if _CHROMA_CLIENT_CACHE is None:
-            log.info(f"📡 Initializing Chroma client: {VECTOR_DB_HOST}:{VECTOR_DB_PORT}")
-            _CHROMA_CLIENT_CACHE = chromadb.HttpClient(host=VECTOR_DB_HOST, port=VECTOR_DB_PORT)
+            if VECTOR_DB_URL:
+                log.info(f"📡 Initializing Chroma client via URL: {VECTOR_DB_URL}")
+                # Parse host and port from URL for Chroma HttpClient
+                from urllib.parse import urlparse
+
+                parsed = urlparse(VECTOR_DB_URL)
+                host = parsed.hostname
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                ssl = parsed.scheme == "https"
+                _CHROMA_CLIENT_CACHE = chromadb.HttpClient(host=host, port=port, ssl=ssl)
+            else:
+                log.info(f"📡 Initializing Chroma client: {VECTOR_DB_HOST}:{VECTOR_DB_PORT}")
+                _CHROMA_CLIENT_CACHE = chromadb.HttpClient(host=VECTOR_DB_HOST, port=VECTOR_DB_PORT)
         return _CHROMA_CLIENT_CACHE
 
     @staticmethod
@@ -174,12 +204,15 @@ class DatabaseService:
         embeddings = DatabaseService.get_embeddings()
         client = DatabaseService.get_qdrant_client()
 
-        from qdrant_client.http.exceptions import UnexpectedResponse
-
+        # Catch both REST and gRPC 'Not Found' errors
         try:
             client.get_collection(VECTOR_DB_COLLECTION)
-        except UnexpectedResponse as e:
-            if "doesn't exist" in str(e) or e.status_code == 404:
+        except Exception as e:
+            err_str = str(e).lower()
+            # 404 is for REST, 'doesn't exist' or 'not found' is common for both/gRPC
+            is_not_found = any(x in err_str for x in ["doesn't exist", "not found", "404"])
+            
+            if is_not_found:
                 from qdrant_client.models import Distance, VectorParams
 
                 log.info(f"Creating collection '{VECTOR_DB_COLLECTION}'")
@@ -190,10 +223,14 @@ class DatabaseService:
                         collection_name=VECTOR_DB_COLLECTION,
                         vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
                     )
-                except UnexpectedResponse as create_error:
-                    if create_error.status_code != 409 and "already exists" not in str(create_error):
+                    log.info(f"✅ Collection '{VECTOR_DB_COLLECTION}' created successfully.")
+                except Exception as create_error:
+                    # Ignore if it was created by another worker in the meantime (409/conflict)
+                    if "already exists" not in str(create_error).lower() and "409" not in str(create_error):
+                        log.error(f"💥 Failed to create collection: {create_error}")
                         raise
             else:
+                log.error(f"💥 Unexpected error checking Qdrant collection: {e}")
                 raise
 
         vectorstore = QdrantVectorStore(client=client, collection_name=VECTOR_DB_COLLECTION, embedding=embeddings)
@@ -230,6 +267,7 @@ class VectorStoreWrapper(VectorStore):
             kwargs["ids"] = [uuid.uuid5(namespace, str(id_)) for id_ in kwargs["ids"]]
 
         return self.vectorstore.add_texts(texts, metadatas=metadatas, **kwargs)
+
 
     def similarity_search(self, query: str, k: int = 4, **kwargs: Any):
         return self.vectorstore.similarity_search(query, k, **kwargs)

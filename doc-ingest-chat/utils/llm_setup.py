@@ -33,6 +33,7 @@ except (ImportError, ModuleNotFoundError):
         # Last resort fallback for some legacy distributions
         from langchain_classic.chains import ConversationalRetrievalChain
 
+from langchain_core.embeddings import Embeddings
 from langchain_ollama import ChatOllama
 from llama_cpp import Llama
 from prompts.chat_prompts import SHARED_CHAT_PROMPT
@@ -55,6 +56,61 @@ def _check_fork():
         _LLAMA_MODEL_CACHE = None
         _SUPERVISOR_LLM_CACHE = None
     _PID_OWNER = current_pid
+
+
+class RemoteEmbeddings(Embeddings):
+    """
+    Wrapper for remote OpenAI-compatible embedding server.
+    Inherits from LangChain Embeddings for compatibility.
+    """
+
+    def __init__(self, base_url: str, model_name: str = "local-model"):
+        # Sanitize URL
+        sanitized_url = base_url.rstrip("/")
+        changed = True
+        while changed:
+            changed = False
+            for suffix in ["/v1", "/embeddings"]:
+                if sanitized_url.endswith(suffix):
+                    sanitized_url = sanitized_url[: -len(suffix)]
+                    changed = True
+                    break
+
+        self.base_url = f"{sanitized_url}/v1"
+        self.model_name = model_name or "local-model"
+
+        self.client = openai.OpenAI(
+            base_url=self.base_url,
+            api_key="sk-no-key-required",
+            timeout=LLAMA_REMOTE_TIMEOUT,
+            max_retries=3,
+        )
+        log.info(f"🌐 Remote Embeddings Client: {self.base_url} (Model: {self.model_name})")
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Embed a list of documents with internal micro-batching for stability."""
+        try:
+            results = []
+            # Use a conservative micro-batch size of 2 for remote servers with small physical batch limits
+            MICRO_BATCH_SIZE = 2
+            
+            from more_itertools import chunked
+            for micro_batch in chunked(texts, MICRO_BATCH_SIZE):
+                response = self.client.embeddings.create(input=micro_batch, model=self.model_name)
+                results.extend([data.embedding for data in response.data])
+            return results
+        except Exception as e:
+            log.error(f"💥 Remote embedding failed: {e}")
+            raise
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a single query."""
+        try:
+            response = self.client.embeddings.create(input=[text], model=self.model_name)
+            return response.data[0].embedding
+        except Exception as e:
+            log.error(f"💥 Remote query embedding failed: {e}")
+            raise
 
 
 class RemoteLlama:
@@ -136,6 +192,10 @@ class RemoteLlama:
                 api_params["max_tokens"] = kwargs["max_tokens"]
             if "temperature" in kwargs:
                 api_params["temperature"] = kwargs["temperature"]
+            
+            # Support for jinja template passing if requested in kwargs
+            if "jinja" in kwargs:
+                api_params["extra_body"] = {"jinja": kwargs["jinja"]}
 
             response = self.client.chat.completions.create(**api_params)
             elapsed = time.perf_counter() - start_request
@@ -144,7 +204,19 @@ class RemoteLlama:
             log.info(f"✅ Received {len(text)} chars in {elapsed:.1f}s. Reason: {finish_reason}.")
 
             # Return in a format compatible with the gatekeeper's dict access
-            return {"choices": [{"text": text}]}
+            # AND conform to standard response structure
+            return {
+                "id": response.id,
+                "choices": [
+                    {
+                        "text": text,
+                        "index": 0,
+                        "finish_reason": finish_reason,
+                        "message": {"role": "assistant", "content": text}
+                    }
+                ],
+                "usage": response.usage.model_dump() if hasattr(response, "usage") and response.usage else {}
+            }
         except Exception as e:
             log.error(f"💥 Remote chat request failed: {e}")
             raise
@@ -152,7 +224,7 @@ class RemoteLlama:
     def create_chat_completion(self, messages: list, **kwargs):
         """
         Chat completion call used in Gatekeeper and ChromaChat.
-        Refactored to trust server settings.
+        Refactored to trust server settings and return full compliant dict.
         """
         log.info(f"🛰️ Sending remote chat request to {self.model_name}...")
         try:
@@ -163,27 +235,44 @@ class RemoteLlama:
             }
 
             # Map standard OpenAI params
-            if "temperature" in kwargs:
-                api_params["temperature"] = kwargs["temperature"]
-            if "max_tokens" in kwargs:
-                api_params["max_tokens"] = kwargs["max_tokens"]
-            if "top_p" in kwargs:
-                api_params["top_p"] = kwargs["top_p"]
-
-            # Extra body for llama.cpp specific params
+            standard_params = ["temperature", "max_tokens", "top_p", "stream", "stop", "presence_penalty", "frequency_penalty", "logit_bias", "user"]
+            
             extra_body = {}
-            if "repeat_penalty" in kwargs:
-                extra_body["repeat_penalty"] = kwargs["repeat_penalty"]
-            if "top_k" in kwargs:
-                extra_body["top_k"] = kwargs["top_k"]
+            for k, v in kwargs.items():
+                if k in standard_params:
+                    api_params[k] = v
+                elif k != "extra_body":
+                    # Put non-standard params (like 'jinja', 'repeat_penalty', 'top_k') in extra_body
+                    extra_body[k] = v
+            
+            # Merge with existing extra_body if provided
+            if "extra_body" in kwargs:
+                extra_body.update(kwargs["extra_body"])
 
             if extra_body:
                 api_params["extra_body"] = extra_body
 
             response = self.client.chat.completions.create(**api_params)
             content = response.choices[0].message.content
+            finish_reason = getattr(response.choices[0], "finish_reason", "unknown")
+            
             log.info(f"✅ Received {len(content)} chars from remote chat.")
-            return {"choices": [{"message": {"content": content}}]}
+            
+            # Return full standard response dict
+            return {
+                "id": response.id,
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": self.model_name,
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": content},
+                        "finish_reason": finish_reason
+                    }
+                ],
+                "usage": response.usage.model_dump() if hasattr(response, "usage") and response.usage else {}
+            }
         except Exception as e:
             log.error(f"💥 Remote chat completion failed: {e}")
             raise

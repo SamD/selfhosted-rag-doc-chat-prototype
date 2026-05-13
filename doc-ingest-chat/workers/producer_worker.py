@@ -30,8 +30,9 @@ def get_next_queue():
     global queue_lock, queue_index
     with queue_lock:
         i = queue_index.value
-        queue_index.value = (i + 1) % len(settings.QUEUE_NAMES)
-        return settings.QUEUE_NAMES[i]
+        queue_names = settings.QUEUE_NAMES
+        queue_index.value = (i + 1) % len(queue_names)
+        return queue_names[i]
 
 
 log = get_logger("ingest_producer")
@@ -76,6 +77,7 @@ def producer_worker_task(dummy_arg):
                 shutil.move(md_path, cons_md_path)
 
             # Update DB with current location
+            log.info(f"📮 STATE TRANSITION: {filename} | PREPROCESSING_COMPLETE → INGESTING | {job_id}")
             JobService.transition_job(job_id, STATUS_INGESTING, new_pdf_path=cons_pdf_path, new_md_path=cons_md_path)
 
             # 3. PERFORM CHUNKING & ENQUEUING (via Graph)
@@ -86,6 +88,7 @@ def producer_worker_task(dummy_arg):
             if success:
                 # 4. TRANSITION TO CONSUMING
                 # Chunks are in Redis, Consumer is picking them up
+                log.info(f"📮 STATE TRANSITION: {filename} | INGESTING → CONSUMING | {job_id}")
                 JobService.transition_job(job_id, STATUS_CONSUMING)
                 log.info(f"✅ Finished Ingesting (Producer phase): {filename}")
             else:
@@ -105,6 +108,7 @@ def producer_worker_task(dummy_arg):
             except Exception:
                 pass
 
+            log.info(f"📮 STATE TRANSITION: {filename} | INGESTING → INGEST_FAILED | {job_id}")
             JobService.transition_job(job_id, STATUS_INGEST_FAILED, new_pdf_path=failed_pdf_path, new_md_path=failed_md_path, error=str(e))
 
 
@@ -136,11 +140,38 @@ def main(scan_interval=30):
         ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
         ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
         ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
+        ("OCR_PATH", settings.OCR_PATH),
+        ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
+        ("VECTOR_DB_USE_GRPC", settings.VECTOR_DB_USE_GRPC),
+        ("VECTOR_DB_TIMEOUT", settings.VECTOR_DB_TIMEOUT),
+        ("VECTOR_DB_BATCH_SIZE", settings.VECTOR_DB_BATCH_SIZE),
     ]
     for name, value in config_manifest:
-        if value and value != "NOT_SET":
-            status = "✅" if os.path.exists(value) or value.startswith("http") else "❌"
-            log.info(f"   {status} {name:25} : {value}")
+        if value is not None and value != "NOT_SET":
+            str_val = str(value).strip()
+            
+            # Determine Mode and Icon
+            mode_label = ""
+            icon = "✅"
+            
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_PATH", "OCR_PATH", "VECTOR_DB_URL"]:
+                if str_val.startswith(("http://", "https://")):
+                    mode_label = " [MODE: REMOTE]"
+                    icon = "📡"
+                elif name == "OCR_PATH" and str_val == "LOCAL":
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                elif os.path.exists(str_val):
+                    mode_label = " [MODE: LOCAL]"
+                    icon = "🏠"
+                else:
+                    icon = "❌"
+            
+            # Special hint for gRPC default
+            if name == "VECTOR_DB_USE_GRPC" and os.getenv("VECTOR_DB_USE_GRPC") is None:
+                mode_label = " (Default: gRPC)"
+
+            log.info(f"   {icon} {name:25} : {str_val}{mode_label}")
         else:
             log.info(f"   ⚠️ {name:25} : NOT CONFIGURED (Optional)")
 
