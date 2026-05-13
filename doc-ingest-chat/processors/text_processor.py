@@ -237,12 +237,23 @@ class TextProcessor:
             return []
 
         tokens = tokenizer.encode(chunk, add_special_tokens=True)
-        if len(tokens) <= MAX_TOKENS:
+        token_count = len(tokens)
+        char_count = len(chunk)
+
+        if token_count <= MAX_TOKENS and char_count <= MAX_TOKENS * 5:
             return [chunk]
 
-        log.warning(f"⚠️ Validator detected oversized chunk ({len(tokens)} tokens). Sub-splitting to prevent loss.")
+        if token_count > MAX_TOKENS:
+            log.warning(f"⚠️ Validator detected oversized chunk ({token_count} tokens). Sub-splitting to prevent loss.")
+        else:
+            log.warning(f"⚠️ Validator detected oversized chunk by character count ({char_count} chars, {token_count} tokens). Tokenizer may under-count; force-splitting.")
+            # Tokenizer appears unreliable — use character-based splitting as fallback
+            budget_chars = MAX_TOKENS * 4
+            sub_chunks = [chunk[i:i+budget_chars] for i in range(0, char_count, budget_chars) if chunk[i:i+budget_chars].strip()]
+            if sub_chunks:
+                return sub_chunks
         
-        # Non-destructive sub-split
+        # Non-destructive sub-split (token-based)
         content_tokens = tokenizer.encode(chunk, add_special_tokens=False)
         # Conservative budget for sub-splitting without knowing prefix here
         budget = MAX_TOKENS - 4 

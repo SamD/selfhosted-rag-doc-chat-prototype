@@ -35,6 +35,20 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
 
         # Extract fields with safe defaults
         all_texts = [entry.get("chunk", "[EMPTY CHUNK]") for entry in chunks_to_store]
+
+        # Safety net: validate each text before embedding (catches tokenizer/remote discrepancy)
+        from config.settings import MAX_TOKENS
+        from utils.text_utils import get_tokenizer as _get_tok
+        _tokenizer = _get_tok()
+        _valid_texts = []
+        for text in all_texts:
+            if _tokenizer and len(text) > MAX_TOKENS * 5:
+                _tokens = len(_tokenizer.encode(text, add_special_tokens=True))
+                if _tokens > MAX_TOKENS:
+                    log.error(f"❌ Chunk passed validation but exceeds token budget at embed time: {_tokens} tokens, {len(text)} chars. Skipping.")
+                    raise RuntimeError(f"Chunk token count ({_tokens}) exceeds MAX_TOKENS ({MAX_TOKENS}) at embed time")
+            _valid_texts.append(text)
+        all_texts = _valid_texts
         all_metadatas = [
             {
                 "source_file": entry.get("source_file", source_file),
