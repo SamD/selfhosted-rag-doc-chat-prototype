@@ -6,7 +6,7 @@ This document covers the complete system architecture, data flow, and component 
 
 ## System Philosophy
 
-The system is built for **air-gapped, high-fidelity document ingestion** on commodity hardware (minipcs, eGPU docks). It prioritizes data integrity and traceability over raw speed, using a **Database-Driven State Machine** to move files through a multi-stage pipeline.
+The system is built for **air-gapped, high-fidelity document ingestion** on commodity hardware (minipcs, eGPU docks). Every compute-heavy service — LLM, embeddings, WhisperX, OCR — runs as a standalone remote API endpoint on a dedicated host over the LAN. The ingestion worker stack connects to these services over HTTP. A **Database-Driven State Machine** tracks files through a multi-stage pipeline, prioritizing data integrity and traceability over raw speed.
 
 ### Core Mandates
 
