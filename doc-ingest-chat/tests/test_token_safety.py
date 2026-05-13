@@ -77,5 +77,109 @@ class TestTokenSafety(unittest.TestCase):
             self.assertTrue(len(sent_msg.split()) < 300)
             self.assertIn("word", sent_msg)
 
+    def test_validate_chunk_char_length_guard(self):
+        """Verify that validate_chunk force-splits when tokenizer under-counts but char length is excessive."""
+        from processors.text_processor import validate_chunk
+        
+        # Tokenizer that under-counts: returns only 10 tokens for a massive string
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.side_effect = lambda x, **kwargs: [1] * min(10, len(x))
+        mock_tokenizer.decode.side_effect = lambda x, **kwargs: "safe chunk"
+        
+        # Create a text well over the character safety limit (MAX_TOKENS * 5)
+        huge_text = "A" * (256 * 5 + 100)  # 1380 chars
+        
+        result = validate_chunk(huge_text, mock_tokenizer)
+        
+        # Should have split into multiple pieces
+        self.assertGreater(len(result), 1, f"Expected split into multiple pieces, got {len(result)}")
+        for piece in result:
+            self.assertLess(len(piece), 256 * 5 + 50, f"Piece too large: {len(piece)} chars")
+
+    def test_validate_chunk_passes_normal_text(self):
+        """Verify that validate_chunk passes normal-sized text unchanged."""
+        from processors.text_processor import validate_chunk
+        
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.return_value = [1] * 100  # 100 tokens
+        
+        normal_text = "This is a perfectly normal chunk of text."
+        result = validate_chunk(normal_text, mock_tokenizer)
+        
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], normal_text)
+
+    def test_validate_chunk_splits_token_overflow(self):
+        """Verify that validate_chunk splits text that exceeds token budget."""
+        from processors.text_processor import validate_chunk
+        
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.encode.side_effect = lambda x, **kwargs: [1] * (300 if kwargs.get('add_special_tokens') else 296)
+        mock_tokenizer.decode.return_value = "split piece"
+        
+        long_text = "word " * 300
+        result = validate_chunk(long_text, mock_tokenizer)
+        
+        self.assertGreater(len(result), 1, f"Expected split, got {len(result)} pieces")
+
+    @patch('utils.text_utils.get_tokenizer')
+    @patch('utils.consumer_utils.get_vectorstore')
+    def test_store_chunks_in_db_rejects_oversized_at_embed_time(self, mock_get_vs, mock_get_tok):
+        """Verify that store_chunks_in_db raises an error if a chunk exceeds token budget at embed time."""
+        from utils.consumer_utils import store_chunks_in_db
+        
+        mock_db = MagicMock()
+        mock_get_vs.return_value = mock_db
+        
+        # Mock tokenizer that reports excessive tokens
+        mock_tok = MagicMock()
+        mock_tok.encode.return_value = [1] * 500  # 500 tokens > MAX_TOKENS (256)
+        mock_get_tok.return_value = mock_tok
+        
+        # Create a chunk with massive character count
+        huge_chunk = {
+            "chunk": "X" * 3000,
+            "source_file": "test.pdf",
+            "type": "pdf",
+            "engine": "llamacpp",
+            "hash": "abc123",
+            "chunk_index": 0,
+            "id": "DOC_TEST_001",
+            "page": 1,
+        }
+        
+        with self.assertRaises(RuntimeError, msg="Should reject chunk exceeding MAX_TOKENS at embed time"):
+            store_chunks_in_db("test.pdf", [huge_chunk])
+
+    @patch('utils.text_utils.get_tokenizer')
+    @patch('utils.consumer_utils.get_vectorstore')
+    def test_store_chunks_in_db_accepts_valid_chunks(self, mock_get_vs, mock_get_tok):
+        """Verify that store_chunks_in_db accepts properly-sized chunks."""
+        from utils.consumer_utils import store_chunks_in_db
+        
+        mock_db = MagicMock()
+        mock_db.get_collection_count.return_value = 10
+        mock_get_vs.return_value = mock_db
+        
+        # Mock tokenizer that reports few tokens
+        mock_tok = MagicMock()
+        mock_tok.encode.return_value = [1] * 10  # 10 tokens
+        mock_get_tok.return_value = mock_tok
+        
+        valid_chunk = {
+            "chunk": "passage: [DOC_TEST_001] A short valid chunk of text for embedding.",
+            "source_file": "test.pdf",
+            "type": "pdf",
+            "engine": "llamacpp",
+            "hash": "abc123",
+            "chunk_index": 0,
+            "id": "DOC_TEST_001",
+            "page": 1,
+        }
+        
+        # Should not raise
+        result = store_chunks_in_db("test.pdf", [valid_chunk])
+        self.assertGreaterEqual(result, 0)
+
 if __name__ == "__main__":
     unittest.main()
