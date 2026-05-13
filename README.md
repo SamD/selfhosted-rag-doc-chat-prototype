@@ -1,6 +1,6 @@
 # Self-Hosted RAG Pipeline
 
-**A transparent, air-gapped document processing system handling mixed-quality PDFs (scanned + digital), HTML, MP3/MP4 audio/video, and large document collections with automatic OCR fallback. Built for commodity hardware — minipcs, eGPU docks, and fully offline environments.**
+**A distributed document processing and RAG chat system built for commodity hardware. Every component — LLMs, embeddings, Whisper transcription, OCR, vector database — runs as a standalone service on a separate minipc or container, communicating over the local network. Fully air-gapped, zero internet dependency.**
 
 ![Self Hosted Rag Doc Pipeline](./docs/selfhosted-rag-doc-ingest.gif)
 
@@ -16,7 +16,7 @@ staging/ → Gatekeeper (extract + normalize to Markdown) → Producer (chunk + 
 
 ![Flow](./docs/arch.png)
 
-Every file is tracked through a DuckDB-backed state machine with atomic per-file handoffs, ensuring zero partial ingestions and crash-safe recovery.
+All heavy models run as remote API endpoints. Workers connect to them over HTTP. Every file is tracked through a DuckDB-backed state machine with atomic per-file handoffs, ensuring zero partial ingestions and crash-safe recovery.
 
 ---
 
@@ -24,86 +24,82 @@ Every file is tracked through a DuckDB-backed state machine with atomic per-file
 
 ### 1. Prerequisites
 
-**System dependencies** (baked into the Docker image, install on host if running workers locally):
+**System dependencies** (baked into the Docker image):
 - `ffmpeg` — audio extraction for WhisperX
 - `poppler-utils` — PDF page rendering
 - `libgl1` / `libglib2.0-0` — OpenCV/vision processing
 
-**Docker** (v2.20+) — for the containerized stack
-**NVIDIA Container Toolkit** — if using GPU acceleration
+**Docker** (v2.20+) — for the containerized worker stack
 **Node.js v22.12.0+** — for frontend development
 
-### 2. Get the Models
+### 2. Model Services (All Remote, Any LAN Host)
 
-Download to a local directory with absolute paths:
+Every AI workload runs as an HTTP(S) service on a dedicated host. The system auto-detects local-vs-remote from the URL scheme.
 
-| Model | Purpose | Source |
-|-------|---------|--------|
-| `e5-large-v2` | Embedding (512-token context) | [HuggingFace](https://huggingface.co/intfloat/e5-large-v2) |
-| `Phi-4-mini-instruct-Q6_K.gguf` | RAG Chat LLM | [HuggingFace](https://huggingface.co/microsoft/Phi-4-mini-instruct-GGUF) |
-| `Phi-4-mini-instruct-Q6_K.gguf` | Supervisor LLM (normalization) | Same GGUF or a smaller variant |
-| `faster-whisper-large-v2` | Audio/video transcription | `faster-whisper` model directory |
-| `docling-serve` (optional) | Remote OCR endpoint | [Docling Serve](https://github.com/DS4SD/docling-serve) |
+| Service | Env Var | Remote Endpoint Format | Example Host |
+|---------|---------|----------------------|-------------|
+| RAG LLM | `LLM_PATH` | `http://<host>:<port>/v1/chat/completions` | lxc-nvidia (GPU) |
+| Supervisor LLM | `SUPERVISOR_LLM_PATH` | `http://<host>:<port>/v1/chat/completions` | lxc-nvidia (GPU) |
+| Embedding | `EMBEDDING_MODEL_PATH` | `http://<host>:<port>/v1/embeddings` | lxc-bee2 |
+| WhisperX | `WHISPER_MODEL_PATH` | `http://<host>:<port>/inference` | lxc-amd |
+| OCR (docling-serve) | `OCR_PATH` | `http://<host>:<port>/v1/convert/file` | lxc-bee3 |
+| Vector DB (Qdrant) | `VECTOR_DB_URL` | `http://<host>:<port>` (gRPC or REST) | lxc-bee1 |
 
-All model paths support **local absolute paths** or **HTTP(S) remote endpoints**. The system auto-detects the mode.
+For local testing, any path can point to a local directory or GGUF file instead — the system detects the format automatically.
 
 ### 3. Configure Environment
 
+Example configuration with all services on separate LAN hosts:
+
 ```bash
-# REQUIRED — root directory for all lifecycle stages
+# REQUIRED — root directory for all lifecycle stages (staging, preprocessing, success, etc.)
 export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
 
-# Vector Database
+# Qdrant — gRPC on port 6334 (REST also available on 6333)
 export VECTOR_DB_PROFILE=qdrant
-export VECTOR_DB_URL=http://192.168.30.68:6333
+export VECTOR_DB_URL=http://192.168.30.68:6334
+export VECTOR_DB_USE_GRPC=true
 
-# Embedding model
-export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
+# LLMs — llama-server or any OpenAI-compatible API on GPU host
+export LLM_PATH=http://192.168.30.60:11434/v1/chat/completions
+export SUPERVISOR_LLM_PATH=http://192.168.30.60:11434/v1/chat/completions
 
-# Dual-LLM (both can be local GGUF or remote API URLs)
-export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
-export SUPERVISOR_LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+# Embedding — remote embeddings API
+export EMBEDDING_MODEL_PATH=http://192.168.30.66:11434/v1/embeddings
 
-# Whisper (local directory or remote URL)
-export WHISPER_MODEL_PATH=/home/user/models/whisper
+# WhisperX — transcription service
+export WHISPER_MODEL_PATH=http://192.168.30.70:1145/inference
 
-# OCR — LOCAL for inline Docling, or remote docling-serve URL
-export OCR_PATH=LOCAL
+# OCR — docling-serve (set to LOCAL for inline Docling)
+export OCR_PATH=http://192.168.30.69:5001/v1/convert/file
 
-# GPU control
-export LLAMA_USE_GPU=true
+# Force OCR on all PDF pages (skip pdfplumber)
+export PDF_FORCE_OCR=true
 ```
 
-**Remote API mode** (point at llama-server, Ollama, or any OpenAI-compatible endpoint):
+Local-only alternatives (GGUF files / local directories):
 ```bash
-export LLM_PATH=http://192.168.1.50:8080/v1
-export SUPERVISOR_LLM_PATH=http://192.168.1.50:8080/v1
-export EMBEDDING_MODEL_PATH=http://192.168.1.50:8080/v1
-export OCR_PATH=http://192.168.1.50:5001/v1/convert/file
+export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
+export WHISPER_MODEL_PATH=/home/user/models/whisper
+export OCR_PATH=LOCAL
 ```
 
 ### 4. Launch
 
 ```bash
-# GPU mode (default)
 ./doc-ingest-chat/run-compose.sh --build
-
-# CPU-only mode
-./doc-ingest-chat/run-compose.sh --build --profile cpu
 ```
 
-The stack starts: Redis → Qdrant → Gatekeeper → Producer → OCR Worker → WhisperX Worker → Consumer → FastAPI backend.
+The stack starts: Redis → Gatekeeper → Producer → OCR Worker → WhisperX Worker → Consumer → FastAPI backend. Workers connect to remote model services over the LAN.
 
 ### 5. Drop Files and Watch
 
 Drop PDFs, MP3s, MP4s, HTML, or Markdown files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. The system auto-detects them.
 
 ```bash
-# Monitor normalization progress
-docker logs -f gatekeeper_worker
-
-# Monitor embedding progress
-docker logs -f consumer_worker
+docker logs -f gatekeeper_worker   # normalization progress
+docker logs -f consumer_worker     # embedding and Qdrant upsert
 ```
 
 ### 6. Chat
@@ -112,14 +108,54 @@ Open [http://localhost:4321](http://localhost:4321). The UI queries the FastAPI 
 
 ---
 
-## Air-Gapped / Offline Deployment
+## Distributed Deployment
 
-This system is designed to run without internet access:
+Every heavy service runs on a dedicated minipc or container:
 
-- `HF_HUB_OFFLINE=1` is baked into the Docker image — HuggingFace libraries never phone home.
-- Docling OCR models are cached during Docker **build-time warmup** — no runtime downloads.
-- All model paths point to local filesystems or LAN endpoints only.
-- Worker images are self-contained; no external API calls are made during ingestion or query.
+```
+┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+│  lxc-nvidia  │   │   lxc-bee2   │   │   lxc-bee1   │
+│  (GPU host)  │   │  (Embedding) │   │   (Qdrant)   │
+│              │   │              │   │              │
+│ LLM + Sup.   │   │  e5-large-v2 │   │  gRPC:6334   │
+│ :11434/v1    │   │  :11434/v1   │   │  REST:6333   │
+└──────────────┘   └──────────────┘   └──────────────┘
+
+┌──────────────┐   ┌──────────────┐
+│   lxc-amd    │   │  lxc-bee3    │
+│  (WhisperX)  │   │   (OCR)      │
+│              │   │              │
+│ :1145/inf.   │   │ docling-serve│
+│              │   │ :5001/v1     │
+└──────────────┘   └──────────────┘
+```
+
+The ingestion worker stack runs on the coordinator host — all heavy compute is offloaded to these services. This allows each minipc to be optimized for its specific workload (GPU for LLM, CPU+RAM for WhisperX, etc.).
+
+### Air-Gapped / Offline by Design
+
+- `HF_HUB_OFFLINE=1` is baked into all Docker images — HuggingFace libraries never phone home
+- Docling OCR models are cached during Docker build-time warmup — no runtime downloads
+- All service URLs are LAN addresses only
+- Worker images are self-contained; no external API calls are made during ingestion or query
+- The entire system operates on a private network with no internet access required
+
+---
+
+## Hardware Profile
+
+Each minipc is specced for its workload:
+
+| Host | Role | Key Hardware |
+|------|------|-------------|
+| lxc-nvidia | LLM inference (Phi-4-mini) | NVIDIA GPU via eGPU OCuLink dock |
+| lxc-bee2 | Embedding (e5-large-v2) | Multi-core CPU, 16GB+ RAM |
+| lxc-amd | WhisperX transcription | Multi-core CPU, 16GB+ RAM |
+| lxc-bee3 | Docling OCR | Multi-core CPU, 8GB+ RAM |
+| lxc-bee1 | Qdrant vector DB | NVMe SSD, 8GB+ RAM |
+| Coordinator | Worker stack (ingestion) | Multi-core CPU, 16GB+ RAM |
+
+All services scale horizontally — add more embedding workers behind a load balancer, or more LLM instances for higher query throughput.
 
 ---
 

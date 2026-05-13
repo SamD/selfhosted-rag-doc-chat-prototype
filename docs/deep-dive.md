@@ -59,14 +59,15 @@ Embedding models like e5-large-v2 look for the essence of a passage. Markdown he
 
 ## Dual-LLM Architecture
 
-The system uses two distinct LLMs, both configurable as local GGUF files or remote API endpoints:
+The system uses two distinct LLMs. Both support local GGUF inference via llama-cpp or remote API endpoints (llama-server, Ollama, or any OpenAI-compatible endpoint). When running remotely, the system auto-detects the HTTP(S) URL and uses an OpenAI-compatible client — no llama-cpp loaded locally.
 
 ### Supervisor LLM (Normalization)
 
 - **Env var**: `SUPERVISOR_LLM_PATH`
 - **When**: During ingestion — the Gatekeeper phase
 - **Role**: Stateless "retyping" of raw extracted text into clean, structured Markdown
-- **Config**: CPU-only (`n_gpu_layers=0`), 4K context window, flash attention enabled
+- **Local config**: CPU-only (`n_gpu_layers=0`), 4K context window, flash attention enabled — keeps VRAM free for the RAG LLM
+- **Remote config**: Any OpenAI-compatible endpoint — the server handles its own context and GPU settings
 - **Why separate**: Normalization requires clean structural output, not conversational reasoning. A smaller, focused model suffices and avoids VRAM contention with the RAG LLM.
 
 ### RAG LLM (Chat)
@@ -74,13 +75,16 @@ The system uses two distinct LLMs, both configurable as local GGUF files or remo
 - **Env var**: `LLM_PATH`
 - **When**: During query — the generation phase
 - **Role**: Conversational reasoning and grounded retrieval with strict citation enforcement
-- **Config**: Configurable GPU layers, 8K context window
+- **Local config**: Configurable GPU layers, 8K context window
+- **Remote config**: Any OpenAI-compatible endpoint
 - **Constraints**: Must include exact citation tags from context (`[doc5]`, `[ref12]`, `[source:7]`). Must not fabricate, infer, or editorialize. Each factual sentence must be followed immediately by its source tag inline.
 
 ### Embedding Model (e5-large-v2)
 
 - **Env var**: `EMBEDDING_MODEL_PATH`
 - **When**: Both ingestion (chunk embedding) and query (query embedding)
+- **Local**: HuggingFace sentence-transformer loaded from a local directory
+- **Remote**: OpenAI-compatible embeddings API (e.g., `http://host:11434/v1/embeddings`)
 - **Behavior**: Deterministic — no stochasticity, no generation bias. Maps text to fixed-size vectors (512-token context window).
 - **Prefix convention**: Chunks are prefixed with `passage: [DOC_XXXX]`, queries with `query:`, enabling asymmetric search in Qdrant.
 - **Bias source**: Any retrieval "bias" comes from the embedding model's training data representation, not from generation behavior.
