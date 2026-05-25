@@ -213,7 +213,7 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
 | `doc-ingest-chat/models/` | Pydantic/dataclass data structures |
 | `doc-ingest-chat/utils/` | LLM setup, OCR, Whisper, tracing, logging |
 | `doc-ingest-chat/sql/` | DuckDB schema definitions |
-| `astro-frontend/` | Astro + Tailwind chat UI |
+| `astro-frontend/` | Astro + Tailwind v4 + daisyUI chat UI (dark theme default, 11-theme picker) |
 
 ---
 

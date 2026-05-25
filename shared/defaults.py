@@ -1,0 +1,106 @@
+# MQTT Agent Hub defaults
+DEFAULT_MQTT_BROKER_HOST = "localhost"
+DEFAULT_MQTT_BROKER_PORT = 1883
+DEFAULT_MQTT_WS_PORT = 9001
+DEFAULT_HUB_PORT = 8100
+DEFAULT_MQTT_HUB_TOKEN = "changeme"
+DEFAULT_AGENT_VERSION = "NOT_SET"
+
+AGENT_HEARTBEAT_TIMEOUT = 60
+TELEMETRY_BUFFER_SIZE = 100
+DEFAULT_SRE_INTERVAL = 300
+
+# ---------------------------------------------------------------------------
+# Doc Ingest / RAG pipeline defaults
+# ---------------------------------------------------------------------------
+
+# LLM / llama-cpp
+DEFAULT_LLAMA_USE_GPU = "true"
+DEFAULT_LLAMA_N_CTX = 8192
+DEFAULT_LLAMA_N_BATCH = 512
+DEFAULT_LLAMA_N_GPU_LAYERS = -1
+DEFAULT_LLAMA_N_THREADS = 0
+DEFAULT_LLAMA_SEED = 42
+DEFAULT_LLAMA_VERBOSE = "false"
+DEFAULT_LLAMA_TEMPERATURE = 0.1
+DEFAULT_LLAMA_TOP_K = 40
+DEFAULT_LLAMA_TOP_P = 0.95
+DEFAULT_LLAMA_REPEAT_PENALTY = 1.1
+DEFAULT_LLAMA_MAX_TOKENS = 8192
+DEFAULT_LLAMA_REMOTE_TIMEOUT = 300.0
+DEFAULT_LLAMA_CHAT_FORMAT = "chatml"
+DEFAULT_LLAMA_F16_KV = "true"
+
+# Supervisor LLM
+DEFAULT_SUPERVISOR_REMOTE_MODEL_NAME = "local-model"
+DEFAULT_SUPERVISOR_TEMPERATURE = 0.1
+DEFAULT_SUPERVISOR_TOP_K = 40
+
+# Ollama
+DEFAULT_USE_OLLAMA = "false"
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
+
+# Redis
+DEFAULT_REDIS_HOST = "localhost"
+DEFAULT_REDIS_PORT = 6379
+DEFAULT_REDIS_OCR_JOB_QUEUE = "ocr_processing_job"
+DEFAULT_REDIS_WHISPER_JOB_QUEUE = "whisper_processing_job"
+DEFAULT_REDIS_INGEST_QUEUE = "chunk_ingest_queue"
+DEFAULT_REDIS_STAGING_QUEUE = "chunk_staging_queue"
+DEFAULT_QUEUE_NAMES = "chunk_ingest_queue:0,chunk_ingest_queue:1"
+
+# Vector DB
+DEFAULT_VECTOR_DB_PROFILE = "qdrant"
+DEFAULT_VECTOR_DB_HOST = "vector-db"
+DEFAULT_VECTOR_DB_GRPC_PORT = 6334
+DEFAULT_VECTOR_DB_USE_GRPC = "true"
+DEFAULT_VECTOR_DB_COLLECTION = "vector_base_collection"
+DEFAULT_VECTOR_DB_BATCH_SIZE = 20
+DEFAULT_VECTOR_DB_TIMEOUT = 60.0
+
+# Chunking / ingestion
+DEFAULT_CHUNK_TIMEOUT = 300
+DEFAULT_MAX_CHUNKS = 5000
+DEFAULT_MAX_TOKENS = 256
+DEFAULT_CHUNK_SIZE = 512
+DEFAULT_CHUNK_OVERLAP = 50
+
+# Text / encoding
+DEFAULT_ALLOW_LATIN_EXTENDED = "true"
+DEFAULT_LATIN_SCRIPT_MIN_RATIO = 0.7
+
+# OCR
+DEFAULT_OCR_PATH = "LOCAL"
+DEFAULT_MAX_OCR_DIM = 3000
+
+# File extensions
+DEFAULT_SUPPORTED_MEDIA_EXT = ".mp3,.wav,.m4a,.aac,.flac,.mp4,.mov,.mkv"
+
+# Hardware / compute
+DEFAULT_DEVICE = "cuda"
+DEFAULT_COMPUTE_TYPE = "float16"
+
+# Batch sizes
+DEFAULT_MEDIA_BATCH_SIZE = 8
+
+# Retrieval
+DEFAULT_RETRIEVER_TOP_K = 4
+
+# Gatekeeper
+DEFAULT_GATEKEEPER_BATCH_SIZE = 5
+
+# PDF processing
+DEFAULT_PDF_FORCE_OCR = "false"
+
+# Metrics
+DEFAULT_METRICS_ENABLED = "false"
+DEFAULT_METRICS_LOG_TO_STDOUT = "false"
+
+# Misc
+DEFAULT_HF_HUB_OFFLINE = "0"
+DEFAULT_API_BASE_URL = "http://localhost:8000"
+
+# Hard-coded lists (not from env)
+SUPPORTED_DOC_EXT = (".pdf", ".html", ".htm", ".txt", ".md")
+WHISPER_REQUIRED_FILES_LIST = ["model.bin", "config.json", "vocabulary.txt"]
