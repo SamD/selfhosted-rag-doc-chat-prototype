@@ -31,6 +31,7 @@ ENV HF_HOME=/usr/local/model_cache
 ENV TORCH_HOME=/usr/local/model_cache
 
 # Bake models
+COPY shared/ /app/shared/
 COPY doc-ingest-chat/ /app/doc-ingest-chat/
 RUN --mount=type=cache,target=/root/.cache/pip \
     PYTHONPATH=/app/doc-ingest-chat \

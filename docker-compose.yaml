@@ -1,0 +1,9 @@
+# Monorepo root — includes all subproject services.
+# Individual subprojects can also be deployed standalone:
+#   docker compose -f doc-ingest-chat/docker-compose.yaml up     # RAG only
+#   docker compose -f mqtt_agent_hub/docker-compose.yaml up      # Agent hub only
+#   docker compose up                                             # Everything
+
+include:
+  - doc-ingest-chat/docker-compose.yaml
+  - mqtt_agent_hub/docker-compose.yaml

@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir \
+    fastapi>=0.116.0 \
+    uvicorn>=0.35.0 \
+    paho-mqtt>=2.0.0 \
+    pydantic>=2.11.0 \
+    python-dotenv>=1.1.1
+
+WORKDIR /app
+
+COPY shared ./shared
+COPY mqtt_agent_hub ./mqtt_agent_hub
+
+ENV PYTHONPATH=/app
+
+EXPOSE 8100
+
+CMD ["python", "-m", "mqtt_agent_hub.hub_server"]

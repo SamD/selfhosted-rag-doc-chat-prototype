@@ -1,0 +1,13 @@
+FROM node:22 AS builder
+WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm install --legacy-peer-deps
+COPY . .
+
+FROM node:22 AS dev
+WORKDIR /app
+ENV ASTRO_TELEMETRY_DISABLED=1
+COPY --from=builder /app/node_modules ./node_modules
+COPY . .
+EXPOSE 4322
+CMD ["npm", "run", "dev"]

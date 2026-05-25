@@ -7,6 +7,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Shared Configuration Package (`shared/`)**
+  - **Canonical env var names**: Moved all 85+ environment variable name constants into `shared/env_names.py` — single source of truth for `MQTT_BROKER_HOST`, `LLM_PATH`, `VECTOR_DB_PROFILE`, etc.
+  - **Canonical defaults**: Moved all 65+ default values into `shared/defaults.py` — ensures `doc-ingest-chat`, `mqtt_agent_hub`, and future components use identical fallback values.
+  - **Shared settings module**: `shared/config.py` contains the full `_SETTINGS` lazy-loading dictionary with `get_setting()` API, usable by any component without duplicating config logic.
+- **daisyUI Theme System (both frontends)**
+  - **Astro v6 + Tailwind CSS v4 + daisyUI 5.5**: Both `astro-frontend/` and `mqtt_agent_hub/astro-dashboard/` now share the same theming stack.
+  - **11-theme picker**: Dark (default), light, corporate, synthwave, cyberpunk, forest, dracula, night, nord, dim, sunset — selectable via dropdown, persisted in localStorage.
+  - **`theme-change` integration**: FART-proof (Flash of inaccurate Theme) with `is:inline` script — theme applied before first paint.
+  - **Semantic class migration**: Replaced hardcoded Tailwind color classes (`text-gray-900`, `bg-white`, `bg-blue-600`) with daisyUI semantic classes (`text-base-content`, `card bg-base-100`, `btn-primary`) so all components respond to theme changes.
+- **Frontend Smoke Tests**
+  - `npm test` in both frontends runs `astro check && astro build`.
+  - `test.sh` shell scripts verify daisyUI CSS, theme-change JS, dark default, theme picker, and app-specific components appear in built output.
+- **Dashboard Remote Broker Support**
+  - `PUBLIC_MQTT_BROKER_HOST` env var overrides `window.location.hostname` when Mosquitto is on a separate host.
+  - `PUBLIC_HUB_PORT`, `PUBLIC_MQTT_WS_PORT`, `PUBLIC_MQTT_USERNAME`, `PUBLIC_MQTT_PASSWORD` env vars for dashboard configuration.
+  - **Remote Broker Deployment** section in README with docker-compose and standalone examples.
+
+### Changed
+- **`doc-ingest-chat/config/settings.py` refactored to thin wrapper**: All 83 settings, helper functions, and lazy-loading logic moved to `shared/config.py`. `config/settings.py` now imports `_SETTINGS` from shared and re-exports via `__getattr__` — all existing `from config.settings import X` imports continue working unchanged.
+- **`config/llama_strategy.py` and `config/env_strategy.py`**: Updated to import env names and defaults from `shared/` instead of hardcoded strings. Added sys.path fix for Docker containers where `shared/` is at `/app/shared/`.
+- **Dockerfile updates**: `Dockerfile.worker` and `Dockerfile.worker.inprogress` now copy `shared/` into `/app/shared/`.
+- **`ingest-dockercompose.yaml`**: Added `../shared:/app/shared` volume mount to base service anchor so shared package is available in all worker containers.
+- **`docker-compose.frontend.yaml`**: Added `--legacy-peer-deps` to npm install command for daisyUI compatibility.
+- **MQTT dashboard docker-compose**: Passes `PUBLIC_*` env vars to `hub_dashboard` service.
+
+### Fixed
+- **Missing settings in `config/settings.py`**: Added `METRICS_ENABLED`, `METRICS_LOG_FILE`, `METRICS_LOG_TO_STDOUT`, `FAILED_FILES`, and `INGESTED_FILE` — previously imported at runtime but undefined.
+- **Dashboard CSS not loaded at build time**: Added `<style is:global>` block importing `global.css` to dashboard `Layout.astro`.
+- **Docker container `ModuleNotFoundError: No module named 'shared'`**: Fixed by copying `shared/` into Docker images and mounting it in docker-compose volumes.
+
+### Added
 - **Database-Driven Lifecycle State Machine**
   - **Atomic State Transitions**: Replaced filesystem-only monitoring with a DuckDB-backed `ingestion_lifecycle` registry. Files now move physically between stage directories (`staging/`, `preprocessing/`, `ingestion/`, `consuming/`, `success/`) only after successful atomic "Claim" and "Transition" database updates.
   - **Relational Resilience**: Implemented millisecond-precision tracking for every phase of a document's journey, including automatic error logging and worker identification.

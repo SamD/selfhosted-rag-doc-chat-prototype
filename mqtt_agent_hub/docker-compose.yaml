@@ -1,0 +1,58 @@
+# MQTT Agent Hub — Docker Compose
+# Standalone deployment: docker compose up
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+      - "${MQTT_WS_PORT:-9001}:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./passwd:/mosquitto/config/passwd:ro
+      - ./acl:/mosquitto/config/acl:ro
+    restart: unless-stopped
+
+  mqtt_hub:
+    build:
+      context: ..
+      dockerfile: mqtt_agent_hub/Dockerfile.hub
+    container_name: mqtt_hub
+    command: ["python", "-m", "mqtt_agent_hub.hub_server"]
+    ports:
+      - "${HUB_PORT:-8100}:8100"
+    env_file:
+      - .env
+    environment:
+      - MQTT_BROKER_HOST=mosquitto
+      - MQTT_BROKER_PORT=${MQTT_PORT:-1883}
+      - MQTT_HUB_TOKEN=${MQTT_HUB_TOKEN:-changeme}
+      - HUB_PORT=${HUB_PORT:-8100}
+    depends_on:
+      - mosquitto
+    restart: unless-stopped
+
+  hub_dashboard:
+    build:
+      context: ./astro-dashboard
+      dockerfile: Dockerfile.dashboard
+      target: dev
+    container_name: hub_dashboard
+    ports:
+      - "4322:4322"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - PUBLIC_MQTT_BROKER_HOST=${PUBLIC_MQTT_BROKER_HOST:-mosquitto}
+      - PUBLIC_HUB_PORT=${PUBLIC_HUB_PORT:-8100}
+      - PUBLIC_MQTT_WS_PORT=${PUBLIC_MQTT_WS_PORT:-9001}
+      - PUBLIC_MQTT_USERNAME=${PUBLIC_MQTT_USERNAME:-hub}
+      - PUBLIC_MQTT_PASSWORD=${PUBLIC_MQTT_PASSWORD:-changeme}
+    command: ["./node_modules/.bin/astro", "dev", "--host", "0.0.0.0", "--port", "4322"]
+    volumes:
+      - ./astro-dashboard:/app
+      - /app/node_modules
+      - /app/.astro
+    depends_on:
+      - mqtt_hub

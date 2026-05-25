@@ -5,32 +5,30 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="AI Chat Interface">
 	<div class="container mx-auto px-4 py-8 max-w-4xl">
 		<header class="text-center mb-8">
-			<h1 class="text-4xl font-bold text-gray-900 mb-2">AI Chat Interface</h1>
-			<p class="text-gray-600">Ask questions and get intelligent responses with citations</p>
+			<h1 class="text-4xl font-bold text-base-content mb-2">AI Chat Interface</h1>
+			<p class="text-base-content/60">Ask questions and get intelligent responses with citations</p>
 		</header>
 
-		<div class="bg-white rounded-lg shadow-lg overflow-hidden">
-			<!-- Chat Messages Area -->
+		<div class="card bg-base-100 shadow-lg overflow-hidden">
 			<div id="chat-messages" class="h-96 overflow-y-auto p-6 space-y-4">
-				<div class="text-center text-gray-500">
+				<div class="text-center text-base-content/50">
 					<p>Start a conversation by typing your question below</p>
 				</div>
 			</div>
 
-			<!-- Input Area -->
-			<div class="border-t border-gray-200 p-4">
+			<div class="border-t border-base-300 p-4">
 				<form id="chat-form" class="flex gap-3">
 					<input
 						type="text"
 						id="message-input"
 						placeholder="Type your question here..."
-						class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+						class="input input-bordered flex-1"
 						required
 					/>
 					<button
 						type="submit"
 						id="send-button"
-						class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+						class="btn btn-primary"
 					>
 						Send
 					</button>
@@ -38,8 +36,7 @@ import Layout from '../layouts/Layout.astro';
 			</div>
 		</div>
 
-		<!-- Status Indicator -->
-		<div id="status" class="mt-4 text-center text-sm text-gray-600">
+		<div id="status" class="mt-4 text-center text-sm text-base-content/60">
 			<span id="status-text">Ready</span>
 		</div>
 	</div>
@@ -63,7 +60,7 @@ import Layout from '../layouts/Layout.astro';
 	// Utility functions
 	function updateStatus(message: string, isError = false) {
 		statusText.textContent = message;
-		statusText.className = `text-sm ${isError ? 'text-red-600' : 'text-gray-600'}`;
+		statusText.className = `text-sm ${isError ? 'text-error' : 'text-base-content/60'}`;
 	}
 
 	function setLoading(loading: boolean) {
@@ -83,23 +80,22 @@ import Layout from '../layouts/Layout.astro';
 		// Basic Markdown link parser: [text](url) -> <a href="url">text</a>
 		// Also handles the double bracketed format from our backend: [[text](url)]
 		let html = text
-			.replace(/\[\[([^\]]+)\]\(([^)]+)\)\]/g, '<a href="$2" target="_blank" class="text-blue-500 hover:text-blue-700 underline font-medium">$1</a>')
-			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="text-blue-500 hover:text-blue-700 underline">$1</a>');
+			.replace(/\[\[([^\]]+)\]\(([^)]+)\)\]/g, '<a href="$2" target="_blank" class="link link-primary font-medium">$1</a>')
+			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="link link-primary">$1</a>');
 		return html;
 	}
 
 	function addMessage(content: string, isUser: boolean, citations?: string) {
 		const messageDiv = document.createElement('div');
-		messageDiv.className = `flex ${isUser ? 'justify-end' : 'justify-start'}`;
-		
+		messageDiv.className = `chat ${isUser ? 'chat-end' : 'chat-start'}`;
+
 		const messageBubble = document.createElement('div');
-		messageBubble.className = `max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-			isUser 
-				? 'bg-blue-600 text-white' 
-				: 'bg-gray-100 text-gray-900'
+		messageBubble.className = `chat-bubble max-w-xs lg:max-w-md ${
+			isUser
+				? 'chat-bubble-primary'
+				: ''
 		}`;
-		
-		// Use parseMarkdown to handle links in content and citations
+
 		const parsedContent = isUser ? content : parseMarkdown(content);
 		const parsedCitations = citations ? parseMarkdown(citations) : '';
 
@@ -107,7 +103,7 @@ import Layout from '../layouts/Layout.astro';
 			<div class="whitespace-pre-wrap">${parsedContent}</div>
 			${citations ? `<div class="mt-2 text-xs opacity-75">${parsedCitations}</div>` : ''}
 		`;
-		
+
 		messageDiv.appendChild(messageBubble);
 		chatMessages.appendChild(messageDiv);
 		chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -115,7 +111,7 @@ import Layout from '../layouts/Layout.astro';
 
 	function clearChat() {
 		chatMessages.innerHTML = `
-			<div class="text-center text-gray-500">
+			<div class="text-center text-base-content/50">
 				<p>Start a conversation by typing your question below</p>
 			</div>
 		`;

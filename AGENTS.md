@@ -4,6 +4,7 @@
 
 - **Backend API**: `uvicorn apimain:app --reload` (FastAPI backend)
 - **Frontend**: `npm run dev` (Astro frontend, Node.js v22.12.0+)
+- **Frontend Tests**: `npm test` + `bash test.sh` (both in `astro-frontend/` and `mqtt_agent_hub/astro-dashboard/`)
 - **Docker Compose**: `./run-compose.sh` (GPU/CPU profile, vector DB profile)
 - **Chat System**: `./run-chat-system.sh` (backend/frontend startup)
 - **Testing**: `pytest` (async support, conftest.py sets temp env vars)

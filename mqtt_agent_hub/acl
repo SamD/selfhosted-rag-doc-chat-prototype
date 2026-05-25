@@ -1,0 +1,5 @@
+# Mosquitto ACL - Private Network Agent Hub
+# All authenticated users can read/write the agent/* topic space
+
+user hub
+topic readwrite agent/#

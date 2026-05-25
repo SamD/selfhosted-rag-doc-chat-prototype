@@ -6,6 +6,7 @@ x-base-service: &base-service
     - .env
   volumes:
     - .:/app
+    - ../shared:/app/shared
     - ./.env:/app/.env
     - ${DEFAULT_DOC_INGEST_ROOT}:${DEFAULT_DOC_INGEST_ROOT}
     - ${STAGING_DIR}:${STAGING_DIR}

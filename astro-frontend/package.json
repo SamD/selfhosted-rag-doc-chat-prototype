@@ -7,16 +7,19 @@
 		"start": "astro dev --host",
 		"build": "astro check && astro build",
 		"preview": "astro preview",
+		"test": "astro check && astro build",
 		"astro": "astro"
 	},
 	"dependencies": {
 		"@astrojs/tailwind": "^6.0.2",
-		"@tailwindcss/vite": "^4.2.4",
-		"astro": "^6.1.9",
-		"tailwindcss": "^4.2.4"
+		"@tailwindcss/vite": "^4.3.0",
+		"astro": "^6.3.7",
+		"daisyui": "^5.5.20",
+		"tailwindcss": "^4.3.0",
+		"theme-change": "^2.5.0"
 	},
 	"devDependencies": {
-		"@astrojs/check": "^0.9.8",
+		"@astrojs/check": "^0.9.9",
 		"typescript": "^6.0.3"
 	}
 }

@@ -1,0 +1,360 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const mqttHost = import.meta.env.PUBLIC_MQTT_BROKER_HOST || '';
+const hubPort = import.meta.env.PUBLIC_HUB_PORT || '8100';
+const wsPort = import.meta.env.PUBLIC_MQTT_WS_PORT || '9001';
+const mqttUsername = import.meta.env.PUBLIC_MQTT_USERNAME || 'hub';
+const mqttPassword = import.meta.env.PUBLIC_MQTT_PASSWORD || 'changeme';
+---
+<Layout title="MQTT Agent Hub">
+  <div class="max-w-7xl mx-auto">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2 space-y-4">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="card-title text-base">Agents</h2>
+              <span id="status-dot" class="badge badge-error badge-xs" title="MQTT connection"></span>
+            </div>
+            <div id="agent-list" class="space-y-2 max-h-64 overflow-y-auto">
+              <p class="text-base-content/40 text-xs">Waiting for agent announcements...</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="agent-detail" class="card bg-base-100 shadow hidden">
+          <div class="card-body p-4">
+            <h2 id="detail-name" class="card-title text-base mb-3">Agent Detail</h2>
+            <div class="grid grid-cols-2 gap-3 text-xs">
+              <div><span class="text-base-content/50">Status:</span> <span id="detail-status">-</span></div>
+              <div><span class="text-base-content/50">Uptime:</span> <span id="detail-uptime">-</span></div>
+              <div><span class="text-base-content/50">CPU:</span> <span id="detail-cpu">-</span></div>
+              <div><span class="text-base-content/50">Memory:</span> <span id="detail-mem">-</span></div>
+              <div class="col-span-2"><span class="text-base-content/50">Capabilities:</span> <span id="detail-caps">-</span></div>
+            </div>
+            <div class="mt-3">
+              <h3 class="text-xs font-semibold text-base-content/70 mb-1">Recent Tasks</h3>
+              <div id="detail-tasks" class="text-xs text-base-content/50 max-h-32 overflow-y-auto">No tasks yet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4">
+            <h2 class="card-title text-base mb-3">Send Task</h2>
+            <select id="task-agent" class="select select-bordered select-sm w-full text-xs mb-2">
+              <option value="">Select agent...</option>
+            </select>
+            <input id="task-command" type="text" placeholder="command" class="input input-bordered input-sm w-full text-xs mb-2" />
+            <button id="task-send" class="btn btn-primary btn-sm w-full">Dispatch Task</button>
+          </div>
+        </div>
+
+        <div class="card bg-base-100 shadow">
+          <div class="card-body p-4">
+            <h2 class="card-title text-base mb-3">Global Broadcast</h2>
+            <textarea id="global-msg" rows="3" placeholder="Message to all agents..." class="textarea textarea-bordered w-full text-xs mb-2 resize-none"></textarea>
+            <button id="global-send" class="btn btn-success btn-sm w-full">Broadcast</button>
+          </div>
+        </div>
+
+        <div class="mockup-code text-xs">
+          <pre id="log-output" class="max-h-32 overflow-y-auto px-4 py-3">Connecting to MQTT...</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+
+<script define:vars={{ mqttHost, hubPort, wsPort, mqttUsername, mqttPassword }}>
+  import mqtt from 'mqtt';
+
+  interface AgentInfo {
+    agent_id: string;
+    name: string;
+    capabilities: string[];
+    status: string;
+    uptime: number;
+    last_seen: number;
+    latest_telemetry: Telemetry | null;
+    recent_tasks: Task[];
+    is_stale: boolean;
+  }
+
+  interface Telemetry {
+    agent_id: string;
+    cpu: number;
+    memory: number;
+    disk: number;
+    uptime: number;
+    timestamp: number;
+  }
+
+  interface Task {
+    task_id: string;
+    agent_id: string;
+    status: string;
+    output: string;
+    error: string;
+  }
+
+  const HUB_HOST = mqttHost || window.location.hostname;
+  const HUB_PORT = parseInt(hubPort) || 8100;
+  const WS_PORT = parseInt(wsPort) || 9001;
+
+  const statusDot = document.getElementById('status-dot') as HTMLSpanElement;
+  const agentList = document.getElementById('agent-list') as HTMLDivElement;
+  const agentDetail = document.getElementById('agent-detail') as HTMLDivElement;
+  const taskAgent = document.getElementById('task-agent') as HTMLSelectElement;
+  const taskCommand = document.getElementById('task-command') as HTMLInputElement;
+  const taskSend = document.getElementById('task-send') as HTMLButtonElement;
+  const globalMsg = document.getElementById('global-msg') as HTMLTextAreaElement;
+  const globalSend = document.getElementById('global-send') as HTMLButtonElement;
+  const logOutput = document.getElementById('log-output') as HTMLPreElement;
+
+  let selectedAgentId: string | null = null;
+  const agents: Record<string, AgentInfo> = {};
+
+  function log(msg: string) {
+    const time = new Date().toLocaleTimeString();
+    logOutput.textContent = `[${time}] ${msg}\n` + logOutput.textContent;
+  }
+
+  function statusColor(status: string): string {
+    if (status === 'online') return 'text-success';
+    if (status === 'offline') return 'text-error';
+    return 'text-warning';
+  }
+
+  function formatUptime(seconds: number): string {
+    if (!seconds) return '-';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    return `${h}h ${m}m ${s}s`;
+  }
+
+  function renderAgentList() {
+    const entries = Object.values(agents).sort((a, b) => {
+      if (a.status === 'online' && b.status !== 'online') return -1;
+      if (a.status !== 'online' && b.status === 'online') return 1;
+      return b.last_seen - a.last_seen;
+    });
+
+    taskAgent.innerHTML = '<option value="">Select agent...</option>';
+    if (entries.length === 0) {
+      agentList.innerHTML = '<p class="text-base-content/40 text-xs">Waiting for agent announcements...</p>';
+      return;
+    }
+
+    agentList.innerHTML = entries.map(a => {
+      const stale = a.status === 'offline' || a.is_stale ? 'opacity-50' : '';
+      const color = statusColor(a.status);
+      return `
+        <div class="agent-row ${stale} flex items-center justify-between p-2 rounded-lg cursor-pointer hover:bg-base-200 border border-base-300"
+             data-agent-id="${a.agent_id}">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full ${color} inline-block"></span>
+            <span class="font-medium text-base-content">${a.name}</span>
+            <span class="text-base-content/40 text-xs">${a.agent_id}</span>
+          </div>
+          <span class="text-base-content/40 text-xs">${a.status} · ${formatUptime(a.uptime)}</span>
+        </div>
+      `}).join('');
+
+    entries.forEach(a => {
+      taskAgent.innerHTML += `<option value="${a.agent_id}">${a.name} (${a.agent_id})</option>`;
+    });
+
+    document.querySelectorAll('.agent-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = (row as HTMLElement).dataset.agentId!;
+        selectAgent(id);
+      });
+    });
+  }
+
+  function selectAgent(agentId: string) {
+    selectedAgentId = agentId;
+    const a = agents[agentId];
+    if (!a) return;
+
+    agentDetail.classList.remove('hidden');
+    (document.getElementById('detail-name')!).textContent = `${a.name} (${a.agent_id})`;
+    (document.getElementById('detail-status')!).innerHTML = `<span class="${statusColor(a.status)} font-semibold">${a.status}</span>`;
+    (document.getElementById('detail-uptime')!).textContent = formatUptime(a.uptime);
+    (document.getElementById('detail-caps')!).textContent = a.capabilities.join(', ') || '-';
+
+    const t = a.latest_telemetry;
+    (document.getElementById('detail-cpu')!).textContent = t ? `${t.cpu.toFixed(1)}%` : '-';
+    (document.getElementById('detail-mem')!).textContent = t ? `${t.memory.toFixed(1)}%` : '-';
+
+    const tasksDiv = document.getElementById('detail-tasks')!;
+    if (a.recent_tasks.length === 0) {
+      tasksDiv.textContent = 'No tasks yet';
+    } else {
+      tasksDiv.innerHTML = a.recent_tasks.map(t =>
+        `<div class="border-b border-base-300 py-1">
+          <span class="font-medium">${t.task_id}</span>:
+          <span class="${t.status === 'success' ? 'text-success' : 'text-error'}">${t.status}</span>
+          ${t.output ? ` — ${t.output}` : ''}
+        </div>`
+      ).join('');
+    }
+  }
+
+  async function refreshFromRest() {
+    try {
+      const res = await fetch(`http://${HUB_HOST}:${HUB_PORT}/api/v1/agents`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: AgentInfo[] = await res.json();
+      for (const a of data) {
+        agents[a.agent_id] = a;
+      }
+      renderAgentList();
+      if (selectedAgentId && agents[selectedAgentId]) {
+        selectAgent(selectedAgentId);
+      }
+    } catch (e) {
+      log(`REST error: ${e}`);
+    }
+  }
+
+  // MQTT WebSocket connection
+  const wsUrl = `ws://${HUB_HOST}:${WS_PORT}`;
+  const mqttClient = mqtt.connect(wsUrl, {
+    username: mqttUsername,
+    password: mqttPassword,
+    clientId: `dashboard-${Math.random().toString(36).slice(2, 8)}`,
+    clean: true,
+    reconnectPeriod: 5000,
+    connectTimeout: 10000,
+  });
+
+  mqttClient.on('connect', () => {
+    log('MQTT connected');
+    statusDot.classList.remove('badge-error');
+    statusDot.classList.add('badge-success');
+
+    mqttClient.subscribe('agent/discovery', { qos: 1 });
+    mqttClient.subscribe('agent/telemetry', { qos: 0 });
+    mqttClient.subscribe('agent/task/+/result', { qos: 1 });
+  });
+
+  mqttClient.on('message', (topic: string, message: Buffer) => {
+    try {
+      const payload = JSON.parse(message.toString());
+
+      if (topic === 'agent/discovery') {
+        const discovery = payload as any;
+        const agentId = discovery.agent_id;
+        if (discovery.status === 'offline') {
+          if (agents[agentId]) {
+            agents[agentId].status = 'offline';
+            agents[agentId].is_stale = true;
+            renderAgentList();
+            log(`Agent offline: ${agentId}`);
+          }
+        } else {
+          agents[agentId] = {
+            agent_id: agentId,
+            name: discovery.name || agentId,
+            capabilities: discovery.capabilities || [],
+            status: discovery.status || 'online',
+            uptime: discovery.uptime || 0,
+            last_seen: Date.now() / 1000,
+            latest_telemetry: agents[agentId]?.latest_telemetry || null,
+            recent_tasks: agents[agentId]?.recent_tasks || [],
+            is_stale: false,
+          };
+          renderAgentList();
+          log(`Agent discovered: ${discovery.name} (${agentId})`);
+
+          if (selectedAgentId === agentId && agents[agentId]) {
+            selectAgent(agentId);
+          }
+        }
+      } else if (topic === 'agent/telemetry') {
+        const t = payload as Telemetry;
+        if (agents[t.agent_id]) {
+          agents[t.agent_id].latest_telemetry = t;
+          agents[t.agent_id].last_seen = Date.now() / 1000;
+          agents[t.agent_id].status = 'online';
+          agents[t.agent_id].is_stale = false;
+          if (selectedAgentId === t.agent_id) {
+            selectAgent(t.agent_id);
+          }
+        }
+      } else if (topic.startsWith('agent/task/') && topic.endsWith('/result')) {
+        const result = payload as Task;
+        if (agents[result.agent_id]) {
+          agents[result.agent_id].recent_tasks = [
+            result,
+            ...(agents[result.agent_id].recent_tasks || []),
+          ].slice(0, 10);
+          if (selectedAgentId === result.agent_id) {
+            selectAgent(result.agent_id);
+          }
+        }
+        log(`Task result: ${result.agent_id}/${result.task_id} = ${result.status}`);
+      }
+    } catch (e) {
+      // ignore malformed messages
+    }
+  });
+
+  mqttClient.on('error', (err: Error) => {
+    log(`MQTT error: ${err.message}`);
+    statusDot.classList.remove('badge-success');
+    statusDot.classList.add('badge-error');
+  });
+
+  mqttClient.on('close', () => {
+    statusDot.classList.remove('badge-success');
+    statusDot.classList.add('badge-error');
+  });
+
+  // REST API actions
+  taskSend.addEventListener('click', async () => {
+    const agentId = taskAgent.value;
+    if (!agentId) { alert('Select an agent'); return; }
+    const command = taskCommand.value.trim();
+    if (!command) { alert('Enter a command'); return; }
+
+    try {
+      const res = await fetch(`http://${HUB_HOST}:${HUB_PORT}/api/v1/task/${agentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, params: {} }),
+      });
+      const data = await res.json();
+      log(`Task dispatched: ${data.task_id} → ${agentId}`);
+      taskCommand.value = '';
+    } catch (e) {
+      log(`Task error: ${e}`);
+    }
+  });
+
+  globalSend.addEventListener('click', async () => {
+    const content = globalMsg.value.trim();
+    if (!content) { alert('Enter a message'); return; }
+
+    try {
+      await fetch(`http://${HUB_HOST}:${HUB_PORT}/api/v1/global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      log(`Broadcast sent`);
+      globalMsg.value = '';
+    } catch (e) {
+      log(`Broadcast error: ${e}`);
+    }
+  });
+
+  setInterval(refreshFromRest, 30000);
+  setTimeout(refreshFromRest, 500);
+</script>
