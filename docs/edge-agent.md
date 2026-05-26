@@ -312,7 +312,7 @@ sudo systemctl status mqtt-agent
 
 ## Verification
 
-Four ways to confirm the agent is registered and reporting.
+Two ways to confirm the agent is registered and reporting.
 
 ### 1. Hub REST API
 
@@ -359,7 +359,7 @@ curl -s http://<HUB_IP>:8100/api/v1/agents/bee1-a3f2c1 | python3 -m json.tool
 
 Returns `404` if not found. Returns `503` if the hub's MQTT connection is not ready.
 
-### 4. Agent logs
+### 2. Agent logs
 
 ```bash
 # systemd journal
@@ -516,71 +516,3 @@ python3 agent.py --agent-id bee1-docker  --name "Bee Docker Monitor"
 
 ---
 
-## Quick Start — Bare Mode
-
-```bash
-# On edge device (Debian)
-sudo apt update && sudo apt install -y python3 python3-pip
-pip install paho-mqtt psutil
-sudo mkdir -p /opt/mqtt-agent
-
-# Copy agent files from hub → edge
-scp mqtt_agent_hub/edge_agent.py user@<EDGE_IP>:/opt/mqtt-agent/agent.py
-scp mqtt_agent_hub/sre_prompt.py user@<EDGE_IP>:/opt/mqtt-agent/sre_prompt.py
-scp -r shared/ user@<EDGE_IP>:/opt/mqtt-agent/shared/
-
-# Create env file on edge
-sudo tee /etc/default/mqtt-agent << 'EOF'
-MQTT_BROKER_HOST=<HUB_IP>
-MQTT_BROKER_PORT=1883
-MQTT_HUB_TOKEN=<YOUR_TOKEN>
-EOF
-
-# Install systemd service on edge
-sudo tee /etc/systemd/system/mqtt-agent.service << 'EOF'
-[Unit]
-Description=MQTT SRE Agent
-After=network-online.target
-Wants=network-online.target
-[Service]
-Type=simple
-User=nobody
-EnvironmentFile=/etc/default/mqtt-agent
-ExecStart=/usr/bin/python3 /opt/mqtt-agent/agent.py
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Start agent on edge
-sudo systemctl daemon-reload
-sudo systemctl enable --now mqtt-agent
-
-# Verify from hub or any device
-curl http://<HUB_IP>:8100/api/v1/agents | python3 -m json.tool
-# Open http://<HUB_IP>:4322 in browser
-```
-
-## Quick Start — LLM Mode (SRE Analysis)
-
-```bash
-# Additional system packages
-sudo apt install -y cmake gcc g++ python3-dev
-pip install llama-cpp-python
-
-# Download model to edge device
-mkdir -p /opt/mqtt-agent/models
-wget -P /opt/mqtt-agent/models \
-    https://huggingface.co/NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling-GGUF/resolve/main/LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf
-
-# Add LLM_PATH to env file
-sudo tee -a /etc/default/mqtt-agent << 'EOF'
-LLM_PATH=/opt/mqtt-agent/models/LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf
-EOF
-
-# Restart agent
-sudo systemctl restart mqtt-agent
-sudo journalctl -u mqtt-agent -f
-# Watch for: "LLM loaded: LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf"
-```

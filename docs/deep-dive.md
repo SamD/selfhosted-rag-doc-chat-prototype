@@ -6,24 +6,11 @@ This document covers design rationale, AI model usage, and production considerat
 
 ---
 
-## Why a Custom Pipeline (Not LangChain)
+## Architecture Decisions
 
-**What uses LangChain**: Minimal wrappers for vector store integration (`langchain_chroma.Chroma`, `langchain_qdrant.Qdrant`) and embeddings (`langchain_huggingface.HuggingFaceEmbeddings`).
+The ingestion pipeline is a custom distributed system built for production document processing. Rather than relying on framework abstractions, each component — worker pools, queue coordination, chunking logic, quality detection, backpressure handling, and atomicity guarantees — is explicitly implemented for full control and observability.
 
-**What doesn't**: The entire ingestion pipeline — producer/consumer/OCR workers, Redis queue coordination, chunking logic, quality detection, backpressure handling, and atomicity guarantees.
-
-### Comparison
-
-| Aspect | Custom Ingestion (This Project) | LangChain Document Loaders |
-|--------|--------------------------------|---------------------------|
-| Setup time | 2-3 days initial build | Hours to prototype |
-| Control | Full — every component configurable via env vars | Partial — framework constraints |
-| Performance tuning | Precise (batching, chunking, retries) | Limited without forking framework |
-| Production readiness | Atomicity, backpressure, monitoring built-in | Requires additional engineering |
-| Debugging | Direct access to all components | Navigate framework abstractions |
-| Scaling | Explicit worker pools, queue management | Single-threaded document loaders |
-| OCR fallback | Automatic quality detection → Docling/EasyOCR | Manual implementation required |
-| Ideal for | Production systems (1000+ docs, mixed quality) | Prototypes and demos (<100 files) |
+Vector store integration uses lightweight wrappers (`langchain_chroma.Chroma`, `langchain_qdrant.Qdrant`) with `langchain_huggingface.HuggingFaceEmbeddings` for embeddings. All pipeline logic is custom-built.
 
 ### Design Philosophy
 
@@ -43,7 +30,7 @@ Converting raw text tokens directly into a vector database is a low-quality RAG 
 
 ### Noise Elimination
 
-Raw PDF/OCR text contains "technical slop": running footers, page numbers, repeated book titles. The Supervisor LLM strips these artifacts during normalization. Every token in the vector DB is 100% content, ensuring top-k retrieval results are actually relevant.
+Raw PDF/OCR text contains "technical noise": running footers, page numbers, repeated book titles. The Supervisor LLM strips these artifacts during normalization. Every token in the vector DB is 100% content, ensuring top-k retrieval results are actually relevant.
 
 ### Contextual Healing
 
@@ -177,18 +164,6 @@ The `staged_chunks` table buffers incoming chunks before Qdrant persistence:
 - Rate limiting for embedding API and LLM
 - A/B testing framework for chunking strategies
 - Audit logging for compliance
-
-### Cost Analysis (Estimated — 10K documents, 500K chunks)
-
-| Component | Self-Hosted | Managed Alternative |
-|-----------|------------|---------------------|
-| Compute | $200/mo (dedicated GPU) | $500-800/mo (GPU VMs) |
-| Vector DB | $50/mo (1TB SSD) | $200-400/mo (Pinecone/Weaviate/Qdrant Cloud) |
-| Redis | $20/mo (managed Redis) | $50-100/mo (Redis Enterprise) |
-| LLM inference | Included in compute | ~$200/mo at 100K queries |
-| **Total** | **~$270/mo** | **~$950-1500/mo** |
-
-Self-hosted has higher upfront effort but 3-5x lower marginal costs.
 
 ### Current Limitations
 
