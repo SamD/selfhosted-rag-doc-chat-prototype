@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - **Remote Broker Deployment** section in README with docker-compose and standalone examples.
 
 ### Changed
+- **Documentation reorganization**: Rewrote `README.md` as a clean landing page with table of contents, visible documentation navigation, and generic service-oriented hostnames (`<llm-host>`, `<embedding-host>`, `<vector-db-host>`, etc.). Moved detailed environment configuration, distributed deployment diagram, and hardware profile into a new `docs/quickstart.md`. Removed all LAN-specific hostnames and IP addresses from README. Moved cross-document navigation links from bottom to top of all docs for consistent discoverability.
 - **`doc-ingest-chat/config/settings.py` refactored to thin wrapper**: All 83 settings, helper functions, and lazy-loading logic moved to `shared/config.py`. `config/settings.py` now imports `_SETTINGS` from shared and re-exports via `__getattr__` — all existing `from config.settings import X` imports continue working unchanged.
 - **`config/llama_strategy.py` and `config/env_strategy.py`**: Updated to import env names and defaults from `shared/` instead of hardcoded strings. Added sys.path fix for Docker containers where `shared/` is at `/app/shared/`.
 - **Dockerfile updates**: `Dockerfile.worker` and `Dockerfile.worker.inprogress` now copy `shared/` into `/app/shared/`.
