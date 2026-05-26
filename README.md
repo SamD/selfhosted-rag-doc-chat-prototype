@@ -74,16 +74,28 @@ Ingestion and querying are fully concurrent. You can chat with already-processed
 
 ### Configure
 
-Four environment variables are required. Each accepts either a local path (model loaded in-container) or a remote `http(s)://` URL pointing to a service on your LAN:
+Each variable accepts either a local path or a remote `http(s)://` URL pointing to a service on your LAN.
 
 ```bash
 export DEFAULT_DOC_INGEST_ROOT=/path/to/docs
+
+export VECTOR_DB_PROFILE=qdrant
+export VECTOR_DB_URL=http://<vector-db-host>:6334
+export VECTOR_DB_USE_GRPC=true
+
 export LLM_PATH=http://<llm-host>:11434/v1/chat/completions
 export SUPERVISOR_LLM_PATH=http://<llm-host>:11434/v1/chat/completions
+
 export EMBEDDING_MODEL_PATH=http://<embedding-host>:11434/v1/embeddings
+
+export WHISPER_MODEL_PATH=http://<whisper-host>:1145/inference
+
+export OCR_PATH=http://<ocr-host>:5001/v1/convert/file
+
+export PDF_FORCE_OCR=true
 ```
 
-All service endpoints, optional variables, and local-file alternatives are documented in [docs/quickstart.md](docs/quickstart.md).
+Full variable reference and local-file alternatives are in [docs/quickstart.md](docs/quickstart.md).
 
 ### Launch
 
