@@ -1,10 +1,20 @@
 # Self-Hosted RAG Pipeline
 
-Drop PDFs, videos, and audio files into a staging folder and the system ingests them automatically. Text is extracted with pdfplumber, falling back to OCR for scanned pages. Media is transcribed with WhisperX. Everything is normalized to clean Markdown, chunked by header structure, embedded, and stored in a vector database. Every loaded document becomes searchable immediately through a chat interface that returns answers with clickable citations linking back to the source file and page. The entire pipeline runs on local hardware with no internet access required at runtime.
+Drop PDFs, videos, or audio files into a folder and chat with them using an AI that cites its sources — all running on your own hardware with no internet connection required.
 
-Files are routed by type through a chain of content handlers. A supervisor LLM acts as a gatekeeper, normalizing raw extracted text into structured Markdown with page anchors. A producer then splits the normalized content into 512-token chunks along header boundaries, assigning each chunk a deterministic ID via MurmurHash3. Consumers embed the chunks using an e5 model and batch-upsert them into Qdrant or Chroma, with DuckDB tracking every document's lifecycle state from ingestion through completion. At query time, the chat backend retrieves relevant chunks, formats them with citation tags, and streams an LLM response so each sentence traces back to a specific passage.
+**What you can drop in:**
 
-Every compute workload (LLM inference, embedding generation, WhisperX transcription, and OCR) runs as a separate HTTP service on dedicated LAN hosts, coordinated through Redis queues with backpressure. Ingestion and querying are fully concurrent: already-processed documents remain available in chat while thousands more are being ingested in the background. The system scales from a single N100 minipc to a split-inference configuration with a Ryzen 7 7840HS and an RTX 3060 connected over OCuLink in one Proxmox LXC and a 780M iGPU in another.
+| Format | How it's processed |
+|--------|-------------------|
+| `.pdf` (scanned) | OCR via Docling/EasyOCR |
+| `.pdf` (text layer) | Direct extraction via pdfplumber |
+| `.mp4`, `.mov`, `.mkv` | WhisperX speech transcription |
+| `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` | WhisperX audio transcription |
+| `.txt`, `.md`, `.html` | Direct read with charset detection |
+
+**What you get out:** A chat interface where every answer sentence is traced back to its source with clickable citations linking to the original file and page.
+
+Everything runs locally on dedicated LAN hosts — no cloud services, no external API calls, no data leaves your network.
 
 **Technologies**: Python, llama-cpp, FastAPI, Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, Docker Compose, Astro, Tailwind CSS
 
@@ -28,7 +38,7 @@ Every compute workload (LLM inference, embedding generation, WhisperX transcript
 - **Zero-drop chunking**: Hierarchical splitting preserves document structure. Oversized chunks are sub-split rather than truncated. Deterministic IDs via MurmurHash3 prevent duplication on re-ingestion.
 - **Semantic search**: Embeddings via e5 models, stored in Qdrant (or Chroma). Asymmetric search with `query:` and `passage:` prefixes for accurate retrieval.
 - **RAG chat with citations**: Query your documents via a chat UI. Every answer sentence is traced back to its source with clickable citations linking to the original file and page.
-- **Distributed, LAN-only**: Every service runs on dedicated LAN hosts. No internet access required at runtime. HuggingFace offline mode baked into all containers.
+- **Air-gapped by design**: Every service runs on dedicated LAN hosts with no internet access required. HuggingFace offline mode baked into all containers.
 
 ---
 
@@ -36,8 +46,8 @@ Every compute workload (LLM inference, embedding generation, WhisperX transcript
 
 ```
 staging/ → Gatekeeper (extract + normalize to Markdown) → Producer (chunk + enqueue)
-                                                         → Consumer (embed + store in Qdrant)
-                                                         → success/
+                                                          → Consumer (embed + store in Qdrant)
+                                                          → success/
 ```
 
 ![Flow](./docs/arch.png)

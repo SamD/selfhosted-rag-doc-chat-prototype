@@ -13,7 +13,7 @@ Deploy a lightweight MQTT SRE agent on a standalone Debian Linux minipc or edge 
 ## Prerequisites
 
 | Requirement | Bare mode | LLM mode | Notes |
-|---|---|---|---|
+|-------------|-----------|----------|-------|
 | OS | Debian 11/12 or Ubuntu 20.04+ | Same | Any Debian derivative |
 | Python | 3.8+ | 3.11+ | 3.11+ for llama-cpp-python |
 | Pip | `python3-pip` | Same | Package installation |
@@ -30,7 +30,7 @@ Deploy a lightweight MQTT SRE agent on a standalone Debian Linux minipc or edge 
 The edge device must be able to reach the hub host on the LAN. Default ports:
 
 | Source | Destination | Port | Protocol | Purpose |
-|---|---|---|---|---|
+|--------|-------------|------|----------|---------|
 | Edge agent | Hub host | 1883 | TCP (MQTT) | Agent registration, telemetry, task delivery |
 | Edge agent (optional) | Hub host | 8100 | TCP (HTTP) | Verification via REST API |
 | Browser (dashboard) | Hub host | 9001 | TCP (WS) | Dashboard WebSocket |
@@ -110,7 +110,7 @@ wget -P /opt/mqtt-agent/models \
     https://huggingface.co/NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling-GGUF/resolve/main/LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf
 ```
 
-The model uses ChatML format (`<|im_start|>` tokens) with 4096 context and is specialized for tool-calling via `<tool_call>` JSON blocks.
+The model uses ChatML format (`` tokens) with 4096 context and is specialized for tool-calling via `<tool_call>` JSON blocks.
 
 ---
 
@@ -135,7 +135,7 @@ sudo chmod 600 /etc/default/mqtt-agent
 ### Environment Variable Contract
 
 | Variable | Required | Default | Description |
-|---|---|---|---|
+|----------|----------|---------|-------------|
 | `MQTT_BROKER_HOST` | **Yes** | `localhost` | IP or hostname of the host running Mosquitto |
 | `MQTT_BROKER_PORT` | No | `1883` | MQTT broker port |
 | `MQTT_HUB_TOKEN` | **Yes** | `changeme` | Pre-shared secret — must match `MQTT_HUB_TOKEN` in `doc-ingest-chat/ingest-svc.env` on the hub |
@@ -159,7 +159,7 @@ python3 /opt/mqtt-agent/agent.py --agent-id my-custom-id
 ```
 
 | Argument | Purpose | Default |
-|---|---|---|
+|----------|---------|---------|
 | `--agent-id` | Unique identifier. Override the auto-generated ID. | `{hostname}-{machine_hash}` |
 | `--name` | Human-readable label shown in the dashboard. | `Edge SRE Agent` |
 | `--sre-interval` | Seconds between LLM analysis runs (LLM mode only). | `300` (5 minutes) |
@@ -184,7 +184,7 @@ When running in LLM mode, the agent loads a read-only SRE persona (`sre_prompt.p
 The LLM has access to eight function-calling tools:
 
 | Tool | Description |
-|---|---|
+|------|-------------|
 | `get_system_metrics` | CPU, memory, disk, load, uptime |
 | `list_top_processes` | Top N processes by CPU |
 | `list_top_processes_by_memory` | Top N processes by memory |
@@ -424,7 +424,7 @@ python3 agent.py --agent-id bee1-docker  --name "Bee Docker Monitor"
 ## Troubleshooting
 
 | Symptom | Likely cause | Check |
-|---|---|---|
+|---------|-------------|-------|
 | `Connection refused` | Wrong host/port, firewall, Mosquitto not running | `nc -zv <HUB_IP> 1883`, `docker compose ps mosquitto` on hub |
 | `Not authorized` | Token mismatch or password file not mounted | Verify `MQTT_HUB_TOKEN` matches hub's `ingest-svc.env`. Verify `passwd` file is mounted in Mosquitto container |
 | Agent not appearing in dashboard | Discovery message not arriving | Check `mosquitto_sub -t "agent/discovery"` from hub. Check `systemctl status mqtt-agent` on edge device |
@@ -440,7 +440,7 @@ python3 agent.py --agent-id bee1-docker  --name "Bee Docker Monitor"
 ## MQTT Topic Reference
 
 | Topic | QoS | Direction | Purpose |
-|---|---|---|---|
+|-------|-----|-----------|---------|
 | `agent/discovery` | 1 (retained) | Agent → Hub | Registration, heartbeat, offline notification |
 | `agent/telemetry` | 0 | Agent → Hub | Periodic CPU/memory/disk metrics |
 | `agent/task/{agent_id}` | 1 | Hub → Agent | Direct task dispatch to a specific agent |
@@ -513,6 +513,3 @@ python3 agent.py --agent-id bee1-docker  --name "Bee Docker Monitor"
   "error": ""
 }
 ```
-
----
-
