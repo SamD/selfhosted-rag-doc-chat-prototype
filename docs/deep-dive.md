@@ -1,6 +1,8 @@
+**[< Overview](overview.md) | [Quick Start](quickstart.md) | [Operations](operations.md)**
+
 # Technical Deep Dive
 
-This document covers design rationale, AI model usage, and production considerations for the Self-Hosted RAG system. For architecture and data flow, see [docs/overview.md](overview.md). For setup, see the [main README](../README.md).
+This document covers design rationale, AI model usage, and production considerations for the Self-Hosted RAG system.
 
 ---
 

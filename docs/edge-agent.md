@@ -1,3 +1,5 @@
+**[< MQTT Hub](../mqtt_agent_hub/README.md) | [Overview](overview.md) | [Operations](operations.md)**
+
 # Edge Agent Deployment Guide
 
 Deploy a lightweight MQTT SRE agent on a standalone Debian Linux minipc or edge device. The agent registers with the private MQTT Agent Hub, reports telemetry (CPU, memory, disk, load), executes tasks, and optionally runs a local LLM for autonomous system reliability analysis.
@@ -5,8 +7,6 @@ Deploy a lightweight MQTT SRE agent on a standalone Debian Linux minipc or edge 
 **Two modes of operation:**
 - **Bare mode** (default): MQTT telemetry + task execution — no LLM required
 - **LLM mode** (`LLM_PATH` set): Same as bare, plus periodic LLM-driven analysis using function-calling tools. The agent persona is a read-only SRE that investigates anomalies and reports findings
-
-For hub architecture, see [docs/overview.md](overview.md). For hub operations, see [docs/operations.md](operations.md).
 
 ---
 

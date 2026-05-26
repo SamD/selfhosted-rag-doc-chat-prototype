@@ -1,6 +1,8 @@
+**[< Quick Start](quickstart.md) | [< README](../README.md) | [Deep Dive](deep-dive.md) | [Operations](operations.md)**
+
 # Architecture Overview
 
-This document covers the complete system architecture, data flow, and component map for the Self-Hosted RAG Ingestion & Chat system. For setup instructions, see the [main README](../README.md). For deeper technical rationale, see [docs/deep-dive.md](deep-dive.md).
+This document covers the complete system architecture, data flow, and component map for the Self-Hosted RAG Ingestion & Chat system.
 
 ---
 
@@ -137,6 +139,8 @@ Files move through directories on disk, and each move is mirrored by a status up
 | **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
 | **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
 | **FastAPI** | `apimain.py` | HTTP :8000 | REST API for chat queries, status, and health checks |
+
+The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_PATH`) for normalization. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
 
 ---
 

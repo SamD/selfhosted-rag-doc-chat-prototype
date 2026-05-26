@@ -1,6 +1,8 @@
+**[< Architecture](overview.md) | [Deep Dive](deep-dive.md) | [Quick Start](quickstart.md)**
+
 # Operations, Debugging & Metrics
 
-This document covers operational procedures for monitoring, debugging, and maintaining the Self-Hosted RAG system. For architecture, see [docs/overview.md](overview.md).
+This document covers operational procedures for monitoring, debugging, and maintaining the Self-Hosted RAG system.
 
 ---
 
@@ -154,7 +156,7 @@ docker exec -it doc-ingest-chat-redis-1 redis-cli
 ### Point Count for a Document
 
 ```bash
-curl -X POST http://<qdrant-host>:6333/collections/vector_base_collection/points/count \
+curl -X POST http://<vector-db-host>:6333/collections/vector_base_collection/points/count \
   -H "Content-Type: application/json" \
   -d '{
     "filter": {
@@ -163,19 +165,19 @@ curl -X POST http://<qdrant-host>:6333/collections/vector_base_collection/points
   }'
 ```
 
-Replace `<qdrant-host>` with your Qdrant REST API endpoint (default port 6333, or as configured via `VECTOR_DB_URL`).
+Replace `<vector-db-host>` with your Qdrant REST API endpoint (default port 6333, or as configured via `VECTOR_DB_URL`).
 
 ### Sample Payloads
 
 ```bash
-curl -X POST http://<qdrant-host>:6333/collections/vector_base_collection/points/scroll \
+curl -X POST http://<vector-db-host>:6333/collections/vector_base_collection/points/scroll \
   -H "Content-Type: application/json" \
   -d '{"limit": 3, "with_payload": true, "with_vector": false}'
 ```
 
 ### Qdrant Dashboard
 
-Visit `http://<qdrant-host>:6333/dashboard` for the built-in web UI.
+Visit `http://<vector-db-host>:6333/dashboard` for the built-in web UI.
 
 ---
 
