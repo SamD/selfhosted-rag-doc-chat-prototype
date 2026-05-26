@@ -8,8 +8,10 @@
 
 All system dependencies (`ffmpeg`, `poppler-utils`, `libgl1`, `libglib2.0-0`) are pre-installed in the Docker image — no host installation needed.
 
-**Docker v2.20+** — required for the containerized worker stack
-**Node.js v22.12.0+** — required only when running the Astro frontend dev server (`npm run dev` from `astro-frontend/`) outside of Docker
+| Requirement | Purpose |
+|-------------|---------|
+| **Docker v2.20+** | Containerized worker stack |
+| **Node.js v22.12.0+** | Astro frontend dev server only (`npm run dev` from `astro-frontend/`) |
 
 ---
 
@@ -17,8 +19,10 @@ All system dependencies (`ffmpeg`, `poppler-utils`, `libgl1`, `libglib2.0-0`) ar
 
 Every AI workload runs as an HTTP(S) service on a dedicated LAN host. Workers connect to these services as remote API clients. The system auto-detects local-vs-remote from the URL scheme:
 
-- **Remote URL** (`http(s)://...`): Workers use OpenAI-compatible HTTP clients. No model loaded locally. The remote server handles its own GPU, context, and batching settings.
-- **Local path** (`/home/user/models/...`): The model is loaded directly in the worker container via llama-cpp or HuggingFace.
+| Mode | Example | Behavior |
+|------|---------|----------|
+| **Remote URL** (`http(s)://...`) | `http://llm-host:11434/v1/chat/completions` | Workers use OpenAI-compatible HTTP clients. No model loaded locally. The remote server handles its own GPU, context, and batching settings. |
+| **Local path** (`/home/user/models/...`) | `/models/Phi-4-mini-instruct-Q6_K.gguf` | Model is loaded directly in the worker container via llama-cpp or HuggingFace. |
 
 You can mix and match — some services remote, some local.
 
@@ -45,7 +49,9 @@ export LLAMA_USE_GPU=true
 
 | Env Var | Role | Example |
 |---------|------|---------|
-| `DEFAULT_DOC_INGEST_ROOT` | Local directory for all lifecycle stages (staging, preprocessing, ingestion, consuming, success, failed) | `export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs` |
+| `DEFAULT_DOC_INGEST_ROOT` | Local directory for all lifecycle stages (staging, preprocessing, ingestion, consuming, success, failed) | `/home/user/rag-docs` |
+
+All subdirectories (`staging/`, `preprocessing/`, `ingestion/`, `consuming/`, `success/`) are created automatically.
 
 ---
 
@@ -53,10 +59,10 @@ export LLAMA_USE_GPU=true
 
 These three must be set. Each accepts a remote URL or a local path.
 
-| Env Var | Service Role | Example (Remote) | Example (Local) |
-|---------|-------------|-----------------|-----------------|
-| `LLM_PATH` | **Chat LLM** — the inference model used for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
-| `SUPERVISOR_LLM_PATH` | **Gatekeeper LLM** — the normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM. May point to the same model as `LLM_PATH`. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
+| Env Var | Service Role | Remote Example | Local Example |
+|---------|-------------|----------------|---------------|
+| `LLM_PATH` | **Chat LLM** — inference model for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
+| `SUPERVISOR_LLM_PATH` | **Gatekeeper LLM** — normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM, may point to the same model. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
 | `EMBEDDING_MODEL_PATH` | **Embedding model** — vectorizes chunks during ingestion and queries during chat. | `http://<embedding-host>:11434/v1/embeddings` | `/models/e5-large-v2` |
 
 ---
@@ -65,14 +71,14 @@ These three must be set. Each accepts a remote URL or a local path.
 
 The remaining services have defaults and only need configuration when using remote hosts.
 
-| Env Var | Service Role | Default | Example (Remote) |
-|---------|-------------|---------|-----------------|
+| Env Var | Service Role | Default | Remote Example |
+|---------|-------------|---------|----------------|
 | `VECTOR_DB_URL` | **Vector DB** — Qdrant (gRPC on port 6334, REST on 6333) or Chroma. Overrides `VECTOR_DB_HOST` and `VECTOR_DB_PORT`. | `vector-db` (Docker service name) | `http://<vector-db-host>:6334` |
 | `VECTOR_DB_PROFILE` | Vector database selection | `qdrant` | `qdrant` or `chroma` |
 | `VECTOR_DB_USE_GRPC` | Use gRPC for Qdrant | `true` | `true` or `false` |
-| `WHISPER_MODEL_PATH` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET` (default), audio and video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
+| `WHISPER_MODEL_PATH` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_PATH` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
-| `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` |
+| `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
 | `LLAMA_USE_GPU` | Enable GPU acceleration for locally-loaded models | `true` | `true` or `false` |
 
 ---
@@ -147,7 +153,7 @@ Reference specs for a coordinator host running the worker stack:
 | OS | Ubuntu 22.04+ / Python 3.11 |
 | Storage | NVMe SSD recommended for document throughput |
 
-Performance on this setup: 10-15 PDFs/min (mixed quality), ~400ms query latency (p50), Qdrant tested with 10K+ chunks at sub-second retrieval.
+Performance on this setup: **10–15 PDFs/min** (mixed quality), **~400ms query latency** (p50), Qdrant tested with 10K+ chunks at sub-second retrieval.
 
 ---
 
@@ -171,11 +177,10 @@ Docker Compose supports profiles:
 1. Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. Supported formats: `.pdf`, `.html`, `.htm`, `.txt`, `.md`, `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`
 
 2. Monitor progress:
-
-```bash
-docker logs -f gatekeeper_worker   # normalization progress
-docker logs -f consumer_worker     # embedding and Qdrant upsert
-```
+   ```bash
+   docker logs -f gatekeeper_worker   # normalization progress
+   docker logs -f consumer_worker     # embedding and Qdrant upsert
+   ```
 
 3. Open [http://localhost:4321](http://localhost:4321) to chat with your documents.
 

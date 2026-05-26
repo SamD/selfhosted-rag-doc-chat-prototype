@@ -12,11 +12,12 @@ The system is built for **air-gapped, high-fidelity document ingestion** on comm
 
 ### Core Mandates
 
-- **Physical Isolation**: Files move between directories (staging → preprocessing → ingestion → consuming → success) to ensure the physical state matches the database state at every step.
+- **Physical Isolation**: Files move between directories (`staging/` → `preprocessing/` → `ingestion/` → `consuming/` → `success/`) to ensure the physical state matches the database state at every step.
 - **Dual-LLM Isolation**: The system separates the "Normalizer" from the "Chatter":
   - **Supervisor LLM** (`SUPERVISOR_LLM_PATH`): Structural transcription and high-density retyping of raw text into clean Markdown.
   - **RAG LLM** (`LLM_PATH`): Conversational reasoning and grounded retrieval with strict citation enforcement.
 - **Atomic Handoffs**: Every stage transition is a "Move-then-Update" transaction in DuckDB, ensuring no document is lost or double-processed.
+
 ---
 
 ## System Flow (Sequence Diagram)
@@ -189,7 +190,7 @@ The `ingestion_lifecycle` table tracks every file through its complete journey:
 
 ```
 NEW → PREPROCESSING → PREPROCESSING_COMPLETE → INGESTING → CONSUMING → INGEST_SUCCESS
-                                                                      → INGEST_FAILED
+                                                                       → INGEST_FAILED
 ```
 
 Key properties:

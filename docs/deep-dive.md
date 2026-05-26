@@ -14,7 +14,7 @@ Vector store integration uses lightweight wrappers (`langchain_chroma.Chroma`, `
 
 ### Design Philosophy
 
-**Chunking Strategy**: Token-aware splitting uses the embedding model's own tokenizer (e5-large-v2) for exact boundary calculation. Hierarchical Markdown headers (H1 → H2 → INTERNAL_PAGE → H3) preserve semantic structure. Oversized chunks are sub-split rather than truncated (zero-drop policy).
+**Chunking Strategy**: Token-aware splitting uses the embedding model's own tokenizer (e5-large-v2) for exact boundary calculation. Hierarchical Markdown headers (`H1 → H2 → INTERNAL_PAGE → H3`) preserve semantic structure. Oversized chunks are sub-split rather than truncated (zero-drop policy).
 
 **Quality Assurance**: Multi-stage text quality detection catches gibberish, corruption, and encoding issues. The PDF handler attempts `pdfplumber` first, then falls back to the OCR worker (Docling/EasyOCR) for scanned or unreadable pages. Latin script ratio checking with configurable thresholds identifies OCR failures.
 
@@ -95,7 +95,7 @@ This preserves the document's semantic structure. Each `### [INTERNAL_PAGE_X]` a
 ### Token Budget
 
 - **Limit**: 512 tokens per chunk (e5-large-v2 context window)
-- **Safety budget**: 85% of MAX_TOKENS, minus prefix overhead
+- **Safety budget**: 85% of `MAX_TOKENS`, minus prefix overhead
 - **Overlap**: 50 tokens between consecutive chunks to prevent boundary information loss
 
 ### Zero-Drop Sub-Splitting
