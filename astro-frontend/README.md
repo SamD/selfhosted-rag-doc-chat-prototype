@@ -1,115 +1,64 @@
 # AI Chat Interface - Astro Frontend
 
-A modern, responsive chat interface built with Astro and Tailwind CSS that connects to your FastAPI backend.
+A modern, responsive chat interface built with Astro v6 + Tailwind CSS v4 + daisyUI 5.5 that connects to the FastAPI backend at `http://localhost:8000`.
 
 ## Features
 
-- 🎨 Modern, responsive UI with Tailwind CSS
-- 💬 Real-time chat interface
-- 📱 Mobile-friendly design
-- 🔄 Loading states and error handling
-- 📊 Chat history management
-- 🏥 Health check integration
+- **RAG chat** — sends queries to the RAG pipeline and streams responses with clickable citations
+- **11 daisyUI themes** — dark (default), light, corporate, synthwave, cyberpunk, forest, dracula, night, nord, dim, sunset
+- **FART-proof theming** — theme applied before first paint via `is:inline` script to prevent flash of wrong theme
+- **Responsive design** — mobile-first layout with touch-friendly interface
 
 ## Prerequisites
 
-- Node.js (v16 or higher)
-- Your FastAPI backend running on `http://localhost:8000`
+- Node.js v22.12.0+
+- FastAPI backend running on `http://localhost:8000` (see [Quick Start](../docs/quickstart.md))
 
 ## Installation
 
-1. Install dependencies:
 ```bash
 npm install
 ```
 
-2. Start the development server:
-```bash
-npm run dev
-```
+## Development
 
-3. Open your browser and navigate to `http://localhost:4321`
+```bash
+# Start dev server
+npm run dev          # → http://localhost:4321
+
+# Build for production
+npm run build        # → output in dist/
+
+# Preview production build locally
+npm run preview
+```
 
 ## Configuration
 
-The frontend is configured to connect to your FastAPI backend at `http://localhost:8000`. If your backend is running on a different port or URL, update the `API_BASE_URL` constant in `src/pages/index.astro`.
+The frontend connects to the FastAPI backend at `http://localhost:8000` by default. To change this, update the `API_BASE_URL` constant in `src/pages/index.astro`.
 
 ## API Endpoints Used
 
-- `GET /api/v1/health` - Health check
-- `POST /api/v1/query` - Send chat queries
-
-## Development
-
-- **Build**: `npm run build`
-- **Preview**: `npm run preview`
-- **Lint**: `npm run lint`
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/v1/health` | Health check before sending queries |
+| `POST` | `/api/v1/query` | Send chat query, receive RAG response with citations |
 
 ## Project Structure
 
 ```
 src/
-├── layouts/
-│   └── Layout.astro      # Main layout with Tailwind CSS
-├── pages/
-│   └── index.astro       # Chat interface page
-└── styles/
-    └── global.css        # Global styles
+├── layouts/Layout.astro          # Main layout with Tailwind CSS + theme picker
+├── pages/index.astro             # Chat interface (single page)
+└── styles/global.css             # Global styles imported by daisyUI
 ```
 
-## Features
+## Testing
 
-### Chat Interface
-- Clean, modern chat UI with message bubbles
-- User messages (blue) and AI responses (gray)
-- Automatic scrolling to latest messages
-- Loading states during API calls
+```bash
+# Type check + build verification
+npm test
 
-### Error Handling
-- Network error detection
-- API health monitoring
-- User-friendly error messages
-- Graceful degradation
-
-### Responsive Design
-- Mobile-first approach
-- Responsive message bubbles
-- Touch-friendly interface
-- Optimized for all screen sizes
-
-## Customization
-
-### Styling
-The interface uses Tailwind CSS classes. You can customize the appearance by modifying the classes in `src/pages/index.astro`.
-
-### API Integration
-To modify the API integration, edit the JavaScript section in `src/pages/index.astro`. The main functions are:
-- `sendQuery()` - Sends queries to the API
-- `checkHealth()` - Checks API health
-- `addMessage()` - Adds messages to the chat
-
-## Troubleshooting
-
-### CORS Issues
-If you encounter CORS errors, ensure your FastAPI backend has CORS middleware configured:
-
-```python
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:4321"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Content smoke tests (daisyUI classes, theme picker, etc.)
+bash test.sh
 ```
-
-### API Connection Issues
-- Verify your FastAPI backend is running on `http://localhost:8000`
-- Check the browser console for error messages
-- Ensure the API endpoints are accessible
-
-## License
-
-This project is part of the AIRelated project.

@@ -15,18 +15,18 @@
 │  tasks + SRE     │       └───────────────┘       │  REST API        │
 │                  │                                │  dashboard serve │
 └──────────────────┘                                └────────┬─────────┘
-                                                             │
-                                                    ┌────────▼─────────┐
-                                                    │  Dashboard       │
-                                                    │  (Astro SPA)     │
-                                                    │  :4322           │
-                                                    └──────────────────┘
+                                                              │
+                                                     ┌────────▼─────────┐
+                                                     │  Dashboard       │
+                                                     │  (Astro SPA)     │
+                                                     │  :4322           │
+                                                     └──────────────────┘
 ```
 
 ### MQTT Topics
 
 | Topic | QoS | Retained | Direction | Purpose |
-|---|---|---|---|---|
+|-------|-----|----------|-----------|---------|
 | `agent/discovery` | 1 | yes | Agent → Hub | Registration with system identity (hostname, IP, MAC, OS, CPU, memory, disk) |
 | `agent/telemetry` | 0 | no | Agent → Hub | Periodic CPU/memory/disk/load + optional SRE findings |
 | `agent/task/{agent_id}` | 1 | no | Hub → Agent | Direct task dispatch to a specific agent |
@@ -64,7 +64,7 @@ The root `docker-compose.yaml` includes both `doc-ingest-chat/docker-compose.yam
 ### Access points
 
 | Service | URL |
-|---|---|
+|---------|-----|
 | Hub REST API | `http://localhost:8100/api/v1/health` |
 | Agent dashboard | `http://localhost:4322` |
 | Mosquitto MQTT | `mqtt://localhost:1883` |
@@ -95,7 +95,7 @@ npm test && bash test.sh
 Base: `http://localhost:8100/api/v1`
 
 | Method | Path | Description |
-|---|---|---|
+|--------|------|-------------|
 | `GET` | `/health` | Health check |
 | `GET` | `/agents` | List all agents (with system identity + latest telemetry) |
 | `GET` | `/agents/{id}` | Get a specific agent |
@@ -156,11 +156,10 @@ MQTT_BROKER_HOST=<HUB_IP> MQTT_HUB_TOKEN=MySecretToken123 \
 sudo apt install -y cmake gcc g++ python3-dev
 pip install llama-cpp-python
 wget -P /opt/mqtt-agent/models \
-https://huggingface.co/mradermacher/LFM2.5-1.2B-Instruct-Thinking-Claude-High-Reasoning-i1-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Thinking-Claude-High-Reasoning.i1-Q6_K.gguf?download=true
+https://huggingface.co/NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling-GGUF/resolve/main/LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf?download=true
 
-  
 # Add to env
-echo 'LLM_PATH=/opt/mqtt-agent/models/LFM2.5-1.2B-Instruct-Thinking-Claude-High-Reasoning.i1-Q6_K.gguf' \
+echo 'LLM_PATH=/opt/mqtt-agent/models/LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf' \
   | sudo tee -a /etc/default/mqtt-agent
 
 # Restart agent — LLM analysis runs every 5 minutes
@@ -202,7 +201,7 @@ On startup, each agent auto-generates a unique ID and publishes a discovery mess
 When running in LLM mode, the agent loads an SRE system prompt and 8 function-calling tools:
 
 | Tool | Description |
-|---|---|
+|------|-------------|
 | `get_system_metrics` | CPU, memory, disk, load, uptime |
 | `list_top_processes` | Top N processes by CPU |
 | `list_top_processes_by_memory` | Top N processes by memory |
@@ -221,7 +220,7 @@ The system prompt enforces a strict READ-ONLY constraint: the agent may inspect 
 ### Hub (`mqtt_agent_hub/.env`)
 
 | Variable | Default | Description |
-|---|---|---|
+|----------|---------|-------------|
 | `MQTT_BROKER_HOST` | `localhost` | Mosquitto broker hostname/IP (native MQTT for hub + edge agents) |
 | `MQTT_BROKER_PORT` | `1883` | Native MQTT port |
 | `MQTT_WS_PORT` | `9001` | WebSocket port (Mosquitto listener + dashboard) |
@@ -231,7 +230,7 @@ The system prompt enforces a strict READ-ONLY constraint: the agent may inspect 
 ### Dashboard (`mqtt_agent_hub/.env` — `PUBLIC_` prefix = exposed to browser)
 
 | Variable | Default | Description |
-|---|---|---|
+|----------|---------|-------------|
 | `PUBLIC_MQTT_BROKER_HOST` | _(dashboard hostname)_ | Override when Mosquitto is on a different host than the dashboard |
 | `PUBLIC_HUB_PORT` | `8100` | Hub REST API port (must match `HUB_PORT`) |
 | `PUBLIC_MQTT_WS_PORT` | `9001` | MQTT WebSocket port (must match `MQTT_WS_PORT`) |
@@ -241,7 +240,7 @@ The system prompt enforces a strict READ-ONLY constraint: the agent may inspect 
 ### Edge Agent
 
 | Variable | Default | Description |
-|---|---|---|
+|----------|---------|-------------|
 | `MQTT_BROKER_HOST` | `localhost` | Hub hostname/IP |
 | `MQTT_BROKER_PORT` | `1883` | MQTT port |
 | `MQTT_HUB_TOKEN` | `changeme` | Pre-shared secret |
