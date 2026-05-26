@@ -6,13 +6,10 @@
 
 ## Prerequisites
 
-System dependencies (baked into the Docker image):
-- `ffmpeg` — audio extraction for WhisperX
-- `poppler-utils` — PDF page rendering
-- `libgl1` / `libglib2.0-0` — OpenCV/vision processing
+All system dependencies (`ffmpeg`, `poppler-utils`, `libgl1`, `libglib2.0-0`) are pre-installed in the Docker image — no host installation needed.
 
-**Docker v2.20+** — for the containerized worker stack
-**Node.js v22.12.0+** — for frontend development
+**Docker v2.20+** — required for the containerized worker stack
+**Node.js v22.12.0+** — required only when running the Astro frontend dev server (`npm run dev` from `astro-frontend/`) outside of Docker
 
 ---
 
@@ -27,15 +24,39 @@ You can mix and match — some services remote, some local.
 
 ---
 
-## Mandatory Environment Variables
+## Local-Only Deployment
 
-These four must be set. Each accepts a remote URL or a local path.
+To run everything locally without remote services, use local model paths instead of URLs:
+
+```bash
+export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
+export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+export SUPERVISOR_LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
+export WHISPER_MODEL_PATH=/home/user/models/whisper
+export OCR_PATH=LOCAL
+export VECTOR_DB_PROFILE=qdrant
+export LLAMA_USE_GPU=true
+```
+
+---
+
+## Filesystem Requirement
+
+| Env Var | Role | Example |
+|---------|------|---------|
+| `DEFAULT_DOC_INGEST_ROOT` | Local directory for all lifecycle stages (staging, preprocessing, ingestion, consuming, success, failed) | `export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs` |
+
+---
+
+## Mandatory Service Endpoints
+
+These three must be set. Each accepts a remote URL or a local path.
 
 | Env Var | Service Role | Example (Remote) | Example (Local) |
 |---------|-------------|-----------------|-----------------|
-| `DEFAULT_DOC_INGEST_ROOT` | Local directory for all lifecycle stages (staging, preprocessing, ingestion, consuming, success, failed) | `export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs` | same |
 | `LLM_PATH` | **Chat LLM** — the inference model used for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
-| `SUPERVISOR_LLM_PATH` | **Gatekeeper LLM** — the normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Qwen2.5-1.5B-Instruct-GGUF` |
+| `SUPERVISOR_LLM_PATH` | **Gatekeeper LLM** — the normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM. May point to the same model as `LLM_PATH`. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
 | `EMBEDDING_MODEL_PATH` | **Embedding model** — vectorizes chunks during ingestion and queries during chat. | `http://<embedding-host>:11434/v1/embeddings` | `/models/e5-large-v2` |
 
 ---
@@ -49,7 +70,7 @@ The remaining services have defaults and only need configuration when using remo
 | `VECTOR_DB_URL` | **Vector DB** — Qdrant (gRPC on port 6334, REST on 6333) or Chroma. Overrides `VECTOR_DB_HOST` and `VECTOR_DB_PORT`. | `vector-db` (Docker service name) | `http://<vector-db-host>:6334` |
 | `VECTOR_DB_PROFILE` | Vector database selection | `qdrant` | `qdrant` or `chroma` |
 | `VECTOR_DB_USE_GRPC` | Use gRPC for Qdrant | `true` | `true` or `false` |
-| `WHISPER_MODEL_PATH` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files during ingestion. Set to a remote URL or local model directory. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
+| `WHISPER_MODEL_PATH` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET` (default), audio and video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_PATH` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` |
 | `LLAMA_USE_GPU` | Enable GPU acceleration for locally-loaded models | `true` | `true` or `false` |
@@ -104,7 +125,7 @@ The coordinator connects to all services over HTTP. Each remote host can be opti
 
 ---
 
-## Air-Gapped / Offline by Design
+## Offline Operation
 
 - `HF_HUB_OFFLINE=1` is baked into all Docker images — HuggingFace libraries never phone home
 - Docling OCR models are cached during Docker build-time warmup — no runtime downloads
@@ -130,30 +151,13 @@ Performance on this setup: 10-15 PDFs/min (mixed quality), ~400ms query latency 
 
 ---
 
-## Local-Only Deployment
-
-To run everything locally without remote services, use local model paths instead of URLs:
-
-```bash
-export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
-export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
-export SUPERVISOR_LLM_PATH=/home/user/models/Qwen2.5-1.5B-Instruct-GGUF
-export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
-export WHISPER_MODEL_PATH=/home/user/models/whisper
-export OCR_PATH=LOCAL
-export VECTOR_DB_PROFILE=qdrant
-export LLAMA_USE_GPU=true
-```
-
----
-
 ## Launch
 
 ```bash
 ./doc-ingest-chat/run-compose.sh --build
 ```
 
-The stack starts: Redis → Gatekeeper → Producer → OCR Worker → WhisperX Worker → Consumer → FastAPI backend.
+The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start alongside and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_PATH` and `WHISPER_MODEL_PATH`).
 
 Docker Compose supports profiles:
 - `--profile gpu` (default) — NVIDIA GPU acceleration

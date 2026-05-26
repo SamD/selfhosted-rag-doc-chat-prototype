@@ -213,6 +213,8 @@ CREATE INDEX idx_source_file ON parquet_chunks (source_file);
 
 ### Wipe All State (Fresh Start)
 
+**Warning**: This permanently deletes all ingestion state and chunk data. Back up `chunks.duckdb` before running these commands. Qdrant vectors are not affected by DuckDB deletes and must be cleaned separately.
+
 ```sql
 DELETE FROM ingestion_lifecycle;
 DELETE FROM parquet_chunks;
@@ -242,13 +244,6 @@ FROM parquet_chunks
 WHERE id NOT LIKE 'DOC_%';
 ```
 
-### Ingestion stalled — check for lock contention
+### Ingestion stalled
 
-```sql
-SELECT slug, status, error
-FROM gatekeeper_history
-WHERE status = 'FAILURE'
-ORDER BY timestamp DESC;
-```
-
-Also check Redis queue lengths — if `LLEN chunk_ingest_queue:N` is growing without bound, the Consumer may be crashed or blocked.
+Check for lock contention using the query in [Lock Contention Audit](#lock-contention-audit) above. Also check Redis queue lengths — if `LLEN chunk_ingest_queue:N` is growing without bound, the Consumer may have crashed or be blocked.

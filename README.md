@@ -1,8 +1,8 @@
 # Self-Hosted RAG Pipeline
 
-A self-hosted retrieval augmented generation pipeline that ingests PDFs, videos, and audio files and serves them through a chat interface with clickable source citations. The system runs entirely on local hardware without external dependencies. Files are routed by type through a chain of content handlers. PDFs are processed with pdfplumber and automatic OCR fallback handles scanned pages. Media files are transcribed with WhisperX. Raw text formats are read directly. A supervisor LLM normalizes all extracted text to Markdown with page anchors. The producer splits the normalized content on header boundaries, generates embeddings, and stores the resulting vector chunks in Qdrant.
+A self-hosted retrieval augmented generation pipeline that ingests PDFs, videos, and audio files and serves them through a chat interface with clickable source citations. The system runs entirely on local hardware with no internet access required at runtime. Files are routed by type through a chain of content handlers. PDFs are processed with pdfplumber and automatic OCR fallback handles scanned pages. Media files are transcribed with WhisperX. Raw text formats are read directly. A supervisor LLM normalizes all extracted text to Markdown with page anchors. The producer splits the normalized content on header boundaries, generates embeddings, and stores the resulting vector chunks in Qdrant.
 
-Compute workloads are separated into individual HTTP services so embedding generation, LLM inference, WhisperX transcription, and OCR can each run on different hosts. Redis-backed queues with backpressure coordinate ingestion across all services. Ingestion and querying run concurrently so already processed documents are available in chat while others continue ingesting. Hardware can range from an N100 minipc to a split inference setup with a Ryzen 7 7840HS and an RTX 3060 connected over OCuLink in one Proxmox LXC with the 780M iGPU in another. The chat UI retrieves relevant chunks from Qdrant and returns LLM responses with citations linking back to the source page.
+Compute workloads are separated into individual HTTP services so embedding generation, LLM inference, WhisperX transcription, and OCR can each run on different hosts. Redis-backed queues with backpressure coordinate ingestion across all services. Ingestion and querying run concurrently so already processed documents are available in chat while others continue ingesting. The architecture scales from a single N100 minipc to a split inference setup with a Ryzen 7 7840HS and an RTX 3060 connected over OCuLink in one Proxmox LXC, with the 780M iGPU in another. The chat UI retrieves relevant chunks from Qdrant and returns LLM responses with citations linking back to the source page.
 
 **Technologies**: Python, llama-cpp, FastAPI, Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, Docker Compose, Astro, Tailwind CSS
 
@@ -21,12 +21,12 @@ Compute workloads are separated into individual HTTP services so embedding gener
 
 ## What It Does
 
-- **Multi-format ingestion**: Drop PDFs, HTML, Markdown, MP3, MP4, WAV files into a staging folder. Each file type is routed to the correct handler automatically.
+- **Multi-format ingestion**: Drop PDFs, HTML, Markdown, MP3, MP4, and WAV files into a staging folder for automatic processing.
 - **Markdown-first normalization**: All raw text is normalized into clean, structured Markdown with page anchors before chunking. Noisy footers, page numbers, and OCR artifacts are stripped.
 - **Zero-drop chunking**: Hierarchical splitting preserves document structure. Oversized chunks are sub-split rather than truncated. Deterministic IDs via MurmurHash3 prevent duplication on re-ingestion.
-- **Semantic search**: Embeddings via mxbai or e5 models, stored in Qdrant (or Chroma). Asymmetric search with `query:` and `passage:` prefixes for accurate retrieval.
+- **Semantic search**: Embeddings via e5 models, stored in Qdrant (or Chroma). Asymmetric search with `query:` and `passage:` prefixes for accurate retrieval.
 - **RAG chat with citations**: Query your documents via a chat UI. Every answer sentence is traced back to its source with clickable citations linking to the original file and page.
-- **Distributed, air-gapped**: Every service runs on dedicated LAN hosts. No internet dependency. HuggingFace offline mode baked into all containers.
+- **Distributed, LAN-only**: Every service runs on dedicated LAN hosts. No internet access required at runtime. HuggingFace offline mode baked into all containers.
 
 ---
 
@@ -74,28 +74,47 @@ Ingestion and querying are fully concurrent. You can chat with already-processed
 
 ### Configure
 
-Each variable accepts either a local path or a remote `http(s)://` URL pointing to a service on your LAN.
+All services connect over HTTP. Run them on any hosts in your LAN and set these variables before starting the stack.
 
 ```bash
+# --- Filesystem ---
+# Root directory for the local ingestion pipeline. Lifecycle subdirectories
+# (staging/, preprocessing/, ingestion/, consuming/, success/) are created here.
 export DEFAULT_DOC_INGEST_ROOT=/path/to/docs
 
+# --- Vector Database ---
+# Qdrant (default) or Chroma.
 export VECTOR_DB_PROFILE=qdrant
-export VECTOR_DB_URL=http://<vector-db-host>:6334
+# Remote Qdrant host. The system connects over gRPC on port 6334 by default.
+# To use the REST API on port 6333 instead, set VECTOR_DB_USE_GRPC=false and prefix the URL with http://.
+export VECTOR_DB_URL=<vector-db-host>:6334
 export VECTOR_DB_USE_GRPC=true
 
+# --- LLMs ---
+# Chat model that answers RAG queries. Remote http(s):// URL or local .gguf path.
 export LLM_PATH=http://<llm-host>:11434/v1/chat/completions
+# Gatekeeper model that normalizes raw extracted text to Markdown during ingestion.
+# Often points to the same host as LLM_PATH but serves a distinct role.
 export SUPERVISOR_LLM_PATH=http://<llm-host>:11434/v1/chat/completions
 
+# --- Embedding ---
+# Model that vectorizes document chunks during ingestion and user queries during chat.
+# Remote http(s):// URL or local model directory path.
 export EMBEDDING_MODEL_PATH=http://<embedding-host>:11434/v1/embeddings
 
+# --- Audio / Video Transcription ---
+# WhisperX host. Transcribes audio files (MP3, WAV, etc.) and extracts speech
+# from video files (MP4, MOV, MKV) during ingestion.
 export WHISPER_MODEL_PATH=http://<whisper-host>:1145/inference
 
+# --- OCR Fallback ---
+# docling-serve host. Used when pdfplumber cannot extract text from a page
+# (scanned documents, image-heavy pages). Set to "LOCAL" to run Docling
+# inside the container instead.
 export OCR_PATH=http://<ocr-host>:5001/v1/convert/file
-
-export PDF_FORCE_OCR=true
 ```
 
-Full variable reference and local-file alternatives are in [docs/quickstart.md](docs/quickstart.md).
+Full variable reference, local-file alternatives, and optional tuning flags are in [docs/quickstart.md](docs/quickstart.md).
 
 ### Launch
 

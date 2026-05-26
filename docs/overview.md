@@ -17,8 +17,6 @@ The system is built for **air-gapped, high-fidelity document ingestion** on comm
   - **Supervisor LLM** (`SUPERVISOR_LLM_PATH`): Structural transcription and high-density retyping of raw text into clean Markdown.
   - **RAG LLM** (`LLM_PATH`): Conversational reasoning and grounded retrieval with strict citation enforcement.
 - **Atomic Handoffs**: Every stage transition is a "Move-then-Update" transaction in DuckDB, ensuring no document is lost or double-processed.
-- **Memory Safety**: PDF handles and image buffers are explicitly cleared before model loading to prevent OOM on large documents.
-
 ---
 
 ## System Flow (Sequence Diagram)
@@ -111,25 +109,40 @@ graph TD
 
 ---
 
-## Physical State Transitions
+## Physical Directory Moves
 
-Files move through directories on disk, and each move is mirrored by a status update in the DuckDB `ingestion_lifecycle` table.
+Files move through directories on disk as they progress through the pipeline. Directory moves and DuckDB state transitions are decoupled — some state changes occur without a directory move, and some directory moves happen without a state change.
 
-| From Dir | To Dir | Worker | State Transition | Description |
-|----------|--------|--------|-----------------|-------------|
-| (drop) | `staging/` | User | — | User drops a file into the staging area |
-| `staging/` | `preprocessing/` | Gatekeeper | `NEW → PREPROCESSING` | Gatekeeper claims the file for extraction |
-| `preprocessing/` | `preprocessing/` | Gatekeeper | `PREPROCESSING → PREPROCESSING_COMPLETE` | Normalization finished; `.md` file written |
-| `preprocessing/` | `ingestion/` | Gatekeeper | — | Files moved to ingestion directory for handoff |
-| `ingestion/` | `consuming/` | Producer | `PREPROCESSING_COMPLETE → INGESTING` | Producer claims, moves files to isolation |
-| `consuming/` | `consuming/` | Consumer | `INGESTING → CONSUMING` | Chunks enqueued; files remain in consuming/ |
-| `consuming/` | `consuming/` | Consumer | `CONSUMING → INGEST_SUCCESS` | Qdrant upsert complete; files ready to archive |
-| `consuming/` | `success/` | Consumer | — | Files moved to permanent success archive |
-| (any) | `failed/` | Any worker | `→ INGEST_FAILED` | Error occurred; files moved for debugging |
+| From Dir | To Dir | Worker | Description |
+|----------|--------|--------|-------------|
+| `staging/` | `preprocessing/` | Gatekeeper | Gatekeeper claims the file for extraction |
+| `preprocessing/` | `ingestion/` | Gatekeeper | Normalized files handed off for ingestion |
+| `ingestion/` | `consuming/` | Producer | Producer claims, moves files to isolation |
+| `consuming/` | `success/` | Consumer | Files moved to permanent success archive |
+| (any) | `failed/` | Any worker | Error occurred; files moved for debugging |
+
+Files are placed into `staging/` by the user as a pre-pipeline action (not a worker transition).
+
+## DuckDB State Machine Transitions
+
+These are the state transitions tracked in the `ingestion_lifecycle` table. Compare with the directory moves above — some states are reached purely via database update with no file relocation.
+
+| State Transition | Worker | Directory Move | Description |
+|-----------------|--------|---------------|-------------|
+| `NEW → PREPROCESSING` | Gatekeeper | `staging/ → preprocessing/` | Gatekeeper claims the file for extraction |
+| `PREPROCESSING → PREPROCESSING_COMPLETE` | Gatekeeper | None | Normalization finished; `.md` file written |
+| `PREPROCESSING_COMPLETE → INGESTING` | Producer | `ingestion/ → consuming/` | Producer claims, moves files to isolation |
+| `INGESTING → CONSUMING` | Consumer | None | Chunks enqueued; files remain in `consuming/` |
+| `CONSUMING → INGEST_SUCCESS` | Consumer | None | Qdrant upsert complete; files ready to archive |
+| `→ INGEST_FAILED` | Any worker | (any) → `failed/` | Error occurred; files moved for debugging |
 
 ---
 
 ## Worker Roles
+
+### Ingestion Workers
+
+These workers communicate via Redis queues and operate on files through the pipeline stages:
 
 | Worker | Entry Point | Queue(s) | Role |
 |--------|------------|----------|------|
@@ -138,6 +151,13 @@ Files move through directories on disk, and each move is mirrored by a status up
 | **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.mp4`, `.wav`, `.mov`, `.mkv`) |
 | **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
 | **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
+
+### API Server
+
+The FastAPI backend serves HTTP requests on port 8000 — it does not operate on Redis queues:
+
+| Component | Entry Point | Interface | Role |
+|-----------|------------|-----------|------|
 | **FastAPI** | `apimain.py` | HTTP :8000 | REST API for chat queries, status, and health checks |
 
 The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_PATH`) for normalization. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
@@ -229,4 +249,4 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
   - `--profile qdrant` or `--profile chroma` — vector database selection
 - **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)
 - **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation based on `LLAMA_USE_GPU`
-- **Network diagram**: See [docs/infra/sample-lab-deployment.puml](infra/sample-lab-deployment.puml) for the reference lab topology (PlantUML network diagram)
+- **Network diagram**: See [docs/infra/sample-lab-deployment.puml](infra/sample-lab-deployment.puml) for the reference lab topology. This is a PlantUML diagram — use a PlantUML viewer (VS Code extension, [plantuml.com](https://www.plantuml.com), or `plantuml` CLI) to render it. Consider requesting a pre-rendered image if plaintext viewing is needed.
