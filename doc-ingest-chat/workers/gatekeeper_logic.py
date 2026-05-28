@@ -245,13 +245,15 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> 
 
     # 2. VERIFIED 'Markdown Formatter' Prompt (FLATTENED - ZERO INDENTATION)
     user_msg = (
-        "You are a Markdown formatter. Convert RAW_TEXT below into valid Markdown. "
+        "You are a Markdown formatter. "
+        "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
         "Preserve all content and structure as much as possible. "
         "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
         "DO NOT summarize, infer, or add new information. "
         "Return only Markdown, with no preface or explanation. "
-        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings.\n\n"
-        f"RAW_TEXT:\n{raw_content}"
+        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings. "
+        "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
+        f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
     )
 
     # 3. Payload (Unified User Role)
@@ -277,15 +279,22 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> 
         
         # Rebuild user_msg with truncated content
         user_msg = (
-            "You are a Markdown formatter. Convert RAW_TEXT below into valid Markdown. "
+            "You are a Markdown formatter. "
+            "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
             "Preserve all content and structure as much as possible. "
-            "Return only Markdown.\n\n"
-            f"RAW_TEXT:\n{raw_content}"
+            "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
+            "DO NOT summarize, infer, or add new information. "
+            "Return only Markdown, with no preface or explanation. "
+            "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings. "
+            "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
+            f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
         )
         messages = [{"role": "user", "content": user_msg}]
 
     response = llm.create_chat_completion(
         messages=messages,
+        stop=["END_OF_RAW_TEXT"],
+        max_tokens=settings.SUPERVISOR_MAX_TOKENS,
     )
 
     content = response["choices"][0]["message"]["content"]

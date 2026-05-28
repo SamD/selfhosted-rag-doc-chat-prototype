@@ -34,6 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **MQTT dashboard docker-compose**: Passes `PUBLIC_*` env vars to `hub_dashboard` service.
 
 ### Fixed
+- **Supervisor LLM timeout due to missing `max_tokens`**: Added `SUPERVISOR_MAX_TOKENS` (env var, default 4096) to cap supervisor LLM generation. Previously, `create_chat_completion` had no `max_tokens`, so the model could generate indefinitely if the stop token missed, causing HTTP timeouts.
 - **Missing settings in `config/settings.py`**: Added `METRICS_ENABLED`, `METRICS_LOG_FILE`, `METRICS_LOG_TO_STDOUT`, `FAILED_FILES`, and `INGESTED_FILE` — previously imported at runtime but undefined.
 - **Dashboard CSS not loaded at build time**: Added `<style is:global>` block importing `global.css` to dashboard `Layout.astro`.
 - **Docker container `ModuleNotFoundError: No module named 'shared'`**: Fixed by copying `shared/` into Docker images and mounting it in docker-compose volumes.
