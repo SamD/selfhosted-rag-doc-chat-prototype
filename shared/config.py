@@ -54,6 +54,7 @@ from shared.defaults import (
     DEFAULT_REDIS_STAGING_QUEUE,
     DEFAULT_REDIS_WHISPER_JOB_QUEUE,
     DEFAULT_RETRIEVER_TOP_K,
+    DEFAULT_SUPERVISOR_MAX_TOKENS,
     DEFAULT_SUPERVISOR_REMOTE_MODEL_NAME,
     DEFAULT_SUPERVISOR_TEMPERATURE,
     DEFAULT_SUPERVISOR_TOP_K,
@@ -132,6 +133,7 @@ from shared.env_names import (
     ENV_STAGING_DIR,
     ENV_SUCCESS_DIR,
     ENV_SUPERVISOR_LLM_PATH,
+    ENV_SUPERVISOR_MAX_TOKENS,
     ENV_SUPERVISOR_REMOTE_MODEL_NAME,
     ENV_SUPERVISOR_TEMPERATURE,
     ENV_SUPERVISOR_TOP_K,
@@ -281,6 +283,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "SUPERVISOR_TEMPERATURE": lambda: float(os.getenv(ENV_SUPERVISOR_TEMPERATURE, str(DEFAULT_SUPERVISOR_TEMPERATURE))),
     # Top-K sampling for the supervisor agent
     "SUPERVISOR_TOP_K": lambda: int(os.getenv(ENV_SUPERVISOR_TOP_K, str(DEFAULT_SUPERVISOR_TOP_K))),
+    # Maximum tokens the supervisor LLM can generate in one response
+    "SUPERVISOR_MAX_TOKENS": lambda: int(os.getenv(ENV_SUPERVISOR_MAX_TOKENS, str(DEFAULT_SUPERVISOR_MAX_TOKENS))),
     # Path to the Parquet archival file for all chunks
     "PARQUET_FILE": lambda: _abs_path(
         ENV_PARQUET_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "chunks.parquet")
