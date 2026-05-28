@@ -156,6 +156,7 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
 
         chunk_idx = 0
         first_chunk_meta = None
+        empty_chunks = 0
 
         # 1. Use the handler chain to get a raw text stream
         handler_chain = get_handler_chain()
@@ -185,6 +186,8 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
                 
                 # A. Normalize via LLM
                 meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+                if not normalized_text.strip():
+                    empty_chunks += 1
                 if chunk_idx == 0:
                     first_chunk_meta = meta
 
@@ -196,6 +199,8 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             log.info(f"📊 Normalizing Final Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
             full_content = "\n\n".join(batch_text)
             meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+            if not normalized_text.strip():
+                empty_chunks += 1
             if chunk_idx == 0:
                 first_chunk_meta = meta
 
@@ -207,7 +212,10 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             log.warning(f"⚠️ No content generated for {file_path}")
 
         gc.collect()
-        log.info(f"✅ Normalization finished for: {md_path}")
+        if empty_chunks > 0:
+            log.warning(f"⚠️ Normalization finished for {md_path} — {empty_chunks} chunk(s) returned empty. Check model server flags (--reasoning, --n-predict, --reasoning-budget).")
+        else:
+            log.info(f"✅ Normalization finished for: {md_path}")
         return True, first_chunk_meta
 
     except Exception as e:
@@ -297,7 +305,23 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> 
         max_tokens=settings.SUPERVISOR_MAX_TOKENS,
     )
 
-    content = response["choices"][0]["message"]["content"]
+    content = response["choices"][0]["message"]["content"] or ""
+
+    finish_reason = response["choices"][0].get("finish_reason", "unknown")
+    usage = response.get("usage", {})
+    token_info = f"tokens_in={usage.get('prompt_tokens', '?')} tokens_out={usage.get('completion_tokens', '?')} reason={finish_reason}"
+
+    stripped = content.strip()
+    if not stripped:
+        log.error(
+            f"🈳 Chunk {idx}: LLM returned empty response ({token_info}). "
+            f"This typically means reasoning tokens consumed the entire budget. "
+            f"Check --reasoning-budget and --n-predict on the model server."
+        )
+    elif stripped.isspace():
+        log.warning(f"⚠️ Chunk {idx}: LLM returned only whitespace ({len(content)} chars, {token_info}).")
+    else:
+        log.info(f"🤖 Chunk {idx}: LLM returned {len(content)} chars ({token_info}).")
 
     # 3. Final text construction
     final_text = anchor_header + content
