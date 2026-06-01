@@ -83,7 +83,10 @@ def signal_handler(sig, frame):
 def worker_loop():
     """Main loop that pops jobs and performs transcription."""
     try:
-        redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+        redis_client = redis.Redis(
+            host=REDIS_HOST, port=REDIS_PORT, decode_responses=True,
+            socket_connect_timeout=5, socket_timeout=None,
+        )
         log.info(f"🛰️ WhisperX Worker listening on {REDIS_WHISPER_JOB_QUEUE}...")
         log.info(f"🚀 Using Device: {DEVICE}, Compute Type: {COMPUTE_TYPE}, Model Path: {WHISPER_MODEL_PATH}")
 

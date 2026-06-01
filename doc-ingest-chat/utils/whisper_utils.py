@@ -23,7 +23,10 @@ def get_redis_client():
     """Lazy initializer for the Redis client."""
     global _REDIS_CLIENT_CACHE
     if _REDIS_CLIENT_CACHE is None:
-        _REDIS_CLIENT_CACHE = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+        _REDIS_CLIENT_CACHE = redis.Redis(
+            host=REDIS_HOST, port=REDIS_PORT, decode_responses=True,
+            socket_connect_timeout=5, socket_timeout=None,
+        )
     return _REDIS_CLIENT_CACHE
 
 
