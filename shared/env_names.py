@@ -6,6 +6,7 @@ ENV_MQTT_WS_PORT = "MQTT_WS_PORT"
 ENV_HUB_PORT = "HUB_PORT"
 ENV_AGENT_VERSION = "AGENT_VERSION"
 ENV_LLM_PATH = "LLM_PATH"
+ENV_TELEMETRY_INTERVAL = "TELEMETRY_INTERVAL"
 
 # ---------------------------------------------------------------------------
 # Doc Ingest / RAG pipeline env names

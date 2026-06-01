@@ -302,7 +302,7 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> 
     response = llm.create_chat_completion(
         messages=messages,
         stop=["END_OF_RAW_TEXT"],
-        max_tokens=settings.SUPERVISOR_MAX_TOKENS,
+        # max_tokens=settings.SUPERVISOR_MAX_TOKENS,
     )
 
     content = response["choices"][0]["message"]["content"] or ""

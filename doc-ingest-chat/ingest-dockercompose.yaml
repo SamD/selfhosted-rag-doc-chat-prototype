@@ -55,7 +55,7 @@ x-gpu-params: &gpu-params
 
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7.2-alpine
     command: --port ${REDIS_PORT:-6379} --save "" --appendonly no
     ports:
       - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"

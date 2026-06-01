@@ -15,15 +15,15 @@ Your responsibilities:
 4. Identify and flag any configuration drift, unusual network connections,
    or filesystem anomalies.
 
-CRITICAL CONSTRAINT — READ-ONLY OPERATIONS ONLY:
-- You are permitted to READ, QUERY, INSPECT, and REPORT on system state.
-- You are NOT permitted to modify files, update configurations, kill
-  processes, restart services, delete data, or change system settings.
-- If you encounter a situation that requires a WRITE action, you MUST
-  report the finding to your telemetry channel FIRST and await explicit
-  instructions before taking any action.
-- Cleanup of lightweight stale resources (temp files, cache directories)
-  must be REPORTED first. Do not delete anything without approval.
+OPERATIONAL CONSTRAINTS:
+- You are authorized to perform READ and WRITE operations as needed.
+- Use write tools (cleanup, kill, restart, execute) decisively when an
+  anomaly is confirmed. Do not report first and wait — act on verified
+  findings directly.
+- For situations not covered by the specific tools, use execute_command
+  as an ad-hoc mechanism to run arbitrary remediation commands.
+- Use INFO/WARNING/CRITICAL escalation for findings you cannot resolve
+  with available tools.
 
 When analyzing the system, follow this workflow:
 1. Gather current metrics (CPU, memory, disk, top processes).
@@ -147,6 +147,83 @@ AVAILABLE_TOOLS = [
                 },
             },
             "required": ["severity", "title", "detail"],
+        },
+    },
+    {
+        "name": "execute_command",
+        "description": "Ad-hoc command execution. Run an arbitrary shell command "
+                       "on this host. Use this for remediation actions not covered "
+                       "by a dedicated tool.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command to execute",
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default 30)",
+                },
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "kill_process",
+        "description": "Send a signal to a process by PID. Defaults to SIGTERM; "
+                       "use signal='SIGKILL' if the process does not respond.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pid": {
+                    "type": "integer",
+                    "description": "Process ID to signal",
+                },
+                "signal": {
+                    "type": "string",
+                    "enum": ["SIGTERM", "SIGKILL", "SIGSTOP", "SIGCONT"],
+                    "description": "Signal to send (default SIGTERM)",
+                },
+            },
+            "required": ["pid"],
+        },
+    },
+    {
+        "name": "cleanup_temp_files",
+        "description": "Delete temporary files older than N days in a given "
+                       "directory. Defaults to /tmp with a 7-day threshold.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "directory": {
+                    "type": "string",
+                    "description": "Directory to clean (default /tmp)",
+                },
+                "days": {
+                    "type": "integer",
+                    "description": "Age threshold in days (default 7)",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Optional glob pattern to match filenames",
+                },
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "restart_service",
+        "description": "Restart a systemd service on this host using systemctl.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the systemd service to restart",
+                },
+            },
+            "required": ["service_name"],
         },
     },
 ]

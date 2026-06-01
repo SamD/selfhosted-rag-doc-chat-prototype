@@ -59,6 +59,7 @@ from shared.env_names import (  # noqa: E402
     ENV_MQTT_BROKER_HOST,
     ENV_MQTT_BROKER_PORT,
     ENV_MQTT_HUB_TOKEN,
+    ENV_TELEMETRY_INTERVAL,
 )
 from shared.topics import (  # noqa: E402
     DISCOVERY_TOPIC,
@@ -77,6 +78,7 @@ MQTT_HOST = os.getenv(ENV_MQTT_BROKER_HOST, DEFAULT_MQTT_BROKER_HOST)
 MQTT_PORT = int(os.getenv(ENV_MQTT_BROKER_PORT, str(DEFAULT_MQTT_BROKER_PORT)))
 MQTT_TOKEN = os.getenv(ENV_MQTT_HUB_TOKEN, DEFAULT_MQTT_HUB_TOKEN)
 LLM_PATH = os.getenv(ENV_LLM_PATH, "")
+TELEMETRY_INTERVAL = int(os.getenv(ENV_TELEMETRY_INTERVAL, "300"))
 
 _client: mqtt.Client | None = None
 _llm: Any = None
@@ -416,6 +418,91 @@ def execute_tool_call(name: str, args: dict[str, Any]) -> str:
             _client.publish(TELEMETRY_TOPIC, json.dumps(finding), qos=0)
         return json.dumps({"status": "reported"})
 
+    elif name == "execute_command":
+        command = args.get("command", "")
+        timeout = args.get("timeout", 30)
+        if not command:
+            return json.dumps({"error": "No command provided"})
+        try:
+            output = subprocess.check_output(
+                command,
+                shell=True,
+                text=True,
+                timeout=timeout,
+                stderr=subprocess.STDOUT,
+            )
+            return json.dumps({"status": "success", "output": output})
+        except subprocess.CalledProcessError as exc:
+            return json.dumps({"status": "failed", "output": exc.output or "", "error": str(exc)})
+        except subprocess.TimeoutExpired:
+            return json.dumps({"status": "failed", "output": "", "error": "Command timed out"})
+
+    elif name == "kill_process":
+        pid = args.get("pid")
+        sig = args.get("signal", "SIGTERM")
+        signal_map = {"SIGTERM": signal.SIGTERM, "SIGKILL": signal.SIGKILL,
+                      "SIGSTOP": signal.SIGSTOP, "SIGCONT": signal.SIGCONT}
+        sig_num = signal_map.get(sig, signal.SIGTERM)
+        try:
+            os.kill(pid, sig_num)
+            return json.dumps({"status": "success", "signal": sig, "pid": pid})
+        except ProcessLookupError:
+            return json.dumps({"status": "failed", "error": f"Process {pid} not found"})
+        except PermissionError:
+            return json.dumps({"status": "failed", "error": f"Permission denied to signal process {pid}"})
+        except Exception as exc:
+            return json.dumps({"status": "failed", "error": str(exc)})
+
+    elif name == "cleanup_temp_files":
+        directory = args.get("directory", "/tmp")
+        days = args.get("days", 7)
+        pattern = args.get("pattern", None)
+        import fnmatch
+        cutoff = time.time() - (days * 86400)
+        if not os.path.isdir(directory):
+            return json.dumps({"error": f"Directory not found: {directory}"})
+        deleted = 0
+        freed_bytes = 0
+        try:
+            for entry in os.scandir(directory):
+                try:
+                    if pattern and not fnmatch.fnmatch(entry.name, pattern):
+                        continue
+                    stat = entry.stat()
+                    if stat.st_mtime < cutoff:
+                        if entry.is_file() or entry.is_symlink():
+                            size = stat.st_size
+                            os.unlink(entry.path)
+                            deleted += 1
+                            freed_bytes += size
+                except OSError:
+                    pass
+        except PermissionError:
+            return json.dumps({"status": "partial", "error": "Permission denied",
+                               "deleted": deleted, "freed_bytes": freed_bytes})
+        return json.dumps({"status": "success", "deleted": deleted,
+                           "freed_bytes": freed_bytes, "freed_mb": round(freed_bytes / (1024**2), 1)})
+
+    elif name == "restart_service":
+        service_name = args.get("service_name", "")
+        if not service_name:
+            return json.dumps({"error": "No service name provided"})
+        try:
+            output = subprocess.check_output(
+                ["systemctl", "restart", service_name],
+                text=True,
+                timeout=60,
+                stderr=subprocess.STDOUT,
+            )
+            return json.dumps({"status": "success", "service": service_name, "output": output})
+        except subprocess.CalledProcessError as exc:
+            return json.dumps({"status": "failed", "service": service_name,
+                               "output": exc.output or "", "error": str(exc)})
+        except FileNotFoundError:
+            return json.dumps({"error": "systemctl not found — not a systemd system?"})
+        except subprocess.TimeoutExpired:
+            return json.dumps({"status": "failed", "output": "", "error": "Service restart timed out"})
+
     return json.dumps({"error": f"Unknown tool: {name}"})
 
 
@@ -588,12 +675,12 @@ def main() -> None:
 
     telemetry_counter = 0
     while True:
-        time.sleep(15)
+        time.sleep(TELEMETRY_INTERVAL)
         telemetry_counter += 1
 
         publish_telemetry()
 
-        if _llm is not None and telemetry_counter % (sre_interval // 15) == 0:
+        if _llm is not None and telemetry_counter % (sre_interval // TELEMETRY_INTERVAL) == 0:
             try:
                 metrics = gather_metrics()
                 run_sre_analysis(metrics)

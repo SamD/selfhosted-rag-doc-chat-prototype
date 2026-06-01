@@ -9,7 +9,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/
 ENV PATH="/uv/bin:$PATH"
 
 # Install dependencies
-RUN uv pip install redis openai
+RUN uv pip install 'redis<8' openai
 
 # Set up the worker code
 WORKDIR /app
