@@ -151,6 +151,109 @@ docker exec -it doc-ingest-chat-redis-1 redis-cli
 
 ---
 
+## Whisper.cpp — Server Debugging
+
+The whisper.cpp server must be started with `--convert` to handle non-WAV formats (MP4, MP3, M4A, etc.). Without it, the server returns `400 Bad Request` and logs `failed to decode audio data from memory buffer`.
+
+### Verify Server
+
+```bash
+curl http://<whisper-host>:1145/
+```
+
+Should return an HTML page with the API documentation.
+
+### Test with WAV (basic)
+
+```bash
+curl http://<whisper-host>:1145/inference \
+  -F "file=@/path/to/test.wav" \
+  -F "temperature=0.0" \
+  -F "response_format=json"
+```
+
+### Test with MP4 (requires --convert)
+
+```bash
+curl http://<whisper-host>:1145/inference \
+  -F "file=@/path/to/test.mp4" \
+  -F "temperature=0.0" \
+  -F "temperature_inc=0.2" \
+  -F "no_speech_thold=0.6" \
+  -F "response_format=json"
+```
+
+### Convert MP4 to WAV manually
+
+```bash
+ffmpeg -i /path/to/test.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 /tmp/test.wav
+```
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `400 Bad Request` + `failed to decode audio data` | Server missing `--convert` flag | Restart server with `--convert` |
+| `Connection refused` | Server not running or wrong host/port | Check `WHISPER_MODEL_PATH` env var |
+| Transcription empty | Audio too quiet or no speech | Check `no_speech_thold` parameter |
+
+---
+
+## HAProxy — Load Balancer Monitoring
+
+When multi-endpoint `*_ENDPOINTS` env vars are set, HAProxy containers handle request distribution across backends.
+
+### Stats UI
+
+| Service | URL |
+|---------|-----|
+| Supervisor LLM | `http://localhost:8404/stats` |
+| Embedding | `http://localhost:8405/stats` |
+| Whisper | `http://localhost:8406/stats` |
+| OCR | `http://localhost:8407/stats` |
+
+### Check HAProxy Logs
+
+```bash
+docker logs haproxy_supervisor 2>&1 | grep "POST\|GET" | tail -20
+docker logs haproxy_embd 2>&1 | grep "POST\|GET" | tail -20
+docker logs haproxy_whisper 2>&1 | grep "POST\|GET" | tail -20
+docker logs haproxy_ocr 2>&1 | grep "POST\|GET" | tail -20
+```
+
+### Verify Traffic Distribution
+
+Requests should alternate between backends (`srv0`, `srv1`, etc.):
+
+```bash
+docker logs haproxy_supervisor 2>&1 | grep "be_supervisor/" | tail -10
+```
+
+Expected output shows alternating backends:
+```
+be_supervisor/srv0 ... "POST /v1/chat/completions HTTP/1.1"
+be_supervisor/srv1 ... "POST /v1/chat/completions HTTP/1.1"
+be_supervisor/srv0 ... "POST /v1/chat/completions HTTP/1.1"
+```
+
+### Check Backend Health
+
+HAProxy health-checks backends every 2s via `GET /models` (or `GET /health`). A backend is marked down after 3 consecutive failures and up after 2 successes.
+
+```bash
+docker exec haproxy_supervisor cat /tmp/haproxy.cfg | grep "server srv"
+```
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| All traffic to one backend | Keep-alive connection pinning | `option httpclose` is set — check if client is reusing connections |
+| Backend marked DOWN | Health check failing | Check if the backend's `/models` or `/health` endpoint responds |
+| 503 from HAProxy | 0 endpoints configured | Set `*_ENDPOINTS` env var or point `*_PATH` directly to backend |
+
+---
+
 ## Qdrant — Vector Inspection
 
 ### Point Count for a Document

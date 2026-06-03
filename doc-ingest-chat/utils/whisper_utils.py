@@ -30,7 +30,7 @@ def get_redis_client():
     return _REDIS_CLIENT_CACHE
 
 
-def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str = None) -> Generator[str, None, None]:
+def send_media_to_whisperx(file_path: str, language: str = "en", mime_type: str = None, trace_id: str = None) -> Generator[str, None, None]:
     """
     Send media file path to WhisperX service and yield transcription segments.
     Always uses Redis queue to ensure the flow remains unchanged.
@@ -49,6 +49,7 @@ def send_media_to_whisperx(file_path: str, language: str = "en", trace_id: str =
         "file_path": abs_file_path,
         "reply_key": reply_key,
         "language": language,
+        "mime_type": mime_type,
         "trace_id": trace_id,
     }
 

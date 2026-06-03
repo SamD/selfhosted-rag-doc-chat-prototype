@@ -21,9 +21,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
 
-# Exact parity resolution
+# Exact parity resolution — use lock file to pin versions
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install -r pyproject.toml --python-version 3.12
+    uv export --frozen --no-dev --no-hashes -o /tmp/requirements.txt && \
+    uv pip install -r /tmp/requirements.txt --python /opt/venv/bin/python
 
 # Warmup setup (using the shared mount path)
 RUN mkdir -p /usr/local/model_cache
@@ -32,6 +33,10 @@ ENV TORCH_HOME=/usr/local/model_cache
 
 COPY shared/ /app/shared/
 COPY doc-ingest-chat/ /app/doc-ingest-chat/
+
+# Build arg for OCR_PATH — when remote, skip Docling warmup
+ARG OCR_PATH=LOCAL
+ENV OCR_PATH=${OCR_PATH}
 
 # Run warmup (Permanently bake into the image layer, no --mount=type=cache)
 RUN PYTHONPATH=/app/doc-ingest-chat \

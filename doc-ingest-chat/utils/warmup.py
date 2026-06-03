@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 
 # 1. UNIFIED BUILD-TIME CACHE
 # We bake EVERYTHING into this path so it's immutable and offline at runtime.
@@ -28,28 +27,36 @@ log = logging.getLogger("warmup")
 def warmup():
     log.info("🔥 Starting COMPREHENSIVE Build-Time Model Warmup...")
     
-    try:
-        # --- A. DOCLING WARMUP ---
-        log.info("📥 Downloading Docling/EasyOCR acceleration models...")
-        from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
-        from docling.document_converter import DocumentConverter, PdfFormatOption
+    ocr_path = os.environ.get("OCR_PATH", "LOCAL")
 
-        ocr_options = EasyOcrOptions(lang=["en"], download_enabled=True)
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = True
-        pipeline_options.ocr_options = ocr_options
-        pipeline_options.do_table_structure = True 
-        
-        _ = DocumentConverter(
-            allowed_formats=[InputFormat.PDF],
-            format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-            },
-        )
-        
-        log.info("✅ COMPREHENSIVE Warmup complete. All assets baked into /usr/local/model_cache")
-        
+    if ocr_path.startswith(("http://", "https://")):
+        log.info(f"⏭️ OCR_PATH is remote ({ocr_path}), skipping Docling warmup")
+    else:
+        try:
+            # --- A. DOCLING WARMUP ---
+            log.info("📥 Downloading Docling/EasyOCR acceleration models...")
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+            from docling.document_converter import DocumentConverter, PdfFormatOption
+
+            ocr_options = EasyOcrOptions(lang=["en"], download_enabled=True)
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = True
+            pipeline_options.ocr_options = ocr_options
+            pipeline_options.do_table_structure = True 
+            
+            _ = DocumentConverter(
+                allowed_formats=[InputFormat.PDF],
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                },
+            )
+            
+            log.info("✅ Docling warmup complete")
+        except Exception as e:
+            log.warning(f"⚠️ Docling warmup failed (non-fatal): {e}")
+
+    try:
         # --- B. TOKENIZER WARMUP ---
         log.info("📥 Downloading E5 Tokenizer (fallback model)...")
         from transformers import AutoTokenizer
@@ -57,12 +64,10 @@ def warmup():
         tokenizer = AutoTokenizer.from_pretrained("intfloat/e5-large-v2")
         tokenizer.save_pretrained(fallback_dir)
         log.info(f"✅ Tokenizer warmup complete. Files saved to {fallback_dir}")
-        
     except Exception as e:
-        log.error(f"❌ Warmup failed: {e}")
-        import traceback
-        log.error(traceback.format_exc())
-        sys.exit(1)
+        log.warning(f"⚠️ Tokenizer warmup failed (non-fatal): {e}")
+
+    log.info("✅ Warmup complete")
 
 if __name__ == "__main__":
     warmup()

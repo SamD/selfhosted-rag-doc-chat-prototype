@@ -12,6 +12,8 @@ class MP4ContentTypeHandler(BaseContentTypeHandler):
     Handler for MP4 files using a dedicated WhisperX worker.
     """
 
+    MIME_TYPE = "video/mp4"
+
     def can_handle(self, file_path: str) -> bool:
         return file_path.lower().endswith(".mp4")
 
@@ -21,7 +23,7 @@ class MP4ContentTypeHandler(BaseContentTypeHandler):
         """
         log.info(f"🎥 Transcribing MP4 via dedicated worker: {file_path}")
         try:
-            yield from send_media_to_whisperx(file_path, trace_id=get_trace_id())
+            yield from send_media_to_whisperx(file_path, mime_type=self.get_mime_type(file_path), trace_id=get_trace_id())
         except Exception as e:
             log.error(f"❌ MP4 transcription delegation failed: {e}")
             raise

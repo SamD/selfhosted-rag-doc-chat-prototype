@@ -51,25 +51,30 @@ class RemoteWhisper:
         self.url = base_url
         log.info(f"🌐 Remote Whisper Target: {self.url}")
 
-    def transcribe_file(self, file_path: str, language: str = "en"):
+    def transcribe_file(self, file_path: str, language: str = "en", mime_type: str = None):
         """Transcribe file using remote API via direct POST."""
+        import mimetypes
+
         import requests
 
+        if not mime_type:
+            mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+
         with open(file_path, "rb") as audio_file:
-            # Match the format from your successful curl command
-            files = {"file": (os.path.basename(file_path), audio_file, "audio/wav")}
+            files = {"file": (os.path.basename(file_path), audio_file, mime_type)}
             data = {
                 "temperature": "0.0",
                 "response_format": "json",
                 "language": language,
             }
 
-            log.info(f"📤 Sending POST to {self.url}...")
+            log.info(f"📤 Sending POST to {self.url} (mime: {mime_type})...")
             response = requests.post(self.url, files=files, data=data, timeout=300)
             response.raise_for_status()
 
             result = response.json()
-            # Normalize to WhisperX-like format
             text = result.get("text", "")
             return {"segments": [{"text": text}]}
 
@@ -129,6 +134,7 @@ def worker_loop():
                     reply_key = job.get("reply_key")
                     language = job.get("language", "en")
                     trace_id = job.get("trace_id")
+                    mime_type = job.get("mime_type")
 
                     if trace_id:
                         set_trace_id(trace_id)
@@ -141,7 +147,7 @@ def worker_loop():
                             raise FileNotFoundError(f"File not found: {file_path}")
 
                         if isinstance(model, RemoteWhisper):
-                            result = model.transcribe_file(file_path, language=language)
+                            result = model.transcribe_file(file_path, language=language, mime_type=mime_type)
                         else:
                             import whisperx
 

@@ -17,6 +17,7 @@ The system is built for **air-gapped, high-fidelity document ingestion** on comm
   - **Supervisor LLM** (`SUPERVISOR_LLM_PATH`): Structural transcription and high-density retyping of raw text into clean Markdown.
   - **RAG LLM** (`LLM_PATH`): Conversational reasoning and grounded retrieval with strict citation enforcement.
 - **Atomic Handoffs**: Every stage transition is a "Move-then-Update" transaction in DuckDB, ensuring no document is lost or double-processed.
+- **Load Balancing**: When multiple backends are available for any service (LLM, embeddings, WhisperX, OCR), HAProxy distributes requests across them with health checks, failover, and round-robin balancing.
 
 ---
 
@@ -92,14 +93,22 @@ graph TD
     C --> B
     B -->|Transcription Needed| W(WhisperX Worker)
     W --> B
-    B -->|Supervisor LLM| N[Normalization LLM]
-    N --> B
+    B -->|Supervisor LLM| HP_S[HAProxy Supervisor]
+    HP_S --> N1[LLM Backend 0]
+    HP_S --> N2[LLM Backend 1]
+    N1 --> B
+    N2 --> B
     B -->|PREPROCESSING_COMPLETE| D[ingestion/]
     D --> E(Producer Worker)
     E -->|Split + Enqueue| F{Redis Queues}
     F --> G(Consumer Worker)
     G -->|Stage| H[(DuckDB)]
-    G -->|Embed + Upsert| I[(Qdrant)]
+    G -->|Embed| HP_E[HAProxy Embedding]
+    HP_E --> E1[Embed Backend 0]
+    HP_E --> E2[Embed Backend 1]
+    E1 --> G
+    E2 --> G
+    G -->|Upsert| I[(Qdrant)]
     G -->|Archive| J[(Parquet)]
     G -->|SUCCESS| K[success/]
     
@@ -251,3 +260,45 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
 - **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)
 - **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation based on `LLAMA_USE_GPU`
 - **Network diagram**: See [docs/infra/sample-lab-deployment.puml](infra/sample-lab-deployment.puml) for the reference lab topology. This is a PlantUML diagram — use a PlantUML viewer (VS Code extension, [plantuml.com](https://www.plantuml.com), or `plantuml` CLI) to render it. Consider requesting a pre-rendered image if plaintext viewing is needed.
+
+---
+
+## HAProxy Load Balancing
+
+When multiple backend endpoints are configured for any service, HAProxy automatically distributes requests across them. This is transparent to the Python workers — they see a single URL and HAProxy handles the routing.
+
+### Supported Services
+
+| Service | Env Var (endpoints) | HAProxy Port | Stats Port | Auto-Override |
+|---------|-------------------|-------------|------------|---------------|
+| Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_PATH` → `http://haproxy_supervisor:11437/v1` |
+| Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_MODEL_PATH` → `http://haproxy_embd:11438/v1` |
+| WhisperX | `WHISPER_ENDPOINTS` | 11439 | 8406 | `WHISPER_MODEL_PATH` → `http://haproxy_whisper:11439/inference` |
+| OCR | `OCR_ENDPOINTS` | 11440 | 8407 | `OCR_PATH` → `http://haproxy_ocr:11440/v1/convert/file` |
+
+### Behavior by Endpoint Count
+
+| Endpoints | Behavior |
+|-----------|----------|
+| 0 (unset) | HAProxy returns 503. The `*_PATH` env var is used directly (no haproxy dependency). |
+| 1 | Transparent proxy to that single backend. |
+| 2+ | `roundrobin` balancing with `httpclose` (no keep-alive pinning). Health checks on `/models` or `/health`. |
+
+### How It Works
+
+1. `run-compose.sh` detects `*_ENDPOINTS` env vars and auto-sets the corresponding `*_PATH` to the haproxy container URL.
+2. The HAProxy entrypoint script (`infra/haproxy-entrypoint.sh`) generates the config at container startup from the `*_ENDPOINTS` env var.
+3. Workers connect to haproxy as if it were a single backend. HAProxy distributes requests across all healthy backends.
+4. Stats UI available at `http://localhost:<stats-port>/stats` for each service.
+
+### Configuration
+
+Endpoints are comma-separated URLs. Each URL can include the full path — HAProxy extracts `host:port` for routing and forwards the original request path.
+
+```bash
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings
+export WHISPER_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
+export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
+./doc-ingest-chat/run-compose.sh --build
+```
