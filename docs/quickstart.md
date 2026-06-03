@@ -131,6 +131,36 @@ The coordinator connects to all services over HTTP. Each remote host can be opti
 
 ---
 
+## Multi-Endpoint Load Balancing
+
+When you have multiple hosts running the same service, set `*_ENDPOINTS` env vars with comma-separated URLs. HAProxy starts automatically and distributes requests across all backends with health checks and failover.
+
+```bash
+# Two GPU hosts running supervisor LLM
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+
+# Two hosts running embedding model
+export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
+
+# Two hosts running WhisperX
+export WHISPER_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
+
+# Two hosts running OCR
+export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
+```
+
+When `*_ENDPOINTS` is set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to the HAProxy container. No manual path configuration needed.
+
+### HAProxy Stats
+
+Monitor load balancing at:
+- Supervisor: `http://localhost:8404/stats`
+- Embedding: `http://localhost:8405/stats`
+- Whisper: `http://localhost:8406/stats`
+- OCR: `http://localhost:8407/stats`
+
+---
+
 ## Offline Operation
 
 - `HF_HUB_OFFLINE=1` is baked into all Docker images — HuggingFace libraries never phone home

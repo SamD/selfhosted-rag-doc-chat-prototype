@@ -17,6 +17,8 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
     Handler for PDF files using pdfplumber and OCR fallback.
     """
 
+    MIME_TYPE = "application/pdf"
+
     def can_handle(self, file_path: str) -> bool:
         return file_path.lower().endswith(".pdf")
 

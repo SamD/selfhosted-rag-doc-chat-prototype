@@ -29,6 +29,7 @@ x-gpu-params: &gpu-params
     args:
       TARGET_TYPE: cuda
       BUILDKIT_INLINE_CACHE: 1
+      OCR_PATH: ${OCR_PATH:-LOCAL}
   environment:
     - LLAMA_USE_GPU=true
     - PYTHONUNBUFFERED=1
@@ -40,8 +41,12 @@ x-gpu-params: &gpu-params
     - LLM_PATH=${LLM_PATH}
     - SUPERVISOR_LLM_PATH=${SUPERVISOR_LLM_PATH}
     - SUPERVISOR_MAX_TOKENS=${SUPERVISOR_MAX_TOKENS:-4096}
+    - SUPERVISOR_LLM_ENDPOINTS=${SUPERVISOR_LLM_ENDPOINTS:-}
+    - EMBEDDING_ENDPOINTS=${EMBEDDING_ENDPOINTS:-}
     - WHISPER_MODEL_PATH=${WHISPER_MODEL_PATH}
+    - WHISPER_ENDPOINTS=${WHISPER_ENDPOINTS:-}
     - OCR_PATH=${OCR_PATH}
+    - OCR_ENDPOINTS=${OCR_ENDPOINTS:-}
     - VECTOR_DB_URL=${VECTOR_DB_URL:-}
     - VECTOR_DB_PROFILE=${VECTOR_DB_PROFILE}
     - VECTOR_DB_USE_GRPC=${VECTOR_DB_USE_GRPC:-true}
@@ -89,6 +94,91 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+
+  haproxy_supervisor:
+    image: haproxy:2.8-alpine
+    container_name: haproxy_supervisor
+    env_file:
+      - .env
+    environment:
+      - SERVICE=supervisor
+      - SUPERVISOR_LLM_ENDPOINTS=${SUPERVISOR_LLM_ENDPOINTS:-}
+    volumes:
+      - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh", "supervisor"]
+    ports:
+      - "11437:11437"
+      - "8404:8404"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8404/stats"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  haproxy_embd:
+    image: haproxy:2.8-alpine
+    container_name: haproxy_embd
+    env_file:
+      - .env
+    environment:
+      - SERVICE=embedding
+      - EMBEDDING_ENDPOINTS=${EMBEDDING_ENDPOINTS:-}
+    volumes:
+      - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh", "embedding"]
+    ports:
+      - "11438:11438"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8405/stats"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  haproxy_whisper:
+    image: haproxy:2.8-alpine
+    container_name: haproxy_whisper
+    env_file:
+      - .env
+    environment:
+      - SERVICE=whisper
+      - WHISPER_ENDPOINTS=${WHISPER_ENDPOINTS:-}
+    volumes:
+      - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh", "whisper"]
+    ports:
+      - "11439:11439"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8406/stats"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  haproxy_ocr:
+    image: haproxy:2.8-alpine
+    container_name: haproxy_ocr
+    env_file:
+      - .env
+    environment:
+      - SERVICE=ocr
+      - OCR_ENDPOINTS=${OCR_ENDPOINTS:-}
+    volumes:
+      - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh", "ocr"]
+    ports:
+      - "11440:11440"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8407/stats"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   consumer_worker_gpu:
     <<: [*base-service, *gpu-params]
@@ -152,6 +242,9 @@ services:
     depends_on:
       ocr_worker:
         condition: service_healthy
+      haproxy_supervisor:
+        condition: service_healthy
+        required: false
 
   producer_worker:
     <<: [*base-service, *gpu-params]

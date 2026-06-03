@@ -169,32 +169,24 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         batch_text = []
         unit_count = 0
 
-        # 2. Consume the stream and batch content for the LLM
         for t in content_stream:
             unit_count += 1
             if not t:
                 continue
-
-            # Tag the content unit (page for PDF, segment for media, etc.)
             tagged_text = f"### [INTERNAL_PAGE_{unit_count}]\n{t}"
             batch_text.append(tagged_text)
 
-            # PROCESS BATCH: Trigger when we hit the size limit
             if len(batch_text) >= settings.GATEKEEPER_BATCH_SIZE:
                 log.info(f"📊 Normalizing Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
                 full_content = "\n\n".join(batch_text)
-                
-                # A. Normalize via LLM
                 meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
                 if not normalized_text.strip():
                     empty_chunks += 1
                 if chunk_idx == 0:
                     first_chunk_meta = meta
-
                 chunk_idx += 1
-                batch_text = []  # CLEAR COMPLETELY
+                batch_text = []
 
-        # FINAL BATCH: Handle remaining units
         if batch_text:
             log.info(f"📊 Normalizing Final Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
             full_content = "\n\n".join(batch_text)
@@ -204,7 +196,6 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             if chunk_idx == 0:
                 first_chunk_meta = meta
 
-        # 3. ATOMIC FINALIZE: Move tmp file to final destination
         if os.path.exists(tmp_md_path):
             shutil.move(tmp_md_path, md_path)
             log.info(f"🚚 Atomic finalize: Moved {tmp_md_path} -> {md_path}")
@@ -229,7 +220,25 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         return False, None
 
 
-def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> Tuple[dict, str]:
+def assemble_metadata_anchor(idx, meta, trace_id):
+    if idx == 0:
+        return (
+            f"---\n"
+            f"ID: {meta['id']}\n"
+            f"Slug: {meta['slug']}\n"
+            f"Trace-ID: {trace_id}\n"
+            f"Processed-At: {meta['processed_at']}\n"
+            f"Source-Type: {meta['source_type']}\n"
+            f"Extraction-Tier: {meta['tier']}\n"
+            f"Chunk-Index: {meta['chunk_index']}\n"
+            f"Schema-Version: {meta['schema_version']}\n"
+            f"Raw-Path: {meta['raw_path']}\n"
+            f"---\n\n"
+        )
+    return "\n\n\n\n"
+
+
+def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None) -> Tuple[dict, str]:
     """Stateless normalization using the exact prompt verified by the user."""
     meta = assemble_metadata(file_path, slug, idx, 9999)
 
@@ -323,9 +332,7 @@ def process_chunk(idx, raw_content, file_path, slug, md_path, trace_id=None) -> 
     else:
         log.info(f"🤖 Chunk {idx}: LLM returned {len(content)} chars ({token_info}).")
 
-    # 3. Final text construction
     final_text = anchor_header + content
-
     mode = "w" if idx == 0 else "a"
     with open(md_path, mode, encoding="utf-8") as f:
         f.write(final_text)

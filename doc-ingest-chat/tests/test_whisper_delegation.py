@@ -69,3 +69,37 @@ def test_send_media_to_whisperx_redis_failure():
             list(send_media_to_whisperx("test.mp4"))
         
         assert "Redis submission failed" in str(excinfo.value)
+
+
+def test_send_media_to_whisperx_passes_mime_type():
+    """Test that mime_type from content handler is included in Redis job."""
+    mock_redis = MagicMock()
+    mock_redis.blpop.side_effect = [
+        ("key", json.dumps({"type": "done"}))
+    ]
+
+    with patch("utils.whisper_utils.get_redis_client", return_value=mock_redis), \
+         patch("os.path.abspath", side_effect=lambda x: f"/abs/{x}"):
+
+        list(send_media_to_whisperx("test.mp4", mime_type="video/mp4"))
+
+        args, _ = mock_redis.lpush.call_args
+        job_data = json.loads(args[1])
+        assert job_data["mime_type"] == "video/mp4"
+
+
+def test_send_media_to_whisperx_mime_type_none():
+    """Test that mime_type=None is included as None in Redis job."""
+    mock_redis = MagicMock()
+    mock_redis.blpop.side_effect = [
+        ("key", json.dumps({"type": "done"}))
+    ]
+
+    with patch("utils.whisper_utils.get_redis_client", return_value=mock_redis), \
+         patch("os.path.abspath", side_effect=lambda x: f"/abs/{x}"):
+
+        list(send_media_to_whisperx("test.mp4"))
+
+        args, _ = mock_redis.lpush.call_args
+        job_data = json.loads(args[1])
+        assert job_data["mime_type"] is None

@@ -21,7 +21,7 @@ class MP3ContentTypeHandler(BaseContentTypeHandler):
         """
         log.info(f"🎵 Transcribing Audio via dedicated worker: {file_path}")
         try:
-            yield from send_media_to_whisperx(file_path, trace_id=get_trace_id())
+            yield from send_media_to_whisperx(file_path, mime_type=self.get_mime_type(file_path), trace_id=get_trace_id())
         except Exception as e:
             log.error(f"❌ Audio transcription delegation failed: {e}")
             raise

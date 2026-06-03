@@ -86,6 +86,49 @@ case "$VECTOR_DB_URL" in
     ;;
 esac
 
+# 4b. MULTI-ENDPOINT: export endpoints and auto-override model paths to haproxy
+SUPERVISOR_ENDPOINTS="${SUPERVISOR_LLM_ENDPOINTS:-${env_map[SUPERVISOR_LLM_ENDPOINTS]:-}}"
+EMBEDDING_ENDPOINTS_VAL="${EMBEDDING_ENDPOINTS:-${env_map[EMBEDDING_ENDPOINTS]:-}}"
+export SUPERVISOR_LLM_ENDPOINTS="$SUPERVISOR_ENDPOINTS"
+export EMBEDDING_ENDPOINTS="$EMBEDDING_ENDPOINTS_VAL"
+
+if [[ -n "$SUPERVISOR_ENDPOINTS" ]]; then
+  count=$(echo "$SUPERVISOR_ENDPOINTS" | tr ',' '\n' | grep -c 'http' || true)
+  if [[ "$count" -gt 0 ]]; then
+    export SUPERVISOR_LLM_PATH="http://haproxy_supervisor:11437/v1"
+    echo "🔀 SUPERVISOR_LLM_ENDPOINTS detected ($count endpoints) → SUPERVISOR_LLM_PATH=$SUPERVISOR_LLM_PATH"
+  fi
+fi
+
+if [[ -n "$EMBEDDING_ENDPOINTS_VAL" ]]; then
+  count=$(echo "$EMBEDDING_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
+  if [[ "$count" -gt 0 ]]; then
+    export EMBEDDING_MODEL_PATH="http://haproxy_embd:11438/v1"
+    echo "🔀 EMBEDDING_ENDPOINTS detected ($count endpoints) → EMBEDDING_MODEL_PATH=$EMBEDDING_MODEL_PATH"
+  fi
+fi
+
+WHISPER_ENDPOINTS_VAL="${WHISPER_ENDPOINTS:-${env_map[WHISPER_ENDPOINTS]:-}}"
+OCR_ENDPOINTS_VAL="${OCR_ENDPOINTS:-${env_map[OCR_ENDPOINTS]:-}}"
+export WHISPER_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
+export OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
+
+if [[ -n "$WHISPER_ENDPOINTS_VAL" ]]; then
+  count=$(echo "$WHISPER_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
+  if [[ "$count" -gt 0 ]]; then
+    export WHISPER_MODEL_PATH="http://haproxy_whisper:11439/inference"
+    echo "🔀 WHISPER_ENDPOINTS detected ($count endpoints) → WHISPER_MODEL_PATH=$WHISPER_MODEL_PATH"
+  fi
+fi
+
+if [[ -n "$OCR_ENDPOINTS_VAL" ]]; then
+  count=$(echo "$OCR_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
+  if [[ "$count" -gt 0 ]]; then
+    export OCR_PATH="http://haproxy_ocr:11440/v1/convert/file"
+    echo "🔀 OCR_ENDPOINTS detected ($count endpoints) → OCR_PATH=$OCR_PATH"
+  fi
+fi
+
 ######################################
 # Function to validate and export   #
 ######################################
