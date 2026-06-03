@@ -128,6 +128,17 @@ export OCR_PATH=http://<ocr-host>:5001/v1/convert/file
 
 Full variable reference, local-file alternatives, and optional tuning flags are in [docs/quickstart.md](docs/quickstart.md).
 
+### Multi-Endpoint Load Balancing
+
+When you have multiple hosts running the same service, set `*_ENDPOINTS` env vars with comma-separated URLs. HAProxy starts automatically and distributes requests across all backends with health checks and failover.
+
+```bash
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
+```
+
+See [docs/quickstart.md](docs/quickstart.md#multi-endpoint-load-balancing) for full details.
+
 ### Launch
 
 ```bash

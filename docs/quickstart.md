@@ -99,7 +99,7 @@ The ingestion workers run on the coordinator host. They handle document lifecycl
 
 ## Distributed Deployment
 
-Every heavy service runs on a dedicated host or container. The worker stack runs on the coordinator.
+Every heavy service runs on a dedicated host or container. The worker stack runs on the coordinator. When multiple backends exist for a service, HAProxy load-balances across them.
 
 ```
 +-------------------+   +-------------------+   +-------------------+
@@ -121,13 +121,18 @@ Every heavy service runs on a dedicated host or container. The worker stack runs
               +-------------------------------+
               |       Coordinator Host        |
               |                               |
+              |  HAProxy (supervisor :11437)  |
+              |  HAProxy (embedding :11438)   |
+              |  HAProxy (whisper   :11439)   |
+              |  HAProxy (OCR       :11440)   |
+              |                               |
               |  gatekeeper + producer +      |
               |  consumer + OCR worker +      |
               |  WhisperX worker              |
               +-------------------------------+
 ```
 
-The coordinator connects to all services over HTTP. Each remote host can be optimized for its specific workload (GPU for LLM, CPU+RAM for WhisperX, NVMe for Qdrant).
+The coordinator connects to all services over HTTP via HAProxy. Each remote host can be optimized for its specific workload (GPU for LLM, CPU+RAM for WhisperX, NVMe for Qdrant). When only one backend exists for a service, HAProxy proxies transparently. When multiple backends exist, HAProxy round-robins across them with health checks.
 
 ---
 

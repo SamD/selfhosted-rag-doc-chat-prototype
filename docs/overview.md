@@ -38,7 +38,10 @@ sequenceDiagram
     participant PRD as Producer Worker
     participant CSN as Consumer Worker
     
-    participant NORM_LLM as Supervisor LLM
+    participant HAP_S as HAProxy Supervisor
+    participant NORM_LLM as Supervisor LLM Backends
+    participant HAP_E as HAProxy Embedding
+    participant EMB as Embedding Backends
     participant RAG_LLM as RAG LLM
 
     Note over STG, SUC: Phase 1 — Normalization (Gatekeeper)
@@ -50,11 +53,13 @@ sequenceDiagram
         GK->>OCR: Request OCR via Redis
         OCR-->>GK: Return raw text
     else Media (MP4/MP3)
-        GK->>WSP: Request Transcription via Redis
+        GK->>WSP: Request Transcription via Redis (MIME-typed)
         WSP-->>GK: Stream segments
     end
-    GK->>NORM_LLM: Normalize raw text to Markdown (batched)
-    NORM_LLM-->>GK: Return clean Markdown
+    GK->>HAP_S: Normalize raw text to Markdown (batched)
+    HAP_S->>NORM_LLM: roundrobin to backends
+    NORM_LLM-->>HAP_S: Return clean Markdown
+    HAP_S-->>GK: Return clean Markdown
     GK->>PRE: Write .md file (with page/timestamp anchors)
     GK->>DB: TRANSITION (PREPROCESSING_COMPLETE)
 
@@ -70,7 +75,11 @@ sequenceDiagram
     CSN->>DB: Stage chunks (DuckDB as WAL)
     CSN->>Redis: Receive file_end sentinel
     CSN->>DB: Retrieve all staged chunks for file
-    CSN->>CSN: Embed + batch-upsert to Qdrant
+    CSN->>HAP_E: Embed chunks
+    HAP_E->>EMB: roundrobin to backends
+    EMB-->>HAP_E: Return embeddings
+    HAP_E-->>CSN: Return embeddings
+    CSN->>CSN: batch-upsert to Qdrant
     CSN->>DB: TRANSITION (INGEST_SUCCESS)
     CNS->>SUC: Physical MOVE
 
