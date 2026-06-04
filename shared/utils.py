@@ -24,7 +24,7 @@ def resolve_supervisor_endpoint() -> str:
     endpoints = parse_endpoints(os.getenv("SUPERVISOR_LLM_ENDPOINTS", ""))
     if len(endpoints) == 1:
         url = endpoints[0]
-        if not url.endswith("/v1"):
+        if url.startswith(("http://", "https://")) and not url.endswith("/v1"):
             url = url.rstrip("/") + "/v1"
         return url
 
@@ -45,7 +45,8 @@ def resolve_embedding_endpoint() -> str | None:
     """
     endpoints = parse_endpoints(os.getenv("EMBEDDING_ENDPOINTS", ""))
     if len(endpoints) == 1:
-        return endpoints[0]
+        if endpoints[0].startswith(("http://", "https://")):
+            return endpoints[0]
 
     path = os.getenv("EMBEDDING_ENDPOINTS", "")
     if path.startswith(("http://", "https://")):
