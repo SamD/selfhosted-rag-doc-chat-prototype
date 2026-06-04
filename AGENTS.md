@@ -35,8 +35,8 @@ When multiple backend endpoints are configured via `*_ENDPOINTS` env vars, HAPro
 
 | Service | Env Var (endpoints) | HAProxy Port | Stats Port | Auto-Override |
 |---------|-------------------|-------------|------------|---------------|
-| Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_PATH` -> `http://haproxy_supervisor:11437/v1` |
-| Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_MODEL_PATH` -> `http://haproxy_embd:11438/v1` |
+| Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_ENDPOINTS` -> `http://haproxy_supervisor:11437/v1` |
+| Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_ENDPOINTS` -> `http://haproxy_embd:11438/v1` |
 | WhisperX | `WHISPER_MODEL_ENDPOINTS` | 11439 | 8406 | `WHISPER_MODEL_ENDPOINTS` -> `http://haproxy_whisper:11439/inference` |
 | OCR | `OCR_ENDPOINTS` | 11440 | 8407 | `OCR_ENDPOINTS` -> `http://haproxy_ocr:11440/v1/convert/file` |
 
@@ -68,8 +68,8 @@ export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/conver
 
 - `parse_endpoints(env_value)`: Parse comma-separated endpoint URLs from env vars.
 - `_normalize_openai_url(url)`: Ensure URL ends with `/v1`.
-- `resolve_supervisor_endpoint()`: Single-endpoint fallback from `SUPERVISOR_LLM_ENDPOINTS` or `SUPERVISOR_LLM_PATH`.
-- `resolve_embedding_endpoint()`: Single-endpoint fallback from `EMBEDDING_ENDPOINTS` or `EMBEDDING_MODEL_PATH`.
+- `resolve_supervisor_endpoint()`: Single-endpoint fallback from `SUPERVISOR_LLM_ENDPOINTS`.
+- `resolve_embedding_endpoint()`: Single-endpoint fallback from `EMBEDDING_ENDPOINTS`.
 
 ## Required Local Models (or Remote Endpoints)
 
@@ -95,16 +95,16 @@ Models can exist locally in these paths OR be provided via HTTP(S) URLs:
 ### Core Service Paths
 
 - `DEFAULT_DOC_INGEST_ROOT` - Root directory for all lifecycle stages (required)
-- `EMBEDDING_MODEL_PATH` - E5 model path or remote URL (required)
+- `EMBEDDING_ENDPOINTS` - E5 model path or remote URL(s) (required)
 - `LLM_PATH` - Main chat LLM path or remote URL (required)
-- `SUPERVISOR_LLM_PATH` - Normalization LLM path or remote URL (required)
+- `SUPERVISOR_LLM_ENDPOINTS` - Normalization LLM path or remote URL(s) (required)
 - `WHISPER_MODEL_ENDPOINTS` - Whisper model path or remote URL (default: `NOT_SET`)
 - `OCR_ENDPOINTS` - Remote docling-serve URL or `LOCAL` (default: `LOCAL`)
 
 ### Multi-Endpoint Load Balancing
 
-- `SUPERVISOR_LLM_ENDPOINTS` - Comma-separated supervisor LLM backend URLs
-- `EMBEDDING_ENDPOINTS` - Comma-separated embedding backend URLs
+- `SUPERVISOR_LLM_ENDPOINTS` - Comma-separated supervisor LLM backend URLs (also serves as single-endpoint var)
+- `EMBEDDING_ENDPOINTS` - Comma-separated embedding backend URLs (also serves as single-endpoint var)
 - `WHISPER_MODEL_ENDPOINTS` - Comma-separated whisper backend URLs
 - `OCR_ENDPOINTS` - Comma-separated OCR backend URLs
 
@@ -189,7 +189,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 - `pytest` with async support
 - `conftest.py` sets up minimal environment variables for test isolation
 - `test_document_processor.py` exists but is empty
-- Tests require env vars: `EMBEDDING_MODEL_PATH`, `DEFAULT_DOC_INGEST_ROOT`, `LLM_PATH`, `SUPERVISOR_LLM_PATH`
+- Tests require env vars: `EMBEDDING_ENDPOINTS`, `DEFAULT_DOC_INGEST_ROOT`, `LLM_PATH`, `SUPERVISOR_LLM_ENDPOINTS`
 - Run: `PYTHONPATH=doc-ingest-chat:shared .venv/bin/python -m pytest <test_file> -v`
 
 ## CI/CD
@@ -323,11 +323,9 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 ### Critical Env Vars Quick Reference
 
 - `DEFAULT_DOC_INGEST_ROOT` - Root for all lifecycle dirs (required)
-- `EMBEDDING_MODEL_PATH` - e5-large-v2 path/URL (required)
+- `EMBEDDING_ENDPOINTS` - e5-large-v2 path/URL(s) (required)
 - `LLM_PATH` - Main chat LLM path/URL (required)
-- `SUPERVISOR_LLM_PATH` - Normalization LLM path/URL (required)
-- `SUPERVISOR_LLM_ENDPOINTS` - Multi-endpoint supervisor LLM URLs (comma-separated)
-- `EMBEDDING_ENDPOINTS` - Multi-endpoint embedding URLs (comma-separated)
+- `SUPERVISOR_LLM_ENDPOINTS` - Normalization LLM path/URL(s) (required)
 - `WHISPER_MODEL_ENDPOINTS` - Multi-endpoint whisper URLs (comma-separated)
 - `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated)
 - `VECTOR_DB_PROFILE` - `qdrant` or `chroma`

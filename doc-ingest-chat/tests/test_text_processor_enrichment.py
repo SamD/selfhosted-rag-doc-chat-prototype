@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 # Set required environment variables
 os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", "/tmp/test")
-os.environ.setdefault("EMBEDDING_MODEL_PATH", "intfloat/e5-large-v2")
+os.environ.setdefault("EMBEDDING_ENDPOINTS", "intfloat/e5-large-v2")
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

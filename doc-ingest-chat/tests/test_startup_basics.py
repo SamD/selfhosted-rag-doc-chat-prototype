@@ -12,7 +12,7 @@ def _set_minimal_env(monkeypatch, tmp_path):
 
     monkeypatch.setenv("DEFAULT_DOC_INGEST_ROOT", str(ingest))
     monkeypatch.setenv("CHROMA_DATA_DIR", str(chroma))
-    monkeypatch.setenv("EMBEDDING_MODEL_PATH", str(e5))
+    monkeypatch.setenv("EMBEDDING_ENDPOINTS", str(e5))
     monkeypatch.setenv("LLM_PATH", str(llama))
 
     # Be explicit about Latin-mode defaults used in tests

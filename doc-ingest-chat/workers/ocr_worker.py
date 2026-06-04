@@ -77,7 +77,7 @@ def dispatcher(p, shared_state):
 def main():
     """Main OCR worker entry point with pre-compilation."""
     # Debug info
-    print(f"🕵️ OCR Worker Debug: EMBEDDING_MODEL_PATH={os.getenv('EMBEDDING_MODEL_PATH')}")
+    print(f"🕵️ OCR Worker Debug: EMBEDDING_ENDPOINTS={os.getenv('EMBEDDING_ENDPOINTS')}")
     print(f"🕵️ OCR Worker Debug: OCR_ENDPOINTS={os.getenv('OCR_ENDPOINTS', 'LOCAL')}")
     print(f"🕵️ OCR Worker Debug: Python={sys.executable}")
 

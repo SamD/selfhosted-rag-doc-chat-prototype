@@ -4,8 +4,8 @@ import unittest
 from unittest.mock import MagicMock, call, patch
 
 os.environ["LLM_PATH"] = "/tmp/dummy.gguf"
-os.environ["SUPERVISOR_LLM_PATH"] = "/tmp/supervisor.gguf"
-os.environ["EMBEDDING_MODEL_PATH"] = "/tmp/dummy_e5"
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = "/tmp/supervisor.gguf"
+os.environ["EMBEDDING_ENDPOINTS"] = "/tmp/dummy_e5"
 os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test_docs"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))

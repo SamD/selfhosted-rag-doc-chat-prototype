@@ -137,8 +137,8 @@ def main(scan_interval=30):
     config_manifest = [
         ("DEFAULT_DOC_INGEST_ROOT", settings.DEFAULT_DOC_INGEST_ROOT),
         ("LLM_PATH", settings.LLM_PATH),
-        ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
-        ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
+        ("SUPERVISOR_LLM_ENDPOINTS", settings.SUPERVISOR_LLM_ENDPOINTS),
+        ("EMBEDDING_ENDPOINTS", settings.EMBEDDING_ENDPOINTS),
         ("WHISPER_MODEL_ENDPOINTS", settings.WHISPER_MODEL_ENDPOINTS),
         ("OCR_ENDPOINTS", settings.OCR_ENDPOINTS),
         ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
@@ -154,7 +154,7 @@ def main(scan_interval=30):
             mode_label = ""
             icon = "✅"
             
-            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_ENDPOINTS", "OCR_ENDPOINTS", "VECTOR_DB_URL"]:
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_ENDPOINTS", "EMBEDDING_ENDPOINTS", "WHISPER_MODEL_ENDPOINTS", "OCR_ENDPOINTS", "VECTOR_DB_URL"]:
                 if str_val.startswith(("http://", "https://")):
                     mode_label = " [MODE: REMOTE]"
                     icon = "📡"

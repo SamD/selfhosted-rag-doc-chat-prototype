@@ -8,7 +8,7 @@ import chromadb
 import duckdb
 from config import settings
 from config.settings import (
-    EMBEDDING_MODEL_PATH,
+    EMBEDDING_ENDPOINTS,
     LLAMA_USE_GPU,
     USE_QDRANT,
     VECTOR_DB_COLLECTION,
@@ -143,18 +143,18 @@ class DatabaseService:
         if _EMBEDDINGS_CACHE is None:
             from utils.exceptions import ConfigurationError
 
-            if EMBEDDING_MODEL_PATH.startswith(("http://", "https://")):
+            if EMBEDDING_ENDPOINTS.startswith(("http://", "https://")):
                 from utils.llm_setup import RemoteEmbeddings
 
-                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_MODEL_PATH}")
-                _EMBEDDINGS_CACHE = RemoteEmbeddings(base_url=EMBEDDING_MODEL_PATH)
+                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_ENDPOINTS}")
+                _EMBEDDINGS_CACHE = RemoteEmbeddings(base_url=EMBEDDING_ENDPOINTS)
             else:
-                if not os.path.exists(EMBEDDING_MODEL_PATH):
-                    raise ConfigurationError(f"EMBEDDING_MODEL_PATH not found at {EMBEDDING_MODEL_PATH}")
+                if not os.path.exists(EMBEDDING_ENDPOINTS):
+                    raise ConfigurationError(f"EMBEDDING_ENDPOINTS not found at {EMBEDDING_ENDPOINTS}")
 
-                log.info(f"🚀 Loading local embedding model into {device}: {EMBEDDING_MODEL_PATH}")
+                log.info(f"🚀 Loading local embedding model into {device}: {EMBEDDING_ENDPOINTS}")
                 _EMBEDDINGS_CACHE = HuggingFaceEmbeddings(
-                    model_name=EMBEDDING_MODEL_PATH,
+                    model_name=EMBEDDING_ENDPOINTS,
                     model_kwargs={"device": device, "trust_remote_code": True},
                     encode_kwargs={"normalize_embeddings": True},
                 )

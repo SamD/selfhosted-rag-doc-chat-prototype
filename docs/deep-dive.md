@@ -52,7 +52,7 @@ The system uses two distinct LLMs. Both support local GGUF inference via llama-c
 
 ### Supervisor LLM (Normalization)
 
-- **Env var**: `SUPERVISOR_LLM_PATH`
+- **Env var**: `SUPERVISOR_LLM_ENDPOINTS`
 - **When**: During ingestion — the Gatekeeper phase
 - **Role**: Stateless "retyping" of raw extracted text into clean, structured Markdown
 - **Local config**: CPU-only (`n_gpu_layers=0`), 4K context window, flash attention enabled — keeps VRAM free for the RAG LLM
@@ -70,7 +70,7 @@ The system uses two distinct LLMs. Both support local GGUF inference via llama-c
 
 ### Embedding Model (e5-large-v2)
 
-- **Env var**: `EMBEDDING_MODEL_PATH`
+- **Env var**: `EMBEDDING_ENDPOINTS`
 - **When**: Both ingestion (chunk embedding) and query (query embedding)
 - **Local**: HuggingFace sentence-transformer loaded from a local directory
 - **Remote**: OpenAI-compatible embeddings API (e.g., `http://host:11434/v1/embeddings`)
