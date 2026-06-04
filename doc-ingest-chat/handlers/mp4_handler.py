@@ -9,19 +9,19 @@ log = get_logger("ingest.handlers.mp4")
 
 class MP4ContentTypeHandler(BaseContentTypeHandler):
     """
-    Handler for MP4 files using a dedicated WhisperX worker.
+    Handler for video files using a dedicated WhisperX worker.
     """
 
     MIME_TYPE = "video/mp4"
 
     def can_handle(self, file_path: str) -> bool:
-        return file_path.lower().endswith(".mp4")
+        return file_path.lower().endswith((".mp4", ".mov", ".mkv"))
 
     def stream_content(self, file_path: str) -> Generator[str, None, None]:
         """
         Delegates transcription to the WhisperX worker.
         """
-        log.info(f"🎥 Transcribing MP4 via dedicated worker: {file_path}")
+        log.info(f"🎥 Transcribing video via dedicated worker: {file_path}")
         try:
             yield from send_media_to_whisperx(file_path, mime_type=self.get_mime_type(file_path), trace_id=get_trace_id())
         except Exception as e:

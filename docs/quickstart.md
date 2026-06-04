@@ -198,10 +198,10 @@ Performance on this setup: **10–15 PDFs/min** (mixed quality), **~400ms query 
 ./doc-ingest-chat/run-compose.sh --build
 ```
 
-The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start alongside and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_PATH` and `WHISPER_MODEL_PATH`).
+The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start when the `cuda` profile is active and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_PATH` and `WHISPER_MODEL_PATH`).
 
 Docker Compose supports profiles:
-- `--profile gpu` (default) — NVIDIA GPU acceleration
+- `--profile cuda` (default) — NVIDIA GPU acceleration
 - `--profile cpu` — CPU-only mode
 - `--profile qdrant` or `--profile chroma` — vector database selection
 
@@ -209,7 +209,7 @@ Docker Compose supports profiles:
 
 ## Usage
 
-1. Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. Supported formats: `.pdf`, `.html`, `.htm`, `.txt`, `.md`, `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`
+1. Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. Supported formats: `.pdf`, `.html`, `.htm`, `.txt`, `.md`, `.mp3`, `.wav`, `.mp4`
 
 2. Monitor progress:
    ```bash

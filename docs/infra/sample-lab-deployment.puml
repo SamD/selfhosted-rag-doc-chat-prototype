@@ -3,7 +3,6 @@
 'Adapted from https://github.com/Crashedmind/PlantUML-opensecurityarchitecture-icons/blob/master/all
 scale .8
 !include <osa/device_wireless_router/device_wireless_router>
-'!theme spacelab
 !theme amiga
 <style>
   element {
@@ -24,31 +23,31 @@ nwdiag {
     network minilab {
         GL-BE3600
         address = "192.168.30.x/24"
-        bee1 [address="192.168.30.68" shape = node, description = "lxc-bee1 (Qdrant)\n---\n http://192.168.30.68:1145/inference"]
-        bee2 [address="192.168.30.66" shape = node, description = "lxc-bee2 (mxbai-embed-large-v1.Q4_K_M)\n---\n http://192.168.30.66:11434/v1/embeddings"]
+        bee1 [address="192.168.30.68" shape = node, description = "lxc-bee1 (Qdrant)\n---\n gRPC :6334 | REST :6333"]
+        bee2 [address="192.168.30.66" shape = node, description = "lxc-bee2 (mxbai-embed-large-v1 / e5)\n---\n http://192.168.30.66:11434/v1/embeddings"]
         bee3 [address="192.168.30.69" shape = node, description = "lxc-bee3 (docling+ocr)\n---\n http://192.168.30.69:5001/v1/convert/file"]
-        lxc-nvidia [address="192.168.30.60" shape = node, description = "lxc-nvidia (GLM-4.7-Flash-Q4_K_M)\nRTX3060 via OCuLink\n---\n http://192.168.30.60:11434/v1"]
-        lxc-amd [address="192.168.30.70" shape = node, description = "lxc-amd (whisperX)\nRadeon 780M iGPU\n---\n http://192.168.30.70:11434/v1""]
+        lxc-nvidia [address="192.168.30.60" shape = node, description = "lxc-nvidia (Supervisor LLM + Chat LLM)\nRTX3060 via OCuLink\n---\n Supervisor:11435 | Chat:11434"]
+        lxc-amd [address="192.168.30.70" shape = node, description = "lxc-amd (whisper.cpp)\nRadeon 780M iGPU\n---\n http://192.168.30.70:1145/inference"]
         address = "192.168.30.x/24"
-        vm-ace [address="192.168.30.67" shape = node, description = "vm-ace (NiFi)\n---\n https://192.168.30.67:8443/nifi"]
+        coordinator [address="192.168.30.71" shape = node, description = "Coordinator (worker stack)\n---\n Gatekeeper + Producer + Consumer\n Redis + DuckDB\n HAProxy containers"]
    }
 
     group {
         color = "purple";
-        description = "\nN95 Alder Lake N100 Intel UHD\n";
-        vm-ace;
+        description = "\nCoordinator Host\n";
+        coordinator;
     }
 
     group {
         color = "red";
-        description = "\nRyzen 7 7840HS Radeon 780M\n";
+        description = "\nRyzen 7 7840HS / RTX3060\n";
         lxc-nvidia;
         lxc-amd;
     }
 
     group {
         color = "green";
-        description = "\n12th Gen Intel N100 Intel UHD\n";
+        description = "\nIntel N100 (16GB RAM)\n";
         bee1;
         bee2;
         bee3;

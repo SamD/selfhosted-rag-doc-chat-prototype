@@ -9,11 +9,11 @@ log = get_logger("ingest.handlers.mp3")
 
 class MP3ContentTypeHandler(BaseContentTypeHandler):
     """
-    Handler for MP3 files using a dedicated WhisperX worker.
+    Handler for audio files using a dedicated WhisperX worker.
     """
 
     def can_handle(self, file_path: str) -> bool:
-        return file_path.lower().endswith(".mp3") or file_path.lower().endswith(".wav")
+        return file_path.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".flac"))
 
     def stream_content(self, file_path: str) -> Generator[str, None, None]:
         """
