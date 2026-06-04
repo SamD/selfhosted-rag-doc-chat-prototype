@@ -98,7 +98,7 @@ services:
       - .env
     environment:
       - SERVICE=supervisor
-      - SUPERVISOR_LLM_ENDPOINTS=${SUPERVISOR_LLM_ENDPOINTS:-}
+      - SUPERVISOR_LLM_ENDPOINTS=${HAPROXY_SUPERVISOR_ENDPOINTS:-}
     volumes:
       - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh", "supervisor"]
@@ -120,7 +120,7 @@ services:
       - .env
     environment:
       - SERVICE=embedding
-      - EMBEDDING_ENDPOINTS=${EMBEDDING_ENDPOINTS:-}
+      - EMBEDDING_ENDPOINTS=${HAPROXY_EMBEDDING_ENDPOINTS:-}
     volumes:
       - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh", "embedding"]
@@ -141,7 +141,7 @@ services:
       - .env
     environment:
       - SERVICE=whisper
-      - WHISPER_MODEL_ENDPOINTS=${WHISPER_MODEL_ENDPOINTS:-}
+      - WHISPER_MODEL_ENDPOINTS=${HAPROXY_WHISPER_ENDPOINTS:-}
     volumes:
       - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh", "whisper"]
@@ -162,7 +162,7 @@ services:
       - .env
     environment:
       - SERVICE=ocr
-      - OCR_ENDPOINTS=${OCR_ENDPOINTS:-}
+      - OCR_ENDPOINTS=${HAPROXY_OCR_ENDPOINTS:-}
     volumes:
       - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh", "ocr"]
