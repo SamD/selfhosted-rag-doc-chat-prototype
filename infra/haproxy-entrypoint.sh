@@ -280,7 +280,7 @@ HAPROXY_EOF
 # Whisper config
 # ---------------------------------------------------------------------------
 elif [ "$SERVICE" = "whisper" ]; then
-    ENDPOINTS="${WHISPER_ENDPOINTS:-}"
+    ENDPOINTS="${WHISPER_MODEL_ENDPOINTS:-}"
     COUNT=$(count_entries "$ENDPOINTS")
 
     if [ "$COUNT" -eq 0 ]; then

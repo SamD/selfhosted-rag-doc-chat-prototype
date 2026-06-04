@@ -19,7 +19,7 @@ os.environ["STAGING_FOLDER"] = "/tmp"
 os.environ["EMBEDDING_MODEL_PATH"] = "/tmp"
 os.environ["LLM_PATH"] = "http://localhost"
 os.environ["SUPERVISOR_LLM_PATH"] = "http://localhost"
-os.environ["WHISPER_MODEL_PATH"] = "/tmp"
+os.environ["WHISPER_MODEL_ENDPOINTS"] = "/tmp"
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("warmup")
@@ -27,10 +27,10 @@ log = logging.getLogger("warmup")
 def warmup():
     log.info("🔥 Starting COMPREHENSIVE Build-Time Model Warmup...")
     
-    ocr_path = os.environ.get("OCR_PATH", "LOCAL")
+    ocr_path = os.environ.get("OCR_ENDPOINTS", "LOCAL")
 
     if ocr_path.startswith(("http://", "https://")):
-        log.info(f"⏭️ OCR_PATH is remote ({ocr_path}), skipping Docling warmup")
+        log.info(f"⏭️ OCR_ENDPOINTS is remote ({ocr_path}), skipping Docling warmup")
     else:
         try:
             # --- A. DOCLING WARMUP ---

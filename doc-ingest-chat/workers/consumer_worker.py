@@ -123,8 +123,8 @@ def main() -> None:
         ("LLM_PATH", settings.LLM_PATH),
         ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
         ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
-        ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
-        ("OCR_PATH", settings.OCR_PATH),
+        ("WHISPER_MODEL_ENDPOINTS", settings.WHISPER_MODEL_ENDPOINTS),
+        ("OCR_ENDPOINTS", settings.OCR_ENDPOINTS),
         ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
         ("VECTOR_DB_USE_GRPC", settings.VECTOR_DB_USE_GRPC),
         ("VECTOR_DB_TIMEOUT", settings.VECTOR_DB_TIMEOUT),
@@ -138,11 +138,11 @@ def main() -> None:
             mode_label = ""
             icon = "✅"
             
-            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_PATH", "OCR_PATH", "VECTOR_DB_URL"]:
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_ENDPOINTS", "OCR_ENDPOINTS", "VECTOR_DB_URL"]:
                 if str_val.startswith(("http://", "https://")):
                     mode_label = " [MODE: REMOTE]"
                     icon = "📡"
-                elif name == "OCR_PATH" and str_val == "LOCAL":
+                elif name == "OCR_ENDPOINTS" and str_val == "LOCAL":
                     mode_label = " [MODE: LOCAL]"
                     icon = "🏠"
                 elif os.path.exists(str_val):

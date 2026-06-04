@@ -30,7 +30,7 @@ def test_mandatory_variables_present():
         assert settings.EMBEDDING_MODEL_PATH == os.environ["EMBEDDING_MODEL_PATH"]
         assert settings.LLM_PATH == os.environ["LLM_PATH"]
         assert settings.SUPERVISOR_LLM_PATH == os.environ["SUPERVISOR_LLM_PATH"]
-        assert settings.WHISPER_MODEL_PATH == os.environ["WHISPER_MODEL_PATH"]
+        assert settings.WHISPER_MODEL_ENDPOINTS == os.environ["WHISPER_MODEL_ENDPOINTS"]
 
 def test_missing_mandatory_raises_system_exit():
     """
@@ -48,14 +48,14 @@ def test_missing_mandatory_raises_system_exit():
 
 def test_whisper_warning_only_mode():
     """
-    Verifies that WHISPER_MODEL_PATH is optional and defaults 
+    Verifies that WHISPER_MODEL_ENDPOINTS is optional and defaults 
     to NOT_SET rather than crashing.
     """
-    if "WHISPER_MODEL_PATH" in os.environ:
-        del os.environ["WHISPER_MODEL_PATH"]
+    if "WHISPER_MODEL_ENDPOINTS" in os.environ:
+        del os.environ["WHISPER_MODEL_ENDPOINTS"]
     
     # It should not raise SystemExit
-    val = settings.WHISPER_MODEL_PATH
+    val = settings.WHISPER_MODEL_ENDPOINTS
     assert val == "NOT_SET"
 
 def test_absolute_path_resolution():

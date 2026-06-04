@@ -37,8 +37,8 @@ export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
 export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
 export SUPERVISOR_LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
 export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
-export WHISPER_MODEL_PATH=/home/user/models/whisper
-export OCR_PATH=LOCAL
+export WHISPER_MODEL_ENDPOINTS=/home/user/models/whisper
+export OCR_ENDPOINTS=LOCAL
 export VECTOR_DB_PROFILE=qdrant
 export LLAMA_USE_GPU=true
 ```
@@ -76,8 +76,8 @@ The remaining services have defaults and only need configuration when using remo
 | `VECTOR_DB_URL` | **Vector DB** — Qdrant (gRPC on port 6334, REST on 6333) or Chroma. Overrides `VECTOR_DB_HOST` and `VECTOR_DB_PORT`. | `vector-db` (Docker service name) | `http://<vector-db-host>:6334` |
 | `VECTOR_DB_PROFILE` | Vector database selection | `qdrant` | `qdrant` or `chroma` |
 | `VECTOR_DB_USE_GRPC` | Use gRPC for Qdrant | `true` | `true` or `false` |
-| `WHISPER_MODEL_PATH` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
-| `OCR_PATH` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
+| `WHISPER_MODEL_ENDPOINTS` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
+| `OCR_ENDPOINTS` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
 | `LLAMA_USE_GPU` | Enable GPU acceleration for locally-loaded models | `true` | `true` or `false` |
 
@@ -148,7 +148,7 @@ export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 
 # Two hosts running WhisperX
-export WHISPER_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
+export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 
 # Two hosts running OCR
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
@@ -198,7 +198,7 @@ Performance on this setup: **10–15 PDFs/min** (mixed quality), **~400ms query 
 ./doc-ingest-chat/run-compose.sh --build
 ```
 
-The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start when the `cuda` profile is active and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_PATH` and `WHISPER_MODEL_PATH`).
+The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start when the `cuda` profile is active and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_ENDPOINTS` and `WHISPER_MODEL_ENDPOINTS`).
 
 Docker Compose supports profiles:
 - `--profile cuda` (default) — NVIDIA GPU acceleration

@@ -8,9 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **HAProxy Load Balancing**
-  - **Multi-endpoint support**: `SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_ENDPOINTS`, `WHISPER_ENDPOINTS`, `OCR_ENDPOINTS` env vars accept comma-separated backend URLs.
+  - **Multi-endpoint support**: `SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_ENDPOINTS`, `WHISPER_MODEL_ENDPOINTS`, `OCR_ENDPOINTS` env vars accept comma-separated backend URLs.
   - **Automatic HAProxy containers**: `haproxy_supervisor`, `haproxy_embd`, `haproxy_whisper`, `haproxy_ocr` services in docker-compose start automatically with the `cuda` profile.
-  - **Auto-override model paths**: `run-compose.sh` detects `*_ENDPOINTS` env vars and auto-sets `SUPERVISOR_LLM_PATH`, `EMBEDDING_MODEL_PATH`, `WHISPER_MODEL_PATH`, `OCR_PATH` to HAProxy container URLs.
+  - **Auto-override model paths**: `run-compose.sh` detects `*_ENDPOINTS` env vars and auto-sets `SUPERVISOR_LLM_PATH`, `EMBEDDING_MODEL_PATH`, `WHISPER_MODEL_ENDPOINTS`, `OCR_ENDPOINTS` to HAProxy container URLs.
   - **Round-robin balancing**: `balance roundrobin` with `option httpclose` ensures requests alternate across backends without keep-alive pinning.
   - **Health checks**: HAProxy checks `/models` (LLM/embedding) or `/health` (whisper/OCR) every 2s, marks backends down after 3 failures, up after 2 successes.
   - **Stats UI**: HAProxy stats available at `localhost:8404` (supervisor), `:8405` (embedding), `:8406` (whisper), `:8407` (OCR).
@@ -30,12 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **HAProxy architecture section** in `docs/overview.md` with component diagram and service table.
 
 ### Changed
-- **`Dockerfile.worker`**: Uses `uv export --frozen` + `uv pip install` instead of `uv pip install -r pyproject.toml` to pin dependency versions from lock file. Added `OCR_PATH` build arg to skip Docling warmup when OCR is remote.
-- **`warmup.py`**: Skips Docling warmup when `OCR_PATH` is a remote URL. Made tokenizer warmup non-fatal.
+- **`Dockerfile.worker`**: Uses `uv export --frozen` + `uv pip install` instead of `uv pip install -r pyproject.toml` to pin dependency versions from lock file. Added `OCR_ENDPOINTS` build arg to skip Docling warmup when OCR is remote.
+- **`warmup.py`**: Skips Docling warmup when `OCR_ENDPOINTS` is a remote URL. Made tokenizer warmup non-fatal.
 - **`whisperx_worker.py`**: `RemoteWhisper.transcribe_file()` accepts `mime_type` parameter from content handler instead of hardcoding `audio/wav`.
 - **`whisper_utils.py`**: `send_media_to_whisperx()` accepts and passes `mime_type` parameter in Redis job.
 - **`run-compose.sh`**: Added auto-detection of `*_ENDPOINTS` env vars with automatic `*_PATH` override to HAProxy container URLs.
-- **`ingest-dockercompose.yaml`**: Added `SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_ENDPOINTS`, `WHISPER_ENDPOINTS`, `OCR_ENDPOINTS` to worker env vars. Added 4 HAProxy services. Added `OCR_PATH` build arg.
+- **`ingest-dockercompose.yaml`**: Added `SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_ENDPOINTS`, `WHISPER_MODEL_ENDPOINTS`, `OCR_ENDPOINTS` to worker env vars. Added 4 HAProxy services. Added `OCR_ENDPOINTS` build arg.
 - **`gatekeeper_logic.py`**: Restored `tmp_md_path` argument to `process_chunk` calls.
 - **`base_handler.py`**: Added `MIME_TYPE` class var and `get_mime_type()` method.
 
@@ -43,7 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Whisper transcription failing for non-WAV files**: `RemoteWhisper.transcribe_file()` was hardcoding `audio/wav` Content-Type for all files. Now uses correct MIME type from content handler (e.g., `video/mp4` for MP4).
 - **`process_chunk` missing `md_path` argument**: Restored `tmp_md_path` to both call sites in `gatekeeper_extract_and_normalize`.
 - **Docker build dependency conflict**: `transformers` updated to require `torch.float8_e8m0fnu` which didn't exist in installed torch. Fixed by using lock file (`uv export --frozen`) instead of `pyproject.toml` for dependency resolution.
-- **Docling warmup failing when OCR is remote**: Warmup script now checks `OCR_PATH` and skips Docling import when set to a remote URL.
+- **Docling warmup failing when OCR is remote**: Warmup script now checks `OCR_ENDPOINTS` and skips Docling import when set to a remote URL.
 
 ### Added
 - **Shared Configuration Package (`shared/`)**

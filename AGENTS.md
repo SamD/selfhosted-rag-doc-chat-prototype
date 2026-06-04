@@ -37,8 +37,8 @@ When multiple backend endpoints are configured via `*_ENDPOINTS` env vars, HAPro
 |---------|-------------------|-------------|------------|---------------|
 | Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_PATH` -> `http://haproxy_supervisor:11437/v1` |
 | Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_MODEL_PATH` -> `http://haproxy_embd:11438/v1` |
-| WhisperX | `WHISPER_ENDPOINTS` | 11439 | 8406 | `WHISPER_MODEL_PATH` -> `http://haproxy_whisper:11439/inference` |
-| OCR | `OCR_ENDPOINTS` | 11440 | 8407 | `OCR_PATH` -> `http://haproxy_ocr:11440/v1/convert/file` |
+| WhisperX | `WHISPER_MODEL_ENDPOINTS` | 11439 | 8406 | `WHISPER_MODEL_ENDPOINTS` -> `http://haproxy_whisper:11439/inference` |
+| OCR | `OCR_ENDPOINTS` | 11440 | 8407 | `OCR_ENDPOINTS` -> `http://haproxy_ocr:11440/v1/convert/file` |
 
 ### Behavior by Endpoint Count
 
@@ -60,7 +60,7 @@ Endpoints are comma-separated URLs. Each URL can include the full path. HAProxy 
 ```bash
 export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
-export WHISPER_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
+export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
 ```
 
@@ -98,14 +98,14 @@ Models can exist locally in these paths OR be provided via HTTP(S) URLs:
 - `EMBEDDING_MODEL_PATH` - E5 model path or remote URL (required)
 - `LLM_PATH` - Main chat LLM path or remote URL (required)
 - `SUPERVISOR_LLM_PATH` - Normalization LLM path or remote URL (required)
-- `WHISPER_MODEL_PATH` - Whisper model path or remote URL (default: `NOT_SET`)
-- `OCR_PATH` - Remote docling-serve URL or `LOCAL` (default: `LOCAL`)
+- `WHISPER_MODEL_ENDPOINTS` - Whisper model path or remote URL (default: `NOT_SET`)
+- `OCR_ENDPOINTS` - Remote docling-serve URL or `LOCAL` (default: `LOCAL`)
 
 ### Multi-Endpoint Load Balancing
 
 - `SUPERVISOR_LLM_ENDPOINTS` - Comma-separated supervisor LLM backend URLs
 - `EMBEDDING_ENDPOINTS` - Comma-separated embedding backend URLs
-- `WHISPER_ENDPOINTS` - Comma-separated whisper backend URLs
+- `WHISPER_MODEL_ENDPOINTS` - Comma-separated whisper backend URLs
 - `OCR_ENDPOINTS` - Comma-separated OCR backend URLs
 
 When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to the HAProxy container.
@@ -206,7 +206,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 - **Redis queues**: `REDIS_OCR_JOB_QUEUE`, `REDIS_WHISPER_JOB_QUEUE`, and `QUEUE_NAMES` (chunk ingest queues) define queue names
 - **CORS**: FastAPI middleware allows all origins (`["*"]`) - configure appropriately for production
 - **Docker build**: Uses `uv export --frozen` + `uv pip install` (not `uv pip install -r pyproject.toml`) to pin dependency versions from lock file
-- **Warmup**: `warmup.py` skips Docling import when `OCR_PATH` is a remote URL
+- **Warmup**: `warmup.py` skips Docling import when `OCR_ENDPOINTS` is a remote URL
 - **Whisper MIME type**: Content handlers determine MIME type, pass it through Redis to whisperx worker, which sends correct Content-Type to whisper server
 - **Whisper server**: Must be started with `--convert` flag to handle non-WAV formats (MP4, MP3, etc.)
 
@@ -328,13 +328,13 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 - `SUPERVISOR_LLM_PATH` - Normalization LLM path/URL (required)
 - `SUPERVISOR_LLM_ENDPOINTS` - Multi-endpoint supervisor LLM URLs (comma-separated)
 - `EMBEDDING_ENDPOINTS` - Multi-endpoint embedding URLs (comma-separated)
-- `WHISPER_ENDPOINTS` - Multi-endpoint whisper URLs (comma-separated)
+- `WHISPER_MODEL_ENDPOINTS` - Multi-endpoint whisper URLs (comma-separated)
 - `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated)
 - `VECTOR_DB_PROFILE` - `qdrant` or `chroma`
 - `VECTOR_DB_URL` - Remote vector DB URL (bypasses host/port)
 - `LLAMA_USE_GPU` - `true`/`false`
-- `OCR_PATH` - `LOCAL` or docling-serve URL
-- `WHISPER_MODEL_PATH` - Whisper model dir or URL
+- `OCR_ENDPOINTS` - `LOCAL` or docling-serve URL
+- `WHISPER_MODEL_ENDPOINTS` - Whisper model dir or URL
 
 ### Test Structure
 
