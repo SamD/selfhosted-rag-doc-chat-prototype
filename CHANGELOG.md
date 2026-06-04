@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Environment variable consolidation**: Renamed all single-endpoint service env vars to use the `*_ENDPOINTS` naming convention for consistency. `SUPERVISOR_LLM_PATH`→`SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_MODEL_PATH`→`EMBEDDING_ENDPOINTS`, `WHISPER_MODEL_PATH`→`WHISPER_MODEL_ENDPOINTS`, `OCR_PATH`→`OCR_ENDPOINTS`. Each var now supports both single URLs and comma-separated multi-endpoint lists for HAProxy load balancing.
+- **`run-compose.sh`**: HAProxy auto-override now saves original endpoints to `HAPROXY_*` vars so haproxy containers receive the raw endpoint list (not the overridden proxy URL).
+- **`astro-frontend`: Replaced `@astrojs/tailwind` with `@tailwindcss/vite` and updated `astro` to `6.4.4`.
+- **`astro-frontend`: API base URL now read from `PUBLIC_API_BASE_URL` env var instead of hardcoded. Defaults to `http://localhost:8000/api/v1`.
+- **`doc-ingest-chat/utils/llm_setup.py`**: Restored `_LLAMA_MODEL_CACHE = Llama(**params)` for local GGUF files (was removed when `os.path.exists` check was added).
+
+### Added
+- **`daisyUI themes`**: Added explicit `themes:` config to `global.css` with all 12 themes — daisyUI 5 only ships dark/light by default.
+
+### Fixed
+- **Chunk content loss**: Added regex in `text_processor.py` to separate `### [INTERNAL_PAGE_X]` headers from inline content before MarkdownHeaderTextSplitter processes them. Prevents the splitter from swallowing content into header metadata when the supervisor LLM places text on the same line as the header.
+- **Local GGUF model never loaded**: Missing `_LLAMA_MODEL_CACHE = Llama(**params)` caused `get_chain_or_llama()` to return `None` for local GGUF paths, resulting in `'NoneType' object has no attribute 'create_chat_completion'`.
+- **MP3 handler missing extensions**: Added `.m4a`, `.aac`, `.flac` to `MP3ContentTypeHandler.can_handle()`.
+- **MP4 handler missing extensions**: Added `.mov`, `.mkv` to `MP4ContentTypeHandler.can_handle()`.
+- **Frontend theme picker**: Changed `themeChange()` to `themeChange(false)` to avoid `DOMContentLoaded` race condition — Astro module scripts load after the event fires, so the listener never executes.
+- **Frontend layout**: Replaced fixed `h-96` with `flex-1` + `min-h-0` so the chat area fills available viewport height.
+- **Frontend chat bubbles**: Widened from `max-w-xs/md` to `max-w-lg/2xl` for better readability.
+- **Docs state machine table**: Fixed `PREPROCESSING→PREPROCESSING_COMPLETE` directory move, `INGESTING→CONSUMING` worker (Producer not Consumer), and `CONSUMING→INGEST_SUCCESS` directory move.
+- **Docs queue names**: Fixed references to stale `REDIS_STAGING_QUEUE`, `INGEST_QUEUE`, and `CONSUME_QUEUE` — actual queues are `QUEUE_NAMES` (`chunk_ingest_queue:0,1`).
+- **Docs profile name**: Updated `--profile gpu` to `--profile cuda` throughout.
+- **Docs paths**: Updated example paths to use `$DEFAULT_DOC_INGEST_ROOT` instead of hardcoded `/path/to/Docs/`.
+- **Removed stale test_consumer_utils tests**: `TestCleanupOrphanedQdrantPoints`, `TestConsumerWorkerMainOrphanCall` — referenced non-existent `cleanup_orphaned_qdrant_points`.
+- **Updated media handler tests**: Added `mime_type` to expected `send_media_to_whisperx` calls.
+- **Updated `resolve_supervisor_endpoint`**: Only appends `/v1` to HTTP URLs, not local paths.
+- **Updated `resolve_embedding_endpoint`**: Returns `None` for local paths (URLs only).
+- **PlantUML diagram**: Updated node roles and descriptions, added coordinator host.
+
 ### Added
 - **HAProxy Load Balancing**
   - **Multi-endpoint support**: `SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_ENDPOINTS`, `WHISPER_MODEL_ENDPOINTS`, `OCR_ENDPOINTS` env vars accept comma-separated backend URLs.
