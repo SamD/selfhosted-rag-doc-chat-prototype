@@ -312,6 +312,7 @@ def get_chain_or_llama(retriever):
                     raise ConfigurationError(f"LLM_PATH file not found at {model_path}")
 
                 log.info(f"🚀 Loading Main Local Llama: {model_path}")
+                _LLAMA_MODEL_CACHE = Llama(**params)
 
         return None, _LLAMA_MODEL_CACHE
 
