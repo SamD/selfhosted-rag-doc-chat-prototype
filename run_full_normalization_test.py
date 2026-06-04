@@ -10,9 +10,9 @@ INGEST_DIR = os.path.join(PROJECT_ROOT, "Docs")  # Output in same dir as source
 os.makedirs(INGEST_DIR, exist_ok=True)
 
 os.environ["INGEST_FOLDER"] = INGEST_DIR
-os.environ["EMBEDDING_MODEL_PATH"] = INGEST_DIR  # Dummy
+os.environ["EMBEDDING_ENDPOINTS"] = INGEST_DIR  # Dummy
 os.environ["LLM_PATH"] = MODEL_PATH
-os.environ["SUPERVISOR_LLM_PATH"] = MODEL_PATH
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = MODEL_PATH
 os.environ["LLAMA_N_CTX"] = "16384"  # Boosted for large chunks
 
 # Redirect stdout to progress log

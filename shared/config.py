@@ -84,7 +84,7 @@ from shared.env_names import (
     ENV_DEFAULT_DOC_INGEST_ROOT,
     ENV_DEVICE,
     ENV_DUCKDB_FILE,
-    ENV_EMBEDDING_MODEL_PATH,
+    ENV_EMBEDDING_ENDPOINTS,
     ENV_FAILED_DIR,
     ENV_FAILED_FILES,
     ENV_GATEKEEPER_BATCH_SIZE,
@@ -132,7 +132,7 @@ from shared.env_names import (
     ENV_RETRIEVER_TOP_K,
     ENV_STAGING_DIR,
     ENV_SUCCESS_DIR,
-    ENV_SUPERVISOR_LLM_PATH,
+    ENV_SUPERVISOR_LLM_ENDPOINTS,
     ENV_SUPERVISOR_MAX_TOKENS,
     ENV_SUPERVISOR_REMOTE_MODEL_NAME,
     ENV_SUPERVISOR_TEMPERATURE,
@@ -267,12 +267,12 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
         ENV_GATEKEEPER_FAILURE_DB,
         os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "gatekeeper_history.db"),
     ),
-    # [REQUIRED] Absolute path to the e5-large-v2 embedding model directory
-    "EMBEDDING_MODEL_PATH": lambda: _require_abs_path(ENV_EMBEDDING_MODEL_PATH),
+    # [REQUIRED] Absolute path to the e5-large-v2 embedding model directory or remote URL(s)
+    "EMBEDDING_ENDPOINTS": lambda: _require_abs_path(ENV_EMBEDDING_ENDPOINTS),
     # [REQUIRED] Path to main Llama GGUF or remote llama-server URL
     "LLM_PATH": lambda: _require_abs_path(ENV_LLM_PATH),
-    # [REQUIRED] Path to supervisor Llama GGUF or remote llama-server URL
-    "SUPERVISOR_LLM_PATH": lambda: _require_abs_path(ENV_SUPERVISOR_LLM_PATH),
+    # [REQUIRED] Path to supervisor Llama GGUF or remote llama-server URL(s)
+    "SUPERVISOR_LLM_ENDPOINTS": lambda: _require_abs_path(ENV_SUPERVISOR_LLM_ENDPOINTS),
     # [OPTIONAL] Path to local Whisper models or remote URL.
     "WHISPER_MODEL_ENDPOINTS": lambda: _abs_path(ENV_WHISPER_MODEL_ENDPOINTS, "NOT_SET"),
     # Mandatory files required for offline WhisperX (CTranslate2 format)

@@ -27,9 +27,9 @@ def test_mandatory_variables_present():
         assert settings.DEFAULT_DOC_INGEST_ROOT == os.environ["DEFAULT_DOC_INGEST_ROOT"]
         assert settings.INGEST_FOLDER == os.environ["INGEST_FOLDER"]
         assert settings.STAGING_FOLDER == os.environ["STAGING_FOLDER"]
-        assert settings.EMBEDDING_MODEL_PATH == os.environ["EMBEDDING_MODEL_PATH"]
+        assert settings.EMBEDDING_ENDPOINTS == os.environ["EMBEDDING_ENDPOINTS"]
         assert settings.LLM_PATH == os.environ["LLM_PATH"]
-        assert settings.SUPERVISOR_LLM_PATH == os.environ["SUPERVISOR_LLM_PATH"]
+        assert settings.SUPERVISOR_LLM_ENDPOINTS == os.environ["SUPERVISOR_LLM_ENDPOINTS"]
         assert settings.WHISPER_MODEL_ENDPOINTS == os.environ["WHISPER_MODEL_ENDPOINTS"]
 
 def test_missing_mandatory_raises_system_exit():

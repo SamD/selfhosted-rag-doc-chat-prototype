@@ -8,9 +8,9 @@ INGEST_DIR = os.path.join(PROJECT_ROOT, "test_normalization_output_parallel")
 os.makedirs(INGEST_DIR, exist_ok=True)
 
 os.environ["INGEST_FOLDER"] = INGEST_DIR
-os.environ["EMBEDDING_MODEL_PATH"] = INGEST_DIR  # Dummy
+os.environ["EMBEDDING_ENDPOINTS"] = INGEST_DIR  # Dummy
 os.environ["LLM_PATH"] = MODEL_PATH
-os.environ["SUPERVISOR_LLM_PATH"] = MODEL_PATH
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = MODEL_PATH
 os.environ["LLAMA_N_CTX"] = "8192"
 
 # Add doc-ingest-chat to sys.path

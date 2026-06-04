@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 # Set dummy environment variables BEFORE any project imports to satisfy strict validation
 os.environ["LLM_PATH"] = "/tmp/dummy.gguf"
-os.environ["SUPERVISOR_LLM_PATH"] = "/tmp/supervisor.gguf"
-os.environ["EMBEDDING_MODEL_PATH"] = "/tmp/dummy_e5"
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = "/tmp/supervisor.gguf"
+os.environ["EMBEDDING_ENDPOINTS"] = "/tmp/dummy_e5"
 os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp/test_docs"
 
 
@@ -56,7 +56,7 @@ class TestLLMSetupRemote(unittest.TestCase):
         self.assertEqual(kwargs["messages"][1]["content"], "test prompt")
 
     @patch("utils.llm_setup.Llama")
-    @patch("utils.llm_setup.SUPERVISOR_LLM_PATH", "/tmp/local.gguf")
+    @patch("utils.llm_setup.SUPERVISOR_LLM_ENDPOINTS", "/tmp/local.gguf")
     def test_get_supervisor_llm_local(self, mock_llama_class):
         """Verify that get_supervisor_llm loads a local Llama instance for file paths."""
         from utils import llm_setup
@@ -69,7 +69,7 @@ class TestLLMSetupRemote(unittest.TestCase):
             mock_llama_class.assert_called_once()
 
     @patch("utils.llm_setup.RemoteLlama")
-    @patch("utils.llm_setup.SUPERVISOR_LLM_PATH", "http://remote-server:11434")
+    @patch("utils.llm_setup.SUPERVISOR_LLM_ENDPOINTS", "http://remote-server:11434")
     def test_get_supervisor_llm_remote(self, mock_remote_class):
         """Verify that get_supervisor_llm returns a RemoteLlama instance for URLs."""
         from utils import llm_setup

@@ -17,7 +17,7 @@ from config.settings import (
     OLLAMA_MODEL,
     OLLAMA_URL,
     RETRIEVER_TOP_K,
-    SUPERVISOR_LLM_PATH,
+    SUPERVISOR_LLM_ENDPOINTS,
     SUPERVISOR_REMOTE_MODEL_NAME,
     USE_OLLAMA,
 )
@@ -326,19 +326,19 @@ def get_supervisor_llm() -> Any:
     if _SUPERVISOR_LLM_CACHE is None:
         from utils.exceptions import ConfigurationError
 
-        if not SUPERVISOR_LLM_PATH:
-            raise ConfigurationError("SUPERVISOR_LLM_PATH was not set")
+        if not SUPERVISOR_LLM_ENDPOINTS:
+            raise ConfigurationError("SUPERVISOR_LLM_ENDPOINTS was not set")
 
-        if SUPERVISOR_LLM_PATH.startswith(("http://", "https://")):
-            log.info(f"🧠 Connecting to Remote Supervisor LLM: {SUPERVISOR_LLM_PATH}")
-            _SUPERVISOR_LLM_CACHE = RemoteLlama(base_url=SUPERVISOR_LLM_PATH)
+        if SUPERVISOR_LLM_ENDPOINTS.startswith(("http://", "https://")):
+            log.info(f"🧠 Connecting to Remote Supervisor LLM: {SUPERVISOR_LLM_ENDPOINTS}")
+            _SUPERVISOR_LLM_CACHE = RemoteLlama(base_url=SUPERVISOR_LLM_ENDPOINTS)
         else:
-            if not os.path.exists(SUPERVISOR_LLM_PATH):
-                raise ConfigurationError(f"SUPERVISOR_LLM_PATH file not found at {SUPERVISOR_LLM_PATH}")
+            if not os.path.exists(SUPERVISOR_LLM_ENDPOINTS):
+                raise ConfigurationError(f"SUPERVISOR_LLM_ENDPOINTS file not found at {SUPERVISOR_LLM_ENDPOINTS}")
 
-            log.info(f"🧠 Loading Local Supervisor LLM: {SUPERVISOR_LLM_PATH}")
+            log.info(f"🧠 Loading Local Supervisor LLM: {SUPERVISOR_LLM_ENDPOINTS}")
             _SUPERVISOR_LLM_CACHE = Llama(
-                model_path=SUPERVISOR_LLM_PATH,
+                model_path=SUPERVISOR_LLM_ENDPOINTS,
                 n_gpu_layers=0,  # CPU-only for stability during high-res OCR
                 n_ctx=4096,
                 n_batch=512,
