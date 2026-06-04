@@ -19,7 +19,7 @@ COPY doc-ingest-chat/utils/trace_utils.py /app/utils/trace_utils.py
 
 # Ensure we can find the models and data
 # (These should be mounted via volumes in docker-compose)
-ENV WHISPER_MODEL_PATH=/models/whisper
+ENV WHISPER_MODEL_ENDPOINTS=/models/whisper
 ENV REDIS_HOST=redis
 ENV DEVICE=cuda
 ENV COMPUTE_TYPE=float16

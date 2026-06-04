@@ -117,13 +117,13 @@ export EMBEDDING_MODEL_PATH=http://<embedding-host>:11434/v1/embeddings
 # --- Audio / Video Transcription ---
 # WhisperX host. Transcribes audio files (MP3, WAV, etc.) and extracts speech
 # from video files (MP4, MOV, MKV) during ingestion.
-export WHISPER_MODEL_PATH=http://<whisper-host>:1145/inference
+export WHISPER_MODEL_ENDPOINTS=http://<whisper-host>:1145/inference
 
 # --- OCR Fallback ---
 # docling-serve host. Used when pdfplumber cannot extract text from a page
 # (scanned documents, image-heavy pages). Set to "LOCAL" to run Docling
 # inside the container instead.
-export OCR_PATH=http://<ocr-host>:5001/v1/convert/file
+export OCR_ENDPOINTS=http://<ocr-host>:5001/v1/convert/file
 ```
 
 Full variable reference, local-file alternatives, and optional tuning flags are in [docs/quickstart.md](docs/quickstart.md).

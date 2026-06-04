@@ -78,7 +78,7 @@ def main():
     """Main OCR worker entry point with pre-compilation."""
     # Debug info
     print(f"🕵️ OCR Worker Debug: EMBEDDING_MODEL_PATH={os.getenv('EMBEDDING_MODEL_PATH')}")
-    print(f"🕵️ OCR Worker Debug: OCR_PATH={os.getenv('OCR_PATH', 'LOCAL')}")
+    print(f"🕵️ OCR Worker Debug: OCR_ENDPOINTS={os.getenv('OCR_ENDPOINTS', 'LOCAL')}")
     print(f"🕵️ OCR Worker Debug: Python={sys.executable}")
 
     signal.signal(signal.SIGINT, signal_handler)
