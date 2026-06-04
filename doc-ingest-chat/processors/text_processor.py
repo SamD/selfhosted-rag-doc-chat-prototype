@@ -44,7 +44,19 @@ class TextProcessor:
             file_metadata = {}
             content_body = text
 
-        # 2. Define Markdown splitting hierarchy
+        # 2a. Pre-process: separate ### [INTERNAL_PAGE_X] headers from inline content
+        # The supervisor LLM sometimes puts content on the same line as the header:
+        #   "### [INTERNAL_PAGE_1] Do you still believe..."
+        # We need it to be:
+        #   "### [INTERNAL_PAGE_1]\nDo you still believe..."
+        # so the MarkdownHeaderTextSplitter doesn't swallow the content into metadata.
+        content_body = re.sub(
+            r'(### \[INTERNAL_PAGE_\d+\])\s+(.+)',
+            r'\1\n\2',
+            content_body
+        )
+
+        # 2b. Define Markdown splitting hierarchy
         headers_to_split_on = [
             ("#", "Header_1"),
             ("##", "Header_2"),
