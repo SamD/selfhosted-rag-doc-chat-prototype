@@ -37,8 +37,25 @@ import ThemePicker from '../components/ThemePicker.astro';
 		</main>
 
 		<script>
-			import { themeChange } from 'theme-change';
-			themeChange(false);
+			function initThemePicker() {
+				const saved = localStorage.getItem('theme');
+				if (saved && !document.documentElement.getAttribute('data-theme')) {
+					document.documentElement.setAttribute('data-theme', saved);
+				}
+				const picker = document.querySelector('select[data-choose-theme]') as HTMLSelectElement | null;
+				if (picker) {
+					if (saved) picker.value = saved;
+					picker.addEventListener('change', () => {
+						document.documentElement.setAttribute('data-theme', picker.value);
+						localStorage.setItem('theme', picker.value);
+					});
+				}
+			}
+			if (document.readyState === 'loading') {
+				document.addEventListener('DOMContentLoaded', initThemePicker);
+			} else {
+				initThemePicker();
+			}
 		</script>
 	</body>
 </html>
