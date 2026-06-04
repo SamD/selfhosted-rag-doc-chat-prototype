@@ -17,19 +17,14 @@ import ThemePicker from '../components/ThemePicker.astro';
 		<meta name="generator" content={Astro.generator} />
 		<title>{title}</title>
 		<script is:inline>
-			if (localStorage.getItem("theme") === null) {
-				document.documentElement.setAttribute("data-theme", "dark");
-			} else {
-				document.documentElement.setAttribute("data-theme", localStorage.getItem("theme"));
+			const saved = localStorage.getItem("theme");
+			if (saved) {
+				document.documentElement.setAttribute("data-theme", saved);
 			}
 		</script>
-		<script>
-			import { themeChange } from 'theme-change';
-			themeChange();
-		</script>
 	</head>
-	<body class="min-h-screen">
-		<header class="navbar bg-base-200 px-4">
+	<body class="min-h-screen flex flex-col">
+		<header class="navbar bg-base-200 px-4 shrink-0">
 			<div class="flex-1">
 				<span class="text-lg font-bold">{title}</span>
 			</div>
@@ -37,9 +32,14 @@ import ThemePicker from '../components/ThemePicker.astro';
 				<ThemePicker />
 			</div>
 		</header>
-		<main class="p-4">
+		<main class="flex-1 min-h-0">
 			<slot />
 		</main>
+
+		<script>
+			import { themeChange } from 'theme-change';
+			themeChange();
+		</script>
 	</body>
 </html>
 
