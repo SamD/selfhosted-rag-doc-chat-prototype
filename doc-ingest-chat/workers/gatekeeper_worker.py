@@ -230,7 +230,7 @@ def main():
                     # create_job handles checking if it's new based on filename
                     JobService.create_job(full_path)
 
-            time.sleep(2 + (random.random() * 1.0))
+            time.sleep(20)
 
         except Exception as e:
             log.error(f"Unhandled error in gatekeeper controller: {e}")

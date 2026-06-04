@@ -21,6 +21,19 @@ Everything runs locally on dedicated LAN hosts — no cloud services, no externa
 ![Self Hosted Rag Doc Pipeline](./docs/selfhosted-rag-doc-ingest.gif)
 
 ---
+** Drop PDF,MP3,MP4 info the staging directory e.g.
+
+`cp Godfather_of_AI_has_a_plan_for_humanity_to_survive_AI.mp4 TESTING/staging`
+
+Flow begins:
+
+<img alt="Job Created" height="600" src="./docs/img/mp4-flow-1.png" width="600"/>
+
+<img alt="Job Ingested" height="600" src="./docs/img/mp4-flow-2.png" width="600"/>
+
+<img alt="RAG (Semantic Search)" height="600" src="./docs/img/mp4-flow-3.png" width="600"/>
+
+---
 
 ## Contents
 
