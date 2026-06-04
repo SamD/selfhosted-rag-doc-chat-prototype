@@ -19,8 +19,7 @@ def resolve_supervisor_endpoint() -> str:
 
     Priority:
     1. SUPERVISOR_LLM_ENDPOINTS (single entry only — multi-entry needs HAProxy)
-    2. SUPERVISOR_LLM_PATH (fallback)
-    3. Local model path (non-URL)
+    2. Local model path (non-URL)
     """
     endpoints = parse_endpoints(os.getenv("SUPERVISOR_LLM_ENDPOINTS", ""))
     if len(endpoints) == 1:
@@ -29,7 +28,7 @@ def resolve_supervisor_endpoint() -> str:
             url = url.rstrip("/") + "/v1"
         return url
 
-    path = os.getenv("SUPERVISOR_LLM_PATH", "")
+    path = os.getenv("SUPERVISOR_LLM_ENDPOINTS", "")
     if path.startswith(("http://", "https://")):
         if not path.endswith("/v1"):
             path = path.rstrip("/") + "/v1"
@@ -42,14 +41,13 @@ def resolve_embedding_endpoint() -> str | None:
 
     Priority:
     1. EMBEDDING_ENDPOINTS (single entry only — multi-entry needs HAProxy)
-    2. EMBEDDING_MODEL_PATH (if URL)
-    3. None (local model path)
+    2. None (local model path)
     """
     endpoints = parse_endpoints(os.getenv("EMBEDDING_ENDPOINTS", ""))
     if len(endpoints) == 1:
         return endpoints[0]
 
-    path = os.getenv("EMBEDDING_MODEL_PATH", "")
+    path = os.getenv("EMBEDDING_ENDPOINTS", "")
     if path.startswith(("http://", "https://")):
         return path
     return None

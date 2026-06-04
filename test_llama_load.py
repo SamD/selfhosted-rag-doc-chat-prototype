@@ -6,10 +6,10 @@ from llama_cpp import Llama
 
 
 def test_load():
-    print(f"🚀 Attempting to load model: {settings.SUPERVISOR_LLM_PATH}")
+    print(f"🚀 Attempting to load model: {settings.SUPERVISOR_LLM_ENDPOINTS}")
     try:
         llm = Llama(
-            model_path=settings.SUPERVISOR_LLM_PATH,
+            model_path=settings.SUPERVISOR_LLM_ENDPOINTS,
             n_gpu_layers=-1,
             n_ctx=2048,
             n_batch=512,

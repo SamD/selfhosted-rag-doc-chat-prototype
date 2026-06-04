@@ -6,7 +6,7 @@ Database service for vector database operations (ChromaDB or Qdrant).
 from typing import Any, Dict, List, Optional
 
 import chromadb
-from config.settings import EMBEDDING_MODEL_PATH, LLAMA_USE_GPU, QDRANT_DENSE_WEIGHT, QDRANT_RETRIEVER_K, QDRANT_SPARSE_WEIGHT, USE_QDRANT, VECTOR_DB_COLLECTION, VECTOR_DB_HOST, VECTOR_DB_PORT
+from config.settings import EMBEDDING_ENDPOINTS, LLAMA_USE_GPU, QDRANT_DENSE_WEIGHT, QDRANT_RETRIEVER_K, QDRANT_SPARSE_WEIGHT, USE_QDRANT, VECTOR_DB_COLLECTION, VECTOR_DB_HOST, VECTOR_DB_PORT
 from langchain.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain.schema import BaseRetriever, Document
 from langchain_chroma import Chroma
@@ -136,15 +136,15 @@ class DatabaseServiceQdrantSparseTesting:
     def get_embeddings() -> Any:
         global _embeddings_cache
         if _embeddings_cache is None:
-            if EMBEDDING_MODEL_PATH.startswith(("http://", "https://")):
+            if EMBEDDING_ENDPOINTS.startswith(("http://", "https://")):
                 from utils.llm_setup import RemoteEmbeddings
 
-                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_MODEL_PATH}")
-                _embeddings_cache = RemoteEmbeddings(base_url=EMBEDDING_MODEL_PATH)
+                log.info(f"🚀 Connecting to remote embedding model: {EMBEDDING_ENDPOINTS}")
+                _embeddings_cache = RemoteEmbeddings(base_url=EMBEDDING_ENDPOINTS)
             else:
                 log.info(f"Loading embeddings model on {device}...")
                 _embeddings_cache = HuggingFaceEmbeddings(
-                    model_name=EMBEDDING_MODEL_PATH,
+                    model_name=EMBEDDING_ENDPOINTS,
                     model_kwargs={"device": device, "trust_remote_code": True},
                     encode_kwargs={"normalize_embeddings": True},
                 )

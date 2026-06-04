@@ -8,14 +8,14 @@ PROJECT_ROOT = os.getcwd()
 PYTHON_EXE = sys.executable  # Path to the venv python
 MODEL_PATH_PHI = "/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instruct-Q6_K.gguf"
 INGEST_DIR = os.path.join(PROJECT_ROOT, "Docs")
-EMBEDDING_MODEL_PATH = "/home/samueldoyle/AI_LOCAL/e5-large-v2"
+EMBEDDING_ENDPOINTS = "/home/samueldoyle/AI_LOCAL/e5-large-v2"
 
 # Environment variables common to all processes
 ENV = os.environ.copy()
 ENV["INGEST_FOLDER"] = INGEST_DIR
-ENV["EMBEDDING_MODEL_PATH"] = EMBEDDING_MODEL_PATH
+ENV["EMBEDDING_ENDPOINTS"] = EMBEDDING_ENDPOINTS
 ENV["LLM_PATH"] = MODEL_PATH_PHI
-ENV["SUPERVISOR_LLM_PATH"] = MODEL_PATH_PHI
+ENV["SUPERVISOR_LLM_ENDPOINTS"] = MODEL_PATH_PHI
 ENV["LLAMA_N_CTX"] = "16384"
 ENV["REDIS_HOST"] = "localhost"
 ENV["REDIS_PORT"] = "6379"
@@ -26,7 +26,7 @@ ENV["PYTHONPATH"] = os.path.join(PROJECT_ROOT, "doc-ingest-chat")
 def main():
     print("🚀 Starting unified ingestion environment...")
     print(f"📁 INGEST_FOLDER: {INGEST_DIR}")
-    print(f"🧬 EMBEDDING_MODEL_PATH: {EMBEDDING_MODEL_PATH}")
+    print(f"🧬 EMBEDDING_ENDPOINTS: {EMBEDDING_ENDPOINTS}")
     print(f"🐍 Python: {PYTHON_EXE}")
 
     # 2. Start OCR Worker in background

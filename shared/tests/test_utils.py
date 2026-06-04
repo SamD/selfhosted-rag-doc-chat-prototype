@@ -45,12 +45,12 @@ class TestResolveSupervisorEndpoint(unittest.TestCase):
         result = resolve_supervisor_endpoint()
         self.assertEqual(result, "http://single:11435/v1")
 
-    @patch.dict(os.environ, {"SUPERVISOR_LLM_ENDPOINTS": "", "SUPERVISOR_LLM_PATH": "http://remote:8080/v1"})
-    def test_fallback_to_supervisor_path(self):
+    @patch.dict(os.environ, {"SUPERVISOR_LLM_ENDPOINTS": "http://remote:8080/v1"})
+    def test_fallback_to_supervisor_endpoints(self):
         result = resolve_supervisor_endpoint()
         self.assertEqual(result, "http://remote:8080/v1")
 
-    @patch.dict(os.environ, {"SUPERVISOR_LLM_ENDPOINTS": "", "SUPERVISOR_LLM_PATH": "/local/model.gguf"})
+    @patch.dict(os.environ, {"SUPERVISOR_LLM_ENDPOINTS": "/local/model.gguf"})
     def test_fallback_to_local_path(self):
         result = resolve_supervisor_endpoint()
         self.assertEqual(result, "/local/model.gguf")
@@ -62,12 +62,12 @@ class TestResolveEmbeddingEndpoint(unittest.TestCase):
         result = resolve_embedding_endpoint()
         self.assertEqual(result, "http://single:11434/v1")
 
-    @patch.dict(os.environ, {"EMBEDDING_ENDPOINTS": "", "EMBEDDING_MODEL_PATH": "http://remote:8080/v1"})
-    def test_fallback_to_embedding_model_path(self):
+    @patch.dict(os.environ, {"EMBEDDING_ENDPOINTS": "http://remote:8080/v1"})
+    def test_fallback_to_embedding_endpoints(self):
         result = resolve_embedding_endpoint()
         self.assertEqual(result, "http://remote:8080/v1")
 
-    @patch.dict(os.environ, {"EMBEDDING_ENDPOINTS": "", "EMBEDDING_MODEL_PATH": "/local/e5-model"})
+    @patch.dict(os.environ, {"EMBEDDING_ENDPOINTS": "/local/e5-model"})
     def test_local_model_returns_none(self):
         result = resolve_embedding_endpoint()
         self.assertIsNone(result)

@@ -25,9 +25,9 @@ _e5 = _default_e5 if _default_e5.exists() else _tmp_e5
 _llama = _default_llama if _default_llama.exists() else _tmp_llama
 
 os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", str(_root))
-os.environ.setdefault("EMBEDDING_MODEL_PATH", str(_e5))
+os.environ.setdefault("EMBEDDING_ENDPOINTS", str(_e5))
 os.environ.setdefault("LLM_PATH", str(_llama))
-os.environ.setdefault("SUPERVISOR_LLM_PATH", str(_llama))  # Use same dummy path for supervisor
+os.environ.setdefault("SUPERVISOR_LLM_ENDPOINTS", str(_llama))  # Use same dummy path for supervisor
 
 # Explicit defaults used in tests
 os.environ.setdefault("ALLOW_LATIN_EXTENDED", "true")

@@ -16,9 +16,9 @@ os.environ["HF_HUB_OFFLINE"] = "0" # Allow download during build
 os.environ["DEFAULT_DOC_INGEST_ROOT"] = "/tmp"
 os.environ["INGEST_FOLDER"] = "/tmp"
 os.environ["STAGING_FOLDER"] = "/tmp"
-os.environ["EMBEDDING_MODEL_PATH"] = "/tmp"
+os.environ["EMBEDDING_ENDPOINTS"] = "/tmp"
 os.environ["LLM_PATH"] = "http://localhost"
-os.environ["SUPERVISOR_LLM_PATH"] = "http://localhost"
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = "http://localhost"
 os.environ["WHISPER_MODEL_ENDPOINTS"] = "/tmp"
 
 logging.basicConfig(level=logging.INFO)

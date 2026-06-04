@@ -13,14 +13,14 @@ import time
 MODEL_PATH = "/home/samueldoyle/AI_LOCAL/Models/Phi/microsoft_Phi-4-mini-instruct-Q6_K.gguf"
 PROJECT_ROOT = os.getcwd()
 INGEST_DIR = os.path.join(PROJECT_ROOT, "Docs")
-EMBEDDING_MODEL_PATH = "/home/samueldoyle/AI_LOCAL/e5-large-v2"
+EMBEDDING_ENDPOINTS = "/home/samueldoyle/AI_LOCAL/e5-large-v2"
 
 os.makedirs(INGEST_DIR, exist_ok=True)
 
 os.environ["INGEST_FOLDER"] = INGEST_DIR
-os.environ["EMBEDDING_MODEL_PATH"] = EMBEDDING_MODEL_PATH
+os.environ["EMBEDDING_ENDPOINTS"] = EMBEDDING_ENDPOINTS
 os.environ["LLM_PATH"] = MODEL_PATH
-os.environ["SUPERVISOR_LLM_PATH"] = MODEL_PATH
+os.environ["SUPERVISOR_LLM_ENDPOINTS"] = MODEL_PATH
 os.environ["LLAMA_N_CTX"] = "16384"
 
 # Proper Logging Setup

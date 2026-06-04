@@ -35,8 +35,8 @@ To run everything locally without remote services, use local model paths instead
 ```bash
 export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
 export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
-export SUPERVISOR_LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
-export EMBEDDING_MODEL_PATH=/home/user/models/e5-large-v2
+export SUPERVISOR_LLM_ENDPOINTS=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+export EMBEDDING_ENDPOINTS=/home/user/models/e5-large-v2
 export WHISPER_MODEL_ENDPOINTS=/home/user/models/whisper
 export OCR_ENDPOINTS=LOCAL
 export VECTOR_DB_PROFILE=qdrant
@@ -62,8 +62,8 @@ These three must be set. Each accepts a remote URL or a local path.
 | Env Var | Service Role | Remote Example | Local Example |
 |---------|-------------|----------------|---------------|
 | `LLM_PATH` | **Chat LLM** — inference model for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
-| `SUPERVISOR_LLM_PATH` | **Gatekeeper LLM** — normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM, may point to the same model. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
-| `EMBEDDING_MODEL_PATH` | **Embedding model** — vectorizes chunks during ingestion and queries during chat. | `http://<embedding-host>:11434/v1/embeddings` | `/models/e5-large-v2` |
+| `SUPERVISOR_LLM_ENDPOINTS` | **Gatekeeper LLM** — normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM, may point to the same model. Supports comma-separated URLs for HAProxy load balancing. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
+| `EMBEDDING_ENDPOINTS` | **Embedding model** — vectorizes chunks during ingestion and queries during chat. Supports comma-separated URLs for HAProxy load balancing. | `http://<embedding-host>:11434/v1/embeddings` | `/models/e5-large-v2` |
 
 ---
 

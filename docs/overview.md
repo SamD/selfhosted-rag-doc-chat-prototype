@@ -14,7 +14,7 @@ The system is built for **air-gapped, high-fidelity document ingestion** on comm
 
 - **Physical Isolation**: Files move between directories (`staging/` → `preprocessing/` → `ingestion/` → `consuming/` → `success/`) to ensure the physical state matches the database state at every step.
 - **Dual-LLM Isolation**: The system separates the "Normalizer" from the "Chatter":
-  - **Supervisor LLM** (`SUPERVISOR_LLM_PATH`): Structural transcription and high-density retyping of raw text into clean Markdown.
+  - **Supervisor LLM** (`SUPERVISOR_LLM_ENDPOINTS`): Structural transcription and high-density retyping of raw text into clean Markdown.
   - **RAG LLM** (`LLM_PATH`): Conversational reasoning and grounded retrieval with strict citation enforcement.
 - **Atomic Handoffs**: Every stage transition is a "Move-then-Update" transaction in DuckDB, ensuring no document is lost or double-processed.
 - **Load Balancing**: When multiple backends are available for any service (LLM, embeddings, WhisperX, OCR), HAProxy distributes requests across them with health checks, failover, and round-robin balancing.
@@ -179,7 +179,7 @@ The FastAPI backend serves HTTP requests on port 8000 — it does not operate on
 |-----------|------------|-----------|------|
 | **FastAPI** | `apimain.py` | HTTP :8000 | REST API for chat queries, status, and health checks |
 
-The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_PATH`) for normalization. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
+The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_ENDPOINTS`) for normalization. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
 
 ---
 
@@ -280,8 +280,8 @@ When multiple backend endpoints are configured for any service, HAProxy automati
 
 | Service | Env Var (endpoints) | HAProxy Port | Stats Port | Auto-Override |
 |---------|-------------------|-------------|------------|---------------|
-| Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_PATH` → `http://haproxy_supervisor:11437/v1` |
-| Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_MODEL_PATH` → `http://haproxy_embd:11438/v1` |
+| Supervisor LLM | `SUPERVISOR_LLM_ENDPOINTS` | 11437 | 8404 | `SUPERVISOR_LLM_ENDPOINTS` → `http://haproxy_supervisor:11437/v1` |
+| Embeddings | `EMBEDDING_ENDPOINTS` | 11438 | 8405 | `EMBEDDING_ENDPOINTS` → `http://haproxy_embd:11438/v1` |
 | WhisperX | `WHISPER_MODEL_ENDPOINTS` | 11439 | 8406 | `WHISPER_MODEL_ENDPOINTS` → `http://haproxy_whisper:11439/inference` |
 | OCR | `OCR_ENDPOINTS` | 11440 | 8407 | `OCR_ENDPOINTS` → `http://haproxy_ocr:11440/v1/convert/file` |
 
@@ -289,7 +289,7 @@ When multiple backend endpoints are configured for any service, HAProxy automati
 
 | Endpoints | Behavior |
 |-----------|----------|
-| 0 (unset) | HAProxy returns 503. The `*_PATH` env var is used directly (no haproxy dependency). |
+| 0 (unset) | HAProxy returns 503. The `*_ENDPOINTS` env var is used directly (no haproxy dependency). |
 | 1 | Transparent proxy to that single backend. |
 | 2+ | `roundrobin` balancing with `httpclose` (no keep-alive pinning). Health checks on `/models` or `/health`. |
 

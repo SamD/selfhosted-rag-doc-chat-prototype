@@ -107,12 +107,12 @@ export VECTOR_DB_USE_GRPC=true
 export LLM_PATH=http://<llm-host>:11434/v1/chat/completions
 # Gatekeeper model that normalizes raw extracted text to Markdown during ingestion.
 # Often points to the same host as LLM_PATH but serves a distinct role.
-export SUPERVISOR_LLM_PATH=http://<llm-host>:11434/v1/chat/completions
+export SUPERVISOR_LLM_ENDPOINTS=http://<llm-host>:11434/v1/chat/completions
 
 # --- Embedding ---
 # Model that vectorizes document chunks during ingestion and user queries during chat.
 # Remote http(s):// URL or local model directory path.
-export EMBEDDING_MODEL_PATH=http://<embedding-host>:11434/v1/embeddings
+export EMBEDDING_ENDPOINTS=http://<embedding-host>:11434/v1/embeddings
 
 # --- Audio / Video Transcription ---
 # WhisperX host. Transcribes audio files (MP3, WAV, etc.) and extracts speech

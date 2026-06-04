@@ -7,9 +7,9 @@ from unittest.mock import patch
 # Set environment variables for modules that use settings at import time
 _test_temp_dir = tempfile.mkdtemp()
 os.environ.setdefault("DEFAULT_DOC_INGEST_ROOT", _test_temp_dir)
-os.environ.setdefault("EMBEDDING_MODEL_PATH", _test_temp_dir)
+os.environ.setdefault("EMBEDDING_ENDPOINTS", _test_temp_dir)
 os.environ.setdefault("LLM_PATH", os.path.join(_test_temp_dir, "model.gguf"))
-os.environ.setdefault("SUPERVISOR_LLM_PATH", os.environ["LLM_PATH"])
+os.environ.setdefault("SUPERVISOR_LLM_ENDPOINTS", os.environ["LLM_PATH"])
 
 from workers.gatekeeper_worker import gatekeeper_process_job  # noqa: E402
 

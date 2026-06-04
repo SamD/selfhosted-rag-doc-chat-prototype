@@ -11,12 +11,14 @@ set -euo pipefail
 #   - Must be a valid .gguf file for local mode
 #   - OR an http(s) URL for remote mode
 #
-# SUPERVISOR_LLM_PATH
+# SUPERVISOR_LLM_ENDPOINTS
 #   - Must be a valid .gguf file for local mode
 #   - OR an http(s) URL for remote mode
+#   - OR comma-separated URLs for HAProxy load balancing
 #
-# EMBEDDING_MODEL_PATH
+# EMBEDDING_ENDPOINTS
 #   - Must be a directory containing config.json or remote URL
+#   - OR comma-separated URLs for HAProxy load balancing
 #
 #######################################
 
@@ -29,8 +31,8 @@ cd "$SCRIPT_DIR"
 REQUIRED_VARS=(
   "DEFAULT_DOC_INGEST_ROOT:dir"
   "LLM_PATH:gguf"
-  "SUPERVISOR_LLM_PATH:gguf"
-  "EMBEDDING_MODEL_PATH:e5"
+  "SUPERVISOR_LLM_ENDPOINTS:any"
+  "EMBEDDING_ENDPOINTS:any"
   "WHISPER_MODEL_ENDPOINTS:any"
   "OCR_ENDPOINTS:any"
   "PDF_FORCE_OCR:any"
@@ -86,7 +88,7 @@ case "$VECTOR_DB_URL" in
     ;;
 esac
 
-# 4b. MULTI-ENDPOINT: export endpoints and auto-override model paths to haproxy
+# 4b. MULTI-ENDPOINT: export endpoints and auto-override to haproxy URL
 SUPERVISOR_ENDPOINTS="${SUPERVISOR_LLM_ENDPOINTS:-${env_map[SUPERVISOR_LLM_ENDPOINTS]:-}}"
 EMBEDDING_ENDPOINTS_VAL="${EMBEDDING_ENDPOINTS:-${env_map[EMBEDDING_ENDPOINTS]:-}}"
 export SUPERVISOR_LLM_ENDPOINTS="$SUPERVISOR_ENDPOINTS"
@@ -95,16 +97,16 @@ export EMBEDDING_ENDPOINTS="$EMBEDDING_ENDPOINTS_VAL"
 if [[ -n "$SUPERVISOR_ENDPOINTS" ]]; then
   count=$(echo "$SUPERVISOR_ENDPOINTS" | tr ',' '\n' | grep -c 'http' || true)
   if [[ "$count" -gt 0 ]]; then
-    export SUPERVISOR_LLM_PATH="http://haproxy_supervisor:11437/v1"
-    echo "🔀 SUPERVISOR_LLM_ENDPOINTS detected ($count endpoints) → SUPERVISOR_LLM_PATH=$SUPERVISOR_LLM_PATH"
+    export SUPERVISOR_LLM_ENDPOINTS="http://haproxy_supervisor:11437/v1"
+    echo "🔀 SUPERVISOR_LLM_ENDPOINTS detected ($count endpoints) → SUPERVISOR_LLM_ENDPOINTS=$SUPERVISOR_LLM_ENDPOINTS"
   fi
 fi
 
 if [[ -n "$EMBEDDING_ENDPOINTS_VAL" ]]; then
   count=$(echo "$EMBEDDING_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
   if [[ "$count" -gt 0 ]]; then
-    export EMBEDDING_MODEL_PATH="http://haproxy_embd:11438/v1"
-    echo "🔀 EMBEDDING_ENDPOINTS detected ($count endpoints) → EMBEDDING_MODEL_PATH=$EMBEDDING_MODEL_PATH"
+    export EMBEDDING_ENDPOINTS="http://haproxy_embd:11438/v1"
+    echo "🔀 EMBEDDING_ENDPOINTS detected ($count endpoints) → EMBEDDING_ENDPOINTS=$EMBEDDING_ENDPOINTS"
   fi
 fi
 
