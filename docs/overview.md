@@ -149,10 +149,10 @@ These are the state transitions tracked in the `ingestion_lifecycle` table. Comp
 | State Transition | Worker | Directory Move | Description |
 |-----------------|--------|---------------|-------------|
 | `NEW → PREPROCESSING` | Gatekeeper | `staging/ → preprocessing/` | Gatekeeper claims the file for extraction |
-| `PREPROCESSING → PREPROCESSING_COMPLETE` | Gatekeeper | None | Normalization finished; `.md` file written |
+| `PREPROCESSING → PREPROCESSING_COMPLETE` | Gatekeeper | `preprocessing/ → ingestion/` | Normalization finished; `.md` file and original moved to ingestion |
 | `PREPROCESSING_COMPLETE → INGESTING` | Producer | `ingestion/ → consuming/` | Producer claims, moves files to isolation |
-| `INGESTING → CONSUMING` | Consumer | None | Chunks enqueued; files remain in `consuming/` |
-| `CONSUMING → INGEST_SUCCESS` | Consumer | None | Qdrant upsert complete; files ready to archive |
+| `INGESTING → CONSUMING` | Producer | None | Chunks enqueued; files remain in `consuming/` |
+| `CONSUMING → INGEST_SUCCESS` | Consumer | `consuming/ → success/` | Qdrant upsert complete; files archived to success |
 | `→ INGEST_FAILED` | Any worker | (any) → `failed/` | Error occurred; files moved for debugging |
 
 ---
@@ -167,7 +167,7 @@ These workers communicate via Redis queues and operate on files through the pipe
 |--------|------------|----------|------|
 | **Gatekeeper** | `run_gatekeeper.py` | Claims from DuckDB | Extracts raw text via handler chain, normalizes to Markdown via Supervisor LLM, writes `.md` file |
 | **OCR** | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via Docling/EasyOCR |
-| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.mp4`, `.wav`, `.mov`, `.mkv`) |
+| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`) |
 | **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
 | **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
 
@@ -194,8 +194,8 @@ PDFContentTypeHandler → MP4ContentTypeHandler → MP3ContentTypeHandler → Te
 | Handler | Extensions | Method |
 |---------|-----------|--------|
 | `PDFContentTypeHandler` | `.pdf` | `pdfplumber` (fast text-layer check); falls back to Docling/EasyOCR via OCR worker for scanned/gibberish pages |
-| `MP4ContentTypeHandler` | `.mp4` | Delegates to WhisperX worker via Redis for transcription |
-| `MP3ContentTypeHandler` | `.mp3`, `.wav` | Delegates to WhisperX worker via Redis for transcription |
+| `MP4ContentTypeHandler` | `.mp4`, `.mov`, `.mkv` | Delegates to WhisperX worker via Redis for transcription |
+| `MP3ContentTypeHandler` | `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` | Delegates to WhisperX worker via Redis for transcription |
 | `TextContentTypeHandler` | `.txt`, `.md`, `.html` | Direct file read (charset-normalized for HTML) |
 
 All handlers return a **generator stream** of raw text strings, which the Gatekeeper batches and sends to the Supervisor LLM for normalization.
@@ -263,7 +263,7 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
 ## Deployment
 
 - **`./doc-ingest-chat/run-compose.sh --build`**: Full Docker Compose stack with profiles:
-  - `--profile gpu` (default) — NVIDIA GPU acceleration
+  - `--profile cuda` (default) — NVIDIA GPU acceleration
   - `--profile cpu` — CPU-only mode
   - `--profile qdrant` or `--profile chroma` — vector database selection
 - **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)

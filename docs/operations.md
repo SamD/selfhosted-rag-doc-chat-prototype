@@ -11,7 +11,7 @@ This document covers operational procedures for monitoring, debugging, and maint
 The `chunks.duckdb` database (in `$DEFAULT_DOC_INGEST_ROOT`) is the primary source of truth for all document state.
 
 ```bash
-duckdb /path/to/Docs/chunks.duckdb
+duckdb $DEFAULT_DOC_INGEST_ROOT/chunks.duckdb
 ```
 
 ### Document Status Overview
@@ -292,7 +292,7 @@ Metrics are recorded in `$DEFAULT_DOC_INGEST_ROOT/metrics.jsonl`.
 
 ```bash
 jq -r 'select(.event == "file_processing_complete") | .metrics.total_processing_time_ms' \
-  /path/to/Docs/metrics.jsonl | \
+  $DEFAULT_DOC_INGEST_ROOT/metrics.jsonl | \
   awk '{sum+=$1; count+=1} END {print "Avg: " sum/count " ms"}'
 ```
 

@@ -1,3 +1,1 @@
-
-This directory contains a collection of different scripts and other artifacts related. 
-It intended to be used as examples / snippets / gists etc
+Reference deployment scripts for infrastructure services (LLM, embeddings, Whisper, OCR, Qdrant). These are example configurations — adapt paths, GPU backends, and ports to your hardware.

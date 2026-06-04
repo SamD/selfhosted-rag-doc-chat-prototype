@@ -76,7 +76,7 @@ export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/conver
 Models can exist locally in these paths OR be provided via HTTP(S) URLs:
 1. **E5 embedding**: `e5-large-v2` (directory with config.json or remote URL)
 2. **LLM**: `Phi-3.5-mini-instruct-Q6_K.gguf` (.gguf file or remote URL)
-3. **Supervisor LLM**: `Qwen2.5-1.5B-Instruct-GGUF` (.gguf file or remote URL)
+3. **Supervisor LLM**: `Qwen3.5-4B-MTP-UD-Q4_K_XL.gguf` (.gguf file or remote URL)
 4. **Whisper**: Local models or remote URL
 5. **OCR**: `docling-serve` remote URL or `LOCAL`
 
@@ -126,7 +126,7 @@ When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to
 ## Docker Compose Profiles
 
 `./run-compose.sh` supports profiles:
-- `--profile gpu` - NVIDIA GPU acceleration
+- `--profile cuda` - NVIDIA GPU acceleration
 - `--profile cpu` - CPU-only mode
 - `--profile qdrant` - Qdrant vector DB
 - `--profile chroma` - Chroma vector DB
@@ -203,7 +203,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 - **Environment strategy**: Must call `get_env_strategy().apply()` before any model loading or GPU operations
 - **Model paths**: All model paths are absolute paths; relative paths are rejected unless default provided
 - **Vector DB**: Dual support for Qdrant (default) and Chroma; profile selection via `VECTOR_DB_PROFILE` env var
-- **Redis queues**: `REDIS_OCR_JOB_QUEUE` and `REDIS_INGEST_QUEUE` define queue names
+- **Redis queues**: `REDIS_OCR_JOB_QUEUE`, `REDIS_WHISPER_JOB_QUEUE`, and `QUEUE_NAMES` (chunk ingest queues) define queue names
 - **CORS**: FastAPI middleware allows all origins (`["*"]`) - configure appropriately for production
 - **Docker build**: Uses `uv export --frozen` + `uv pip install` (not `uv pip install -r pyproject.toml`) to pin dependency versions from lock file
 - **Warmup**: `warmup.py` skips Docling import when `OCR_PATH` is a remote URL
@@ -213,7 +213,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 ## File Extensions
 
 Supported document types: `.pdf`, `.html`, `.htm`, `.txt`, `.md`
-Supported media types: `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`
+Supported media types: `.mp3`, `.wav`, `.mp4`
 
 ## Critical Error Messages
 
@@ -225,9 +225,9 @@ Supported media types: `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, 
 
 The system operates as a distributed state machine using Redis as the message broker:
 
-1.  **Ingestion Phase**: `producer_worker` -> `producer_graph` (adds files to `INGEST_QUEUE`).
-2.  **Routing Phase**: `gatekeeper_worker` -> `gatekeeper_logic` (monitors `INGEST_QUEUE`, inspects file extensions, and dispatches to specific `handlers/` or `ocr_worker`).
-3.  **Processing/Embedding Phase**: `consumer_worker` -> `consumer_graph` (monitors `CONSUME_QUEUE`, calls `handlers/` for text extraction, then uses `rag_service` and `database` services to perform chunking, embedding, and storage).
+1.  **Ingestion Phase**: `producer_worker` -> `producer_graph` (claims from DuckDB `PREPROCESSING_COMPLETE` state, chunks, enqueues to consumer queues).
+2.  **Routing Phase**: `gatekeeper_worker` -> `gatekeeper_logic` (claims from DuckDB `NEW` state, inspects file extensions, and dispatches to specific `handlers/` or `ocr_worker`).
+3.  **Processing/Embedding Phase**: `consumer_worker` -> `consumer_graph` (monitors `QUEUE_NAMES`, calls `handlers/` for text extraction, then uses `rag_service` and `database` services to perform chunking, embedding, and storage).
 4.  **OCR Phase**: `ocr_worker` -> `ocr_graph` (specifically for heavy media/image-based text extraction from PDFs).
 5.  **Media Phase**: `whisperx_worker` (dedicated container for transcribing media files via WhisperX).
 
@@ -242,7 +242,7 @@ The system operates as a distributed state machine using Redis as the message br
 
 ```
 staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, writes .md) -> ingestion/
-       -> Producer (chunks Markdown, assigns [DOC_XXXX] IDs via MurmurHash3) -> REDIS_STAGING_QUEUE
+       -> Producer (chunks Markdown, assigns [DOC_XXXX] IDs via MurmurHash3) -> QUEUE_NAMES
        -> Consumer (validates chunks, embeds via e5-large-v2 through HAProxy, upserts to Qdrant/Chroma, archives to Parquet)
        -> success/ (or failed/)
 ```
@@ -251,10 +251,10 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 
 | Worker | Entry Point | Queue | Role |
 |---|---|---|---|
-| Gatekeeper | `run_gatekeeper.py` | Claims from DuckDB (`ingestion_lifecycle`) | Raw text extraction via handlers, LLM normalization to Markdown, pushes chunks to `REDIS_STAGING_QUEUE` |
+| Gatekeeper | `run_gatekeeper.py` | Claims from DuckDB (`ingestion_lifecycle`) | Raw text extraction via handlers, LLM normalization to Markdown, writes `.md` to ingestion |
 | OCR | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via docling-serve (EasyOCR) |
-| WhisperX | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (.mp3, .mp4, .mov, .mkv, .wav, etc.) |
-| Producer | `run_producer.py` | Reads from `ingestion/` dir | Chunks normalized Markdown, injects `[DOC_XXXX]` IDs, sends to `REDIS_STAGING_QUEUE` |
+| WhisperX | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (.mp3, .wav, .mp4) |
+| Producer | `run_producer.py` | Reads from `ingestion/` dir | Chunks normalized Markdown, injects `[DOC_XXXX]` IDs, sends to `QUEUE_NAMES` |
 | Consumer (x2) | `run_consumer.py` | `QUEUE_NAMES` (2 queues) | Validates/embeds/upserts chunks, moves files to success/failed |
 | API | `apimain.py` | HTTP :8000 | FastAPI REST + static file serving |
 
@@ -295,7 +295,7 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 
 7. **Dual LLM Architecture**: Supervisor LLM (gatekeeper normalization) - loaded separately via `get_supervisor_llm()`, uses CPU-only (`n_gpu_layers=0`, 4K context, flash attention). Main LLM (RAG chat) - loaded via `get_chain_or_llama()`, configurable GPU layers, 8K context.
 
-8. **Chain of Responsibility Gatekeeper** (`workers/gatekeeper_logic.py`): Extracts raw text via handler chain (pdf->mp4->mp3->text), batches content units (default 5 pages/segments), normalizes via Supervisor LLM to Markdown with `### [INTERNAL_PAGE_X]` anchors, then eagerly pushes chunks to `REDIS_STAGING_QUEUE`.
+8. **Chain of Responsibility Gatekeeper** (`workers/gatekeeper_logic.py`): Extracts raw text via handler chain (pdf->mp4->mp3->text), batches content units (default 5 pages/segments), normalizes via Supervisor LLM to Markdown with `### [INTERNAL_PAGE_X]` anchors, then writes `.md` output to the ingestion directory.
 
 9. **HAProxy Load Balancing**: When `*_ENDPOINTS` env vars are set, `run-compose.sh` auto-creates HAProxy containers. Entrypoint script generates config from env vars at startup. `roundrobin` + `httpclose` for even distribution. Health checks on `/models` or `/health`.
 
@@ -338,6 +338,6 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 
 ### Test Structure
 
-28 test files under `doc-ingest-chat/tests/` covering: consumer/producer/OCR graphs, gatekeeper logic/worker, handler chain, database init/types, document processor, job service, parquet service, text processor, token budgeting/safety, vector DB config, sliding window normalization, media handlers, Whisper delegation, staging audit, startup basics, multiprocess locking, and more.
+29 test files under `doc-ingest-chat/tests/` covering: consumer/producer/OCR graphs, gatekeeper logic/worker, handler chain, database init/types, document processor, job service, parquet service, text processor, token budgeting/safety, vector DB config, sliding window normalization, media handlers, Whisper delegation, staging audit, startup basics, multiprocess locking, and more.
 
 Additional tests: `shared/tests/test_utils.py` (parse_endpoints, resolve helpers), handler MIME type tests, whisper delegation with mime_type tests.
