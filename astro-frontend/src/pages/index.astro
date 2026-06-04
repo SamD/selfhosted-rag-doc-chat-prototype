@@ -65,24 +65,21 @@ import Layout from '../layouts/Layout.astro';
 	function parseMarkdown(text: string) {
 		let html = text
 			.replace(/\[\[([^\]]+)\]\(([^)]+)\)\]/g, '<a href="$2" target="_blank" class="link link-primary font-medium">$1</a>')
-			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="link link-primary">$1</a>');
+			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="link link-primary">$1</a>')
+			.replace(/\n---\n/g, '\n<hr class="my-2 border-base-300">\n');
 		return html;
 	}
 
-	function addMessage(content: string, isUser: boolean, citations?: string) {
+	function addMessage(content: string, isUser: boolean) {
 		const messageDiv = document.createElement('div');
 		messageDiv.className = `chat ${isUser ? 'chat-end' : 'chat-start'}`;
 
 		const messageBubble = document.createElement('div');
-		messageBubble.className = `chat-bubble max-w-xs lg:max-w-md ${isUser ? 'chat-bubble-primary' : ''}`;
+		messageBubble.className = `chat-bubble max-w-lg lg:max-w-2xl ${isUser ? 'chat-bubble-primary' : ''}`;
 
 		const parsedContent = isUser ? content : parseMarkdown(content);
-		const parsedCitations = citations ? parseMarkdown(citations) : '';
 
-		messageBubble.innerHTML = `
-			<div class="whitespace-pre-wrap">${parsedContent}</div>
-			${citations ? `<div class="mt-2 text-xs opacity-75">${parsedCitations}</div>` : ''}
-		`;
+		messageBubble.innerHTML = `<div class="whitespace-pre-wrap">${parsedContent}</div>`;
 
 		messageDiv.appendChild(messageBubble);
 		chatMessages.appendChild(messageDiv);
@@ -125,7 +122,7 @@ import Layout from '../layouts/Layout.astro';
 		setLoading(true);
 		try {
 			const result = await sendQuery(message);
-			addMessage(result.answer, false, result.debug);
+			addMessage(result.answer, false);
 			chatHistory.push({ role: 'assistant', content: result.answer });
 		} catch (error) {
 			addMessage('Sorry, I encountered an error processing your request. Please try again.', false);
