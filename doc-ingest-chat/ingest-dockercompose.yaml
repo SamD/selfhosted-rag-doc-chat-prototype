@@ -274,7 +274,7 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NODE_ENV=development
-      - PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL:-http://api_gpu:8000/api/v1}
+      - PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
     command: ["./node_modules/.bin/astro", "dev", "--host", "0.0.0.0", "--port", "4321"]
     volumes:
       - ../astro-frontend:/app
