@@ -33,7 +33,7 @@ REDIS_WHISPER_JOB_QUEUE = os.getenv("REDIS_WHISPER_JOB_QUEUE", "whisper_processi
 DEVICE = os.getenv("DEVICE", "cuda")
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")
 BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", 16))
-WHISPER_MODEL_PATH = os.getenv("WHISPER_MODEL_PATH", "/models/whisper")
+WHISPER_MODEL_ENDPOINTS = os.getenv("WHISPER_MODEL_ENDPOINTS", "/models/whisper")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log = get_logger("whisperx_worker")
@@ -93,7 +93,7 @@ def worker_loop():
             socket_connect_timeout=5, socket_timeout=None,
         )
         log.info(f"🛰️ WhisperX Worker listening on {REDIS_WHISPER_JOB_QUEUE}...")
-        log.info(f"🚀 Using Device: {DEVICE}, Compute Type: {COMPUTE_TYPE}, Model Path: {WHISPER_MODEL_PATH}")
+        log.info(f"🚀 Using Device: {DEVICE}, Compute Type: {COMPUTE_TYPE}, Model Path: {WHISPER_MODEL_ENDPOINTS}")
 
         # Lazy load whisperx to avoid overhead if redis fails
         import torchaudio
@@ -113,14 +113,14 @@ def worker_loop():
             log.info("🩹 Applied monkey-patch for torchaudio.AudioMetaData")
 
         # Load model once
-        if WHISPER_MODEL_PATH.startswith(("http://", "https://")):
-            log.info(f"🏗️ Connecting to remote Whisper at {WHISPER_MODEL_PATH}...")
-            model = RemoteWhisper(base_url=WHISPER_MODEL_PATH)
+        if WHISPER_MODEL_ENDPOINTS.startswith(("http://", "https://")):
+            log.info(f"🏗️ Connecting to remote Whisper at {WHISPER_MODEL_ENDPOINTS}...")
+            model = RemoteWhisper(base_url=WHISPER_MODEL_ENDPOINTS)
         else:
             import whisperx
 
-            log.info(f"🏗️ Loading WhisperX model from {WHISPER_MODEL_PATH}...")
-            model = whisperx.load_model(WHISPER_MODEL_PATH, DEVICE, compute_type=COMPUTE_TYPE)
+            log.info(f"🏗️ Loading WhisperX model from {WHISPER_MODEL_ENDPOINTS}...")
+            model = whisperx.load_model(WHISPER_MODEL_ENDPOINTS, DEVICE, compute_type=COMPUTE_TYPE)
         log.info("✅ Model loaded successfully.")
 
         while not SHUTDOWN:

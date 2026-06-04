@@ -152,8 +152,8 @@ def main():
         ("LLM_PATH", settings.LLM_PATH),
         ("SUPERVISOR_LLM_PATH", settings.SUPERVISOR_LLM_PATH),
         ("EMBEDDING_MODEL_PATH", settings.EMBEDDING_MODEL_PATH),
-        ("WHISPER_MODEL_PATH", settings.WHISPER_MODEL_PATH),
-        ("OCR_PATH", settings.OCR_PATH),
+        ("WHISPER_MODEL_ENDPOINTS", settings.WHISPER_MODEL_ENDPOINTS),
+        ("OCR_ENDPOINTS", settings.OCR_ENDPOINTS),
         ("VECTOR_DB_URL", settings.VECTOR_DB_URL),
         ("VECTOR_DB_USE_GRPC", settings.VECTOR_DB_USE_GRPC),
         ("VECTOR_DB_TIMEOUT", settings.VECTOR_DB_TIMEOUT),
@@ -168,11 +168,11 @@ def main():
             mode_label = ""
             icon = "✅"
             
-            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_PATH", "OCR_PATH", "VECTOR_DB_URL"]:
+            if name in ["LLM_PATH", "SUPERVISOR_LLM_PATH", "EMBEDDING_MODEL_PATH", "WHISPER_MODEL_ENDPOINTS", "OCR_ENDPOINTS", "VECTOR_DB_URL"]:
                 if str_val.startswith(("http://", "https://")):
                     mode_label = " [MODE: REMOTE]"
                     icon = "📡"
-                elif name == "OCR_PATH" and str_val == "LOCAL":
+                elif name == "OCR_ENDPOINTS" and str_val == "LOCAL":
                     mode_label = " [MODE: LOCAL]"
                     icon = "🏠"
                 elif os.path.exists(str_val):
@@ -194,18 +194,18 @@ def main():
     init_job_db()
 
     # DEEP ASSET AUDIT: Whisper
-    if settings.WHISPER_MODEL_PATH != "NOT_SET":
-        if settings.WHISPER_MODEL_PATH.startswith(("http://", "https://")):
-            log.info(f"🛰️  WHISPER_MODEL_PATH is a remote URL: {settings.WHISPER_MODEL_PATH}")
-        elif not os.path.exists(settings.WHISPER_MODEL_PATH):
-            log.warning(f"⚠️  WHISPER_MODEL_PATH is set but the directory does not exist: {settings.WHISPER_MODEL_PATH}")
+    if settings.WHISPER_MODEL_ENDPOINTS != "NOT_SET":
+        if settings.WHISPER_MODEL_ENDPOINTS.startswith(("http://", "https://")):
+            log.info(f"🛰️  WHISPER_MODEL_ENDPOINTS is a remote URL: {settings.WHISPER_MODEL_ENDPOINTS}")
+        elif not os.path.exists(settings.WHISPER_MODEL_ENDPOINTS):
+            log.warning(f"⚠️  WHISPER_MODEL_ENDPOINTS is set but the directory does not exist: {settings.WHISPER_MODEL_ENDPOINTS}")
         else:
             missing = []
             for req_file in settings.WHISPER_REQUIRED_FILES:
-                if not os.path.exists(os.path.join(settings.WHISPER_MODEL_PATH, req_file)):
+                if not os.path.exists(os.path.join(settings.WHISPER_MODEL_ENDPOINTS, req_file)):
                     missing.append(req_file)
             if missing:
-                log.warning(f"⚠️  WHISPER_MODEL_PATH is INCOMPLETE. Missing: {', '.join(missing)}")
+                log.warning(f"⚠️  WHISPER_MODEL_ENDPOINTS is INCOMPLETE. Missing: {', '.join(missing)}")
                 log.warning("⚠️  Media files (.mp4/.mp3) will fail until these assets are provided.")
 
     log.info(f"🚀 GateKeeper Controller started, monitoring {settings.STAGING_DIR}")

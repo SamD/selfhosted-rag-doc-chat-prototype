@@ -34,9 +34,9 @@ ENV TORCH_HOME=/usr/local/model_cache
 COPY shared/ /app/shared/
 COPY doc-ingest-chat/ /app/doc-ingest-chat/
 
-# Build arg for OCR_PATH — when remote, skip Docling warmup
-ARG OCR_PATH=LOCAL
-ENV OCR_PATH=${OCR_PATH}
+# Build arg for OCR_ENDPOINTS — when remote, skip Docling warmup
+ARG OCR_ENDPOINTS=LOCAL
+ENV OCR_ENDPOINTS=${OCR_ENDPOINTS}
 
 # Run warmup (Permanently bake into the image layer, no --mount=type=cache)
 RUN PYTHONPATH=/app/doc-ingest-chat \

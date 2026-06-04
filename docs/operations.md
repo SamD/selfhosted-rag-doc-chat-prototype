@@ -194,7 +194,7 @@ ffmpeg -i /path/to/test.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 /tmp/test.wav
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | `400 Bad Request` + `failed to decode audio data` | Server missing `--convert` flag | Restart server with `--convert` |
-| `Connection refused` | Server not running or wrong host/port | Check `WHISPER_MODEL_PATH` env var |
+| `Connection refused` | Server not running or wrong host/port | Check `WHISPER_MODEL_ENDPOINTS` env var |
 | Transcription empty | Audio too quiet or no speech | Check `no_speech_thold` parameter |
 
 ---

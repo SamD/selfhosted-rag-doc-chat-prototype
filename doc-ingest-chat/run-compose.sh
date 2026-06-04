@@ -31,8 +31,8 @@ REQUIRED_VARS=(
   "LLM_PATH:gguf"
   "SUPERVISOR_LLM_PATH:gguf"
   "EMBEDDING_MODEL_PATH:e5"
-  "WHISPER_MODEL_PATH:any"
-  "OCR_PATH:any"
+  "WHISPER_MODEL_ENDPOINTS:any"
+  "OCR_ENDPOINTS:any"
   "PDF_FORCE_OCR:any"
   "VECTOR_DB_TIMEOUT:any"
   "VECTOR_DB_BATCH_SIZE:any"
@@ -65,7 +65,7 @@ if [[ -z "${VECTOR_DB_PROFILE:-}" ]]; then
 fi
 
 export VECTOR_DB_URL="${VECTOR_DB_URL:-${env_map[VECTOR_DB_URL]:-}}"
-export OCR_PATH="${OCR_PATH:-${env_map[OCR_PATH]:-LOCAL}}"
+export OCR_ENDPOINTS="${OCR_ENDPOINTS:-${env_map[OCR_ENDPOINTS]:-LOCAL}}"
 export PDF_FORCE_OCR="${PDF_FORCE_OCR:-${env_map[PDF_FORCE_OCR]:-false}}"
 export VECTOR_DB_TIMEOUT="${VECTOR_DB_TIMEOUT:-${env_map[VECTOR_DB_TIMEOUT]:-60.0}}"
 export VECTOR_DB_BATCH_SIZE="${VECTOR_DB_BATCH_SIZE:-${env_map[VECTOR_DB_BATCH_SIZE]:-20}}"
@@ -108,24 +108,24 @@ if [[ -n "$EMBEDDING_ENDPOINTS_VAL" ]]; then
   fi
 fi
 
-WHISPER_ENDPOINTS_VAL="${WHISPER_ENDPOINTS:-${env_map[WHISPER_ENDPOINTS]:-}}"
+WHISPER_ENDPOINTS_VAL="${WHISPER_MODEL_ENDPOINTS:-${env_map[WHISPER_MODEL_ENDPOINTS]:-}}"
 OCR_ENDPOINTS_VAL="${OCR_ENDPOINTS:-${env_map[OCR_ENDPOINTS]:-}}"
-export WHISPER_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
+export WHISPER_MODEL_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
 export OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
 
 if [[ -n "$WHISPER_ENDPOINTS_VAL" ]]; then
   count=$(echo "$WHISPER_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
   if [[ "$count" -gt 0 ]]; then
-    export WHISPER_MODEL_PATH="http://haproxy_whisper:11439/inference"
-    echo "🔀 WHISPER_ENDPOINTS detected ($count endpoints) → WHISPER_MODEL_PATH=$WHISPER_MODEL_PATH"
+    export WHISPER_MODEL_ENDPOINTS="http://haproxy_whisper:11439/inference"
+    echo "🔀 WHISPER_MODEL_ENDPOINTS detected ($count endpoints) → WHISPER_MODEL_ENDPOINTS=$WHISPER_MODEL_ENDPOINTS"
   fi
 fi
 
 if [[ -n "$OCR_ENDPOINTS_VAL" ]]; then
   count=$(echo "$OCR_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
   if [[ "$count" -gt 0 ]]; then
-    export OCR_PATH="http://haproxy_ocr:11440/v1/convert/file"
-    echo "🔀 OCR_ENDPOINTS detected ($count endpoints) → OCR_PATH=$OCR_PATH"
+    export OCR_ENDPOINTS="http://haproxy_ocr:11440/v1/convert/file"
+    echo "🔀 OCR_ENDPOINTS detected ($count endpoints) → OCR_ENDPOINTS=$OCR_ENDPOINTS"
   fi
 fi
 
@@ -199,8 +199,8 @@ for entry in "${REQUIRED_VARS[@]}"; do
 done
 
 # WHISPER CONFIGURATION GUARD (FOR LOGS)
-if [[ "$WHISPER_MODEL_PATH" == "NOT_SET" ]]; then
-  echo "⚠️  WARNING: WHISPER_MODEL_PATH is not set. Media will fail."
+if [[ "$WHISPER_MODEL_ENDPOINTS" == "NOT_SET" ]]; then
+  echo "⚠️  WARNING: WHISPER_MODEL_ENDPOINTS is not set. Media will fail."
 fi
 
 # 6. Lifecycle Path Exports (Anchored to Root)

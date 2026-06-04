@@ -43,7 +43,7 @@ from shared.defaults import (
     DEFAULT_MEDIA_BATCH_SIZE,
     DEFAULT_METRICS_ENABLED,
     DEFAULT_METRICS_LOG_TO_STDOUT,
-    DEFAULT_OCR_PATH,
+    DEFAULT_OCR_ENDPOINTS,
     DEFAULT_OLLAMA_MODEL,
     DEFAULT_OLLAMA_URL,
     DEFAULT_PDF_FORCE_OCR,
@@ -116,7 +116,7 @@ from shared.env_names import (
     ENV_METRICS_ENABLED,
     ENV_METRICS_LOG_FILE,
     ENV_METRICS_LOG_TO_STDOUT,
-    ENV_OCR_PATH,
+    ENV_OCR_ENDPOINTS,
     ENV_OLLAMA_MODEL,
     ENV_OLLAMA_URL,
     ENV_PARQUET_FILE,
@@ -148,7 +148,7 @@ from shared.env_names import (
     ENV_VECTOR_DB_TIMEOUT,
     ENV_VECTOR_DB_URL,
     ENV_VECTOR_DB_USE_GRPC,
-    ENV_WHISPER_MODEL_PATH,
+    ENV_WHISPER_MODEL_ENDPOINTS,
 )
 
 log = logging.getLogger("shared.config")
@@ -273,8 +273,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "LLM_PATH": lambda: _require_abs_path(ENV_LLM_PATH),
     # [REQUIRED] Path to supervisor Llama GGUF or remote llama-server URL
     "SUPERVISOR_LLM_PATH": lambda: _require_abs_path(ENV_SUPERVISOR_LLM_PATH),
-    # [OPTIONAL] Path to local Whisper models.
-    "WHISPER_MODEL_PATH": lambda: _abs_path(ENV_WHISPER_MODEL_PATH, "NOT_SET"),
+    # [OPTIONAL] Path to local Whisper models or remote URL.
+    "WHISPER_MODEL_ENDPOINTS": lambda: _abs_path(ENV_WHISPER_MODEL_ENDPOINTS, "NOT_SET"),
     # Mandatory files required for offline WhisperX (CTranslate2 format)
     "WHISPER_REQUIRED_FILES": lambda: WHISPER_REQUIRED_FILES_LIST,
     # Model name required by OpenAI-compatible API (e.g. for Ollama routing)
@@ -364,7 +364,7 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     # Minimum ratio of Latin characters required before triggering OCR fallback
     "LATIN_SCRIPT_MIN_RATIO": lambda: float(os.getenv(ENV_LATIN_SCRIPT_MIN_RATIO, str(DEFAULT_LATIN_SCRIPT_MIN_RATIO))),
     # [OPTIONAL] Remote Docling endpoint or 'LOCAL'
-    "OCR_PATH": lambda: os.getenv(ENV_OCR_PATH, DEFAULT_OCR_PATH),
+    "OCR_ENDPOINTS": lambda: os.getenv(ENV_OCR_ENDPOINTS, DEFAULT_OCR_ENDPOINTS),
     # Directory where OCR failure images are stored for debugging
     "DEBUG_IMAGE_DIR": lambda: _abs_path(
         ENV_DEBUG_IMAGE_DIR, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "ocr_debug")

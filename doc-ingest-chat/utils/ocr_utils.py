@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import redis
-from config.settings import MAX_OCR_DIM, OCR_PATH, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
+from config.settings import MAX_OCR_DIM, OCR_ENDPOINTS, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
 from PIL import Image
 from utils.trace_utils import get_logger, set_trace_id
 
@@ -311,8 +311,8 @@ def run_ocr(np_image, rel_path, page_num, trace_id: str = None) -> Tuple[Optiona
     if trace_id:
         set_trace_id(trace_id)
 
-    if OCR_PATH.startswith(("http://", "https://")):
-        return run_remote_ocr(np_image, rel_path, page_num, OCR_PATH, trace_id)
+    if OCR_ENDPOINTS.startswith(("http://", "https://")):
+        return run_remote_ocr(np_image, rel_path, page_num, OCR_ENDPOINTS, trace_id)
 
     log.info(f"🔄 Running Docling (EasyOCR) for {rel_path} page {page_num}")
 
