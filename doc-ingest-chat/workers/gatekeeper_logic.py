@@ -20,6 +20,8 @@ from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr, is_valid_pdf
 from utils.trace_utils import get_logger, set_trace_id
 
+from shared.utils import EndpointDispatcher, parse_endpoints
+
 # Set CUDA optimization
 os.environ["GGML_CUDA_GRAPH_OPT"] = "1"
 
@@ -130,6 +132,44 @@ def sliding_window_normalize(file_path: str, chunk_size: int = 6000, overlap: in
     return sliding_window_chunks(raw_text, chunk_size=chunk_size, overlap=overlap)
 
 
+def _normalize_with_endpoint(endpoint_url: str, raw_content: str, idx: int, file_slug: str) -> str:
+    """Call the supervisor LLM at the given endpoint URL and return normalized text."""
+    from utils.text_utils import get_tokenizer
+    tokenizer = get_tokenizer()
+
+    # Build prompt (same as process_chunk)
+    user_msg = (
+        "You are a Markdown formatter. "
+        "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
+        "Preserve all content and structure as much as possible. "
+        "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
+        "DO NOT summarize, infer, or add new information. "
+        "Return only Markdown, with no preface or explanation. "
+        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, "
+        "encoding errors, or isolated non-alphanumeric strings. "
+        "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
+        f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
+    )
+    messages = [{"role": "user", "content": user_msg}]
+
+    # Enforce context limit
+    CONTEXT_LIMIT = int(settings.LLAMA_N_CTX * 0.8)
+    encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
+    if len(encoded_prompt) > CONTEXT_LIMIT:
+        truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
+        raw_content = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+        user_msg = (
+            "You are a Markdown formatter. ...\n\n"
+            f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
+        )
+        messages = [{"role": "user", "content": user_msg}]
+
+    llm = RemoteLlama(base_url=endpoint_url)
+    response = llm.create_chat_completion(messages=messages, stop=["END_OF_RAW_TEXT"])
+    content = response["choices"][0]["message"]["content"] or ""
+    return content
+
+
 def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) -> Tuple[bool, Optional[dict]]:
     """
     Core normalization logic for a claimed job.
@@ -168,6 +208,8 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         log.info(f"📄 Extracting {file_path} in batches of {settings.GATEKEEPER_BATCH_SIZE} content units...")
         batch_text = []
         unit_count = 0
+        all_batch_contents: list[str] = []
+        batch_start_indices: list[int] = []
 
         for t in content_stream:
             unit_count += 1
@@ -177,24 +219,65 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             batch_text.append(tagged_text)
 
             if len(batch_text) >= settings.GATEKEEPER_BATCH_SIZE:
-                log.info(f"📊 Normalizing Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
-                full_content = "\n\n".join(batch_text)
-                meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
-                if not normalized_text.strip():
-                    empty_chunks += 1
-                if chunk_idx == 0:
-                    first_chunk_meta = meta
-                chunk_idx += 1
+                all_batch_contents.append("\n\n".join(batch_text))
+                batch_start_indices.append(unit_count - len(batch_text) + 1)
                 batch_text = []
 
         if batch_text:
-            log.info(f"📊 Normalizing Final Batch (Units {unit_count - len(batch_text) + 1}-{unit_count})...")
-            full_content = "\n\n".join(batch_text)
-            meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
-            if not normalized_text.strip():
-                empty_chunks += 1
-            if chunk_idx == 0:
-                first_chunk_meta = meta
+            all_batch_contents.append("\n\n".join(batch_text))
+            batch_start_indices.append(unit_count - len(batch_text) + 1)
+
+        if not all_batch_contents:
+            raise ValueError("No content extracted for normalization")
+
+        # Determine whether to interleave across HA backends
+        haproxy_endpoints_str = os.environ.get("HAPROXY_SUPERVISOR_ENDPOINTS", "")
+        haproxy_endpoints = parse_endpoints(haproxy_endpoints_str)
+        use_interleave = (
+            settings.HA_INTERLEAVE
+            and len(haproxy_endpoints) > 1
+            and all(e.startswith(("http://", "https://")) for e in haproxy_endpoints)
+        )
+
+        if use_interleave:
+            log.info(f"🔀 HA Interleaving enabled across {len(haproxy_endpoints)} backends for {len(all_batch_contents)} batches")
+            dispatcher = EndpointDispatcher(haproxy_endpoints, interleave=True)
+
+            def normalize_batch(endpoint: str, raw_content: str, idx: int, slug: str) -> Tuple[dict, str]:
+                content = _normalize_with_endpoint(endpoint, raw_content, idx, slug)
+                meta = assemble_metadata(file_path, slug, idx, len(all_batch_contents))
+                if not content.strip():
+                    log.warning(f"🈳 Batch {idx}: returned empty")
+                return meta, content
+
+            args_list = [(c, i, file_slug) for i, c in enumerate(all_batch_contents)]
+            results = dispatcher.dispatch(normalize_batch, args_list, job_label=file_slug)
+
+            for idx, (meta, normalized_text) in enumerate(results):
+                if chunk_idx == 0:
+                    first_chunk_meta = meta
+                chunk_idx += 1
+                if not normalized_text.strip():
+                    empty_chunks += 1
+                    continue
+                anchor_header = assemble_metadata_anchor(idx, meta, trace_id)
+                final_text = anchor_header + normalized_text
+                mode = "w" if idx == 0 else "a"
+                with open(tmp_md_path, mode, encoding="utf-8") as f:
+                    f.write(final_text)
+                    if not final_text.endswith("\n"):
+                        f.write("\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+        else:
+            for idx, full_content in enumerate(all_batch_contents):
+                start = batch_start_indices[idx] if idx < len(batch_start_indices) else 1
+                log.info(f"📊 Normalizing Batch (Units {start}-{start + settings.GATEKEEPER_BATCH_SIZE - 1})...")
+                meta, normalized_text = process_chunk(idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+                if not normalized_text.strip():
+                    empty_chunks += 1
+                if idx == 0:
+                    first_chunk_meta = meta
 
         if os.path.exists(tmp_md_path):
             shutil.move(tmp_md_path, md_path)

@@ -21,6 +21,7 @@ from shared.defaults import (
     DEFAULT_COMPUTE_TYPE,
     DEFAULT_DEVICE,
     DEFAULT_GATEKEEPER_BATCH_SIZE,
+    DEFAULT_HA_INTERLEAVE,
     DEFAULT_LATIN_SCRIPT_MIN_RATIO,
     DEFAULT_LLAMA_CHAT_FORMAT,
     DEFAULT_LLAMA_F16_KV,
@@ -89,6 +90,7 @@ from shared.env_names import (
     ENV_FAILED_FILES,
     ENV_GATEKEEPER_BATCH_SIZE,
     ENV_GATEKEEPER_FAILURE_DB,
+    ENV_HA_INTERLEAVE,
     ENV_INGESTED_FILE,
     ENV_INGESTION_DIR,
     ENV_LATIN_SCRIPT_MIN_RATIO,
@@ -391,6 +393,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "GATEKEEPER_BATCH_SIZE": lambda: int(os.getenv(ENV_GATEKEEPER_BATCH_SIZE, str(DEFAULT_GATEKEEPER_BATCH_SIZE))),
     # Whether to force OCR for all PDFs (high fidelity but slower)
     "PDF_FORCE_OCR": lambda: os.getenv(ENV_PDF_FORCE_OCR, DEFAULT_PDF_FORCE_OCR).lower() == "true",
+    # Enable HA batch interleaving: concurrent dispatch across multiple backends
+    "HA_INTERLEAVE": lambda: os.getenv(ENV_HA_INTERLEAVE, DEFAULT_HA_INTERLEAVE).lower() in ("1", "true"),
     # Metrics reporting toggle
     "METRICS_ENABLED": lambda: os.getenv(ENV_METRICS_ENABLED, DEFAULT_METRICS_ENABLED).lower() == "true",
     # File path for metrics log output

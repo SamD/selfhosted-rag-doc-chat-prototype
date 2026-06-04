@@ -102,6 +102,9 @@ DEFAULT_METRICS_LOG_TO_STDOUT = "false"
 DEFAULT_HF_HUB_OFFLINE = "0"
 DEFAULT_API_BASE_URL = "http://localhost:8000"
 
+# Load balancing
+DEFAULT_HA_INTERLEAVE = "false"
+
 # Hard-coded lists (not from env)
 SUPPORTED_DOC_EXT = (".pdf", ".html", ".htm", ".txt", ".md")
 WHISPER_REQUIRED_FILES_LIST = ["model.bin", "config.json", "vocabulary.txt"]
