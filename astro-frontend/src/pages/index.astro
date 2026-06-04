@@ -3,41 +3,33 @@ import Layout from '../layouts/Layout.astro';
 ---
 
 <Layout title="AI Chat Interface">
-	<div class="container mx-auto px-4 py-8 max-w-4xl">
-		<header class="text-center mb-8">
-			<h1 class="text-4xl font-bold text-base-content mb-2">AI Chat Interface</h1>
-			<p class="text-base-content/60">Ask questions and get intelligent responses with citations</p>
-		</header>
-
-		<div class="card bg-base-100 shadow-lg overflow-hidden">
-			<div id="chat-messages" class="h-96 overflow-y-auto p-6 space-y-4">
-				<div class="text-center text-base-content/50">
-					<p>Start a conversation by typing your question below</p>
-				</div>
-			</div>
-
-			<div class="border-t border-base-300 p-4">
-				<form id="chat-form" class="flex gap-3">
-					<input
-						type="text"
-						id="message-input"
-						placeholder="Type your question here..."
-						class="input input-bordered flex-1"
-						required
-					/>
-					<button
-						type="submit"
-						id="send-button"
-						class="btn btn-primary"
-					>
-						Send
-					</button>
-				</form>
+	<div class="flex flex-col h-[calc(100vh-4rem)] max-w-4xl mx-auto px-4 py-4">
+		<div id="chat-messages" class="flex-1 overflow-y-auto space-y-4 p-4 mb-4 bg-base-100 rounded-box shadow-lg min-h-0">
+			<div class="text-center text-base-content/50 py-16">
+				<p>Start a conversation by typing your question below</p>
 			</div>
 		</div>
 
-		<div id="status" class="mt-4 text-center text-sm text-base-content/60">
-			<span id="status-text">Ready</span>
+		<div class="shrink-0">
+			<form id="chat-form" class="flex gap-3">
+				<input
+					type="text"
+					id="message-input"
+					placeholder="Type your question here..."
+					class="input input-bordered flex-1"
+					required
+				/>
+				<button
+					type="submit"
+					id="send-button"
+					class="btn btn-primary"
+				>
+					Send
+				</button>
+			</form>
+			<div id="status" class="mt-2 text-center text-sm text-base-content/60">
+				<span id="status-text">Ready</span>
+			</div>
 		</div>
 	</div>
 </Layout>
@@ -57,7 +49,6 @@ import Layout from '../layouts/Layout.astro';
 	let chatHistory: Array<{role: string, content: string}> = [];
 	let isProcessing = false;
 
-	// Utility functions
 	function updateStatus(message: string, isError = false) {
 		statusText.textContent = message;
 		statusText.className = `text-sm ${isError ? 'text-error' : 'text-base-content/60'}`;
@@ -67,18 +58,11 @@ import Layout from '../layouts/Layout.astro';
 		isProcessing = loading;
 		sendButton.disabled = loading;
 		messageInput.disabled = loading;
-		if (loading) {
-			sendButton.textContent = 'Sending...';
-			updateStatus('Processing your question...');
-		} else {
-			sendButton.textContent = 'Send';
-			updateStatus('Ready');
-		}
+		sendButton.textContent = loading ? 'Sending...' : 'Send';
+		updateStatus(loading ? 'Processing...' : 'Ready');
 	}
 
 	function parseMarkdown(text: string) {
-		// Basic Markdown link parser: [text](url) -> <a href="url">text</a>
-		// Also handles the double bracketed format from our backend: [[text](url)]
 		let html = text
 			.replace(/\[\[([^\]]+)\]\(([^)]+)\)\]/g, '<a href="$2" target="_blank" class="link link-primary font-medium">$1</a>')
 			.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="link link-primary">$1</a>');
@@ -90,11 +74,7 @@ import Layout from '../layouts/Layout.astro';
 		messageDiv.className = `chat ${isUser ? 'chat-end' : 'chat-start'}`;
 
 		const messageBubble = document.createElement('div');
-		messageBubble.className = `chat-bubble max-w-xs lg:max-w-md ${
-			isUser
-				? 'chat-bubble-primary'
-				: ''
-		}`;
+		messageBubble.className = `chat-bubble max-w-xs lg:max-w-md ${isUser ? 'chat-bubble-primary' : ''}`;
 
 		const parsedContent = isUser ? content : parseMarkdown(content);
 		const parsedCitations = citations ? parseMarkdown(citations) : '';
@@ -110,78 +90,44 @@ import Layout from '../layouts/Layout.astro';
 	}
 
 	function clearChat() {
-		chatMessages.innerHTML = `
-			<div class="text-center text-base-content/50">
-				<p>Start a conversation by typing your question below</p>
-			</div>
-		`;
+		chatMessages.innerHTML = `<div class="text-center text-base-content/50 py-16"><p>Start a conversation by typing your question below</p></div>`;
 		chatHistory = [];
 	}
 
-	// API Functions
 	async function sendQuery(query: string) {
-		try {
-			const response = await fetch(`${API_BASE_URL}/query`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					query: query,
-					chat_history: chatHistory
-				})
-			});
-
-			if (!response.ok) {
-				throw new Error(`HTTP error! status: ${response.status}`);
-			}
-
-			const data = await response.json();
-			return data;
-		} catch (error) {
-			console.error('Error sending query:', error);
-			throw error;
-		}
+		const response = await fetch(`${API_BASE_URL}/query`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ query, chat_history: chatHistory })
+		});
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		return response.json();
 	}
 
 	async function checkHealth() {
 		try {
 			const response = await fetch(`${API_BASE_URL}/health`);
 			return response.ok;
-		} catch (error) {
-			console.error('Health check failed:', error);
-			return false;
-		}
+		} catch { return false; }
 	}
 
-	// Event Handlers
 	chatForm.addEventListener('submit', async (e) => {
 		e.preventDefault();
-		
 		if (isProcessing) return;
-		
+
 		const message = messageInput.value.trim();
 		if (!message) return;
 
-		// Add user message to chat
 		addMessage(message, true);
 		chatHistory.push({ role: 'user', content: message });
-		
-		// Clear input
 		messageInput.value = '';
-		
-		// Send to API
+
 		setLoading(true);
-		
 		try {
 			const result = await sendQuery(message);
-			
-			// Add AI response to chat
 			addMessage(result.answer, false, result.debug);
 			chatHistory.push({ role: 'assistant', content: result.answer });
-			
 		} catch (error) {
-			console.error('Failed to send query:', error);
 			addMessage('Sorry, I encountered an error processing your request. Please try again.', false);
 			updateStatus('Error: Failed to connect to API', true);
 		} finally {
@@ -189,12 +135,8 @@ import Layout from '../layouts/Layout.astro';
 		}
 	});
 
-	// Initialize
-	document.addEventListener('DOMContentLoaded', async () => {
-		// Check API health on load
+	(async () => {
 		const isHealthy = await checkHealth();
-		if (!isHealthy) {
-			updateStatus('Warning: API server may not be running', true);
-		}
-	});
+		if (!isHealthy) updateStatus('Warning: API server may not be running', true);
+	})();
 </script>
