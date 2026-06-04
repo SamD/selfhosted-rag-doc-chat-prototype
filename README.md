@@ -148,5 +148,3 @@ See [docs/quickstart.md](docs/quickstart.md#multi-endpoint-load-balancing) for f
 ### Use
 
 Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. The system auto-detects and processes them. Open [http://localhost:4321](http://localhost:4321) to chat with your documents.
-
----
