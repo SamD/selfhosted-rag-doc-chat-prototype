@@ -1,5 +1,5 @@
-from handlers.mp4_handler import MP4ContentTypeHandler
 from handlers.mp3_handler import MP3ContentTypeHandler
+from handlers.mp4_handler import MP4ContentTypeHandler
 from handlers.pdf_handler import PDFContentTypeHandler
 from handlers.text_handler import TextContentTypeHandler
 
