@@ -44,7 +44,7 @@ import Layout from '../layouts/Layout.astro';
 
 <script>
 	// API Configuration
-	const API_BASE_URL = 'http://localhost:8000/api/v1';
+	const API_BASE_URL = import.meta.env.PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
 	
 	// DOM Elements
 	const chatForm = document.getElementById('chat-form') as HTMLFormElement;
