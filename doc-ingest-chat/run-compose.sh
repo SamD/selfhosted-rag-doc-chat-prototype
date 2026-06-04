@@ -89,11 +89,25 @@ case "$VECTOR_DB_URL" in
 esac
 
 # 4b. MULTI-ENDPOINT: export endpoints and auto-override to haproxy URL
+# Save originals for HAProxy containers (they need the raw endpoint list)
 SUPERVISOR_ENDPOINTS="${SUPERVISOR_LLM_ENDPOINTS:-${env_map[SUPERVISOR_LLM_ENDPOINTS]:-}}"
 EMBEDDING_ENDPOINTS_VAL="${EMBEDDING_ENDPOINTS:-${env_map[EMBEDDING_ENDPOINTS]:-}}"
+WHISPER_ENDPOINTS_VAL="${WHISPER_MODEL_ENDPOINTS:-${env_map[WHISPER_MODEL_ENDPOINTS]:-}}"
+OCR_ENDPOINTS_VAL="${OCR_ENDPOINTS:-${env_map[OCR_ENDPOINTS]:-}}"
+
+# Export originals for HAProxy containers
 export SUPERVISOR_LLM_ENDPOINTS="$SUPERVISOR_ENDPOINTS"
 export EMBEDDING_ENDPOINTS="$EMBEDDING_ENDPOINTS_VAL"
+export WHISPER_MODEL_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
+export OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
 
+# Also export as HAPROXY_* for compose to pass to haproxy containers
+export HAPROXY_SUPERVISOR_ENDPOINTS="$SUPERVISOR_ENDPOINTS"
+export HAPROXY_EMBEDDING_ENDPOINTS="$EMBEDDING_ENDPOINTS_VAL"
+export HAPROXY_WHISPER_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
+export HAPROXY_OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
+
+# Auto-override to haproxy URL when multi-endpoint detected
 if [[ -n "$SUPERVISOR_ENDPOINTS" ]]; then
   count=$(echo "$SUPERVISOR_ENDPOINTS" | tr ',' '\n' | grep -c 'http' || true)
   if [[ "$count" -gt 0 ]]; then
@@ -109,11 +123,6 @@ if [[ -n "$EMBEDDING_ENDPOINTS_VAL" ]]; then
     echo "🔀 EMBEDDING_ENDPOINTS detected ($count endpoints) → EMBEDDING_ENDPOINTS=$EMBEDDING_ENDPOINTS"
   fi
 fi
-
-WHISPER_ENDPOINTS_VAL="${WHISPER_MODEL_ENDPOINTS:-${env_map[WHISPER_MODEL_ENDPOINTS]:-}}"
-OCR_ENDPOINTS_VAL="${OCR_ENDPOINTS:-${env_map[OCR_ENDPOINTS]:-}}"
-export WHISPER_MODEL_ENDPOINTS="$WHISPER_ENDPOINTS_VAL"
-export OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
 
 if [[ -n "$WHISPER_ENDPOINTS_VAL" ]]; then
   count=$(echo "$WHISPER_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
