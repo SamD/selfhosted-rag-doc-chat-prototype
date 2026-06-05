@@ -21,11 +21,11 @@ Everything runs locally on dedicated LAN hosts — no cloud services, no externa
 ![Self Hosted Rag Doc Pipeline](./docs/selfhosted-rag-doc-ingest.gif)
 
 ---
-** Drop PDF,MP3,MP4 info the staging directory e.g.
+**Drop PDF, MP3, or MP4 files into the staging directory, for example:**
 
-`cp Godfather_of_AI_has_a_plan_for_humanity_to_survive_AI.mp4 TESTING/staging`
-
-Flow begins:
+```bash
+cp Godfather_of_AI_has_a_plan_for_humanity_to_survive_AI.mp4 TESTING/staging/
+```
 
 <img alt="Job Created" height="600" src="./docs/img/mp4-flow-1.png" width="600"/>
 
