@@ -15,6 +15,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **`daisyUI themes`**: Added explicit `themes:` config to `global.css` with all 12 themes — daisyUI 5 only ships dark/light by default.
+- **`EndpointDispatcher` in `shared/utils.py`**: New class for dispatching batched LLM calls across multiple HA backends with two modes:
+  - **Interleaved** (set `HA_INTERLEAVE=1`): Batches dispatched concurrently via `ThreadPoolExecutor`, each to a different backend in round-robin.
+  - **Pinned** (default): All batches in a job go to one backend sequentially.
+  - Control via env var `HA_INTERLEAVE` (default: `false`). Designed for benchmarking TPS differences.
+- **`shared/env_names.py`** and **`shared/defaults.py`**: Added `ENV_HA_INTERLEAVE` and `DEFAULT_HA_INTERLEAVE`.
+- **`shared/config.py`**: Added `HA_INTERLEAVE` setting.
+- **`ingest-dockercompose.yaml`**: Added `HA_INTERLEAVE` and `HAPROXY_*` env vars to worker containers.
+- **Tests for `EndpointDispatcher`**: 16 new tests in `shared/tests/test_utils.py` covering constructor validation, round-robin, pinned mode, result ordering, error propagation, job labels, counter persistence, and max workers clamping.
 
 ### Fixed
 - **Chunk content loss**: Added regex in `text_processor.py` to separate `### [INTERNAL_PAGE_X]` headers from inline content before MarkdownHeaderTextSplitter processes them. Prevents the splitter from swallowing content into header metadata when the supervisor LLM places text on the same line as the header.
