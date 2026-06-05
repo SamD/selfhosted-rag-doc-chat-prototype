@@ -37,7 +37,8 @@ import Layout from '../layouts/Layout.astro';
 <script>
 	// API Configuration
 	const API_BASE_URL = import.meta.env.PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-	
+	const SESSION_KEY = 'rag_chat_session_id';
+
 	// DOM Elements
 	const chatForm = document.getElementById('chat-form') as HTMLFormElement;
 	const messageInput = document.getElementById('message-input') as HTMLInputElement;
@@ -46,8 +47,17 @@ import Layout from '../layouts/Layout.astro';
 	const statusText = document.getElementById('status-text') as HTMLSpanElement;
 
 	// Chat state
-	let chatHistory: Array<{role: string, content: string}> = [];
+	let displayMessages: Array<{role: string, content: string}> = [];
+	let sessionId: string = localStorage.getItem(SESSION_KEY) || '';
 	let isProcessing = false;
+
+	function getOrCreateSessionId(): string {
+		if (!sessionId) {
+			sessionId = crypto.randomUUID();
+			localStorage.setItem(SESSION_KEY, sessionId);
+		}
+		return sessionId;
+	}
 
 	function updateStatus(message: string, isError = false) {
 		statusText.textContent = message;
@@ -88,14 +98,17 @@ import Layout from '../layouts/Layout.astro';
 
 	function clearChat() {
 		chatMessages.innerHTML = `<div class="text-center text-base-content/50 py-16"><p>Start a conversation by typing your question below</p></div>`;
-		chatHistory = [];
+		displayMessages = [];
+		sessionId = '';
+		localStorage.removeItem(SESSION_KEY);
 	}
 
 	async function sendQuery(query: string) {
+		const sid = getOrCreateSessionId();
 		const response = await fetch(`${API_BASE_URL}/query`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ query, chat_history: chatHistory })
+			body: JSON.stringify({ query, session_id: sid })
 		});
 		if (!response.ok) throw new Error(`HTTP ${response.status}`);
 		return response.json();
@@ -116,14 +129,18 @@ import Layout from '../layouts/Layout.astro';
 		if (!message) return;
 
 		addMessage(message, true);
-		chatHistory.push({ role: 'user', content: message });
+		displayMessages.push({ role: 'user', content: message });
 		messageInput.value = '';
 
 		setLoading(true);
 		try {
 			const result = await sendQuery(message);
+			if (result.session_id && result.session_id !== sessionId) {
+				sessionId = result.session_id;
+				localStorage.setItem(SESSION_KEY, sessionId);
+			}
 			addMessage(result.answer, false);
-			chatHistory.push({ role: 'assistant', content: result.answer });
+			displayMessages.push({ role: 'assistant', content: result.answer });
 		} catch (error) {
 			addMessage('Sorry, I encountered an error processing your request. Please try again.', false);
 			updateStatus('Error: Failed to connect to API', true);
@@ -133,6 +150,7 @@ import Layout from '../layouts/Layout.astro';
 	});
 
 	(async () => {
+		getOrCreateSessionId();
 		const isHealthy = await checkHealth();
 		if (!isHealthy) updateStatus('Warning: API server may not be running', true);
 	})();

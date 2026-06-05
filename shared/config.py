@@ -40,6 +40,7 @@ from shared.defaults import (
     DEFAULT_LLAMA_VERBOSE,
     DEFAULT_MAX_CHUNKS,
     DEFAULT_MAX_OCR_DIM,
+    DEFAULT_MAX_SESSION_TURNS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MEDIA_BATCH_SIZE,
     DEFAULT_METRICS_ENABLED,
@@ -55,6 +56,7 @@ from shared.defaults import (
     DEFAULT_REDIS_STAGING_QUEUE,
     DEFAULT_REDIS_WHISPER_JOB_QUEUE,
     DEFAULT_RETRIEVER_TOP_K,
+    DEFAULT_SESSION_TTL_HOURS,
     DEFAULT_SUPERVISOR_MAX_TOKENS,
     DEFAULT_SUPERVISOR_REMOTE_MODEL_NAME,
     DEFAULT_SUPERVISOR_TEMPERATURE,
@@ -113,6 +115,7 @@ from shared.env_names import (
     ENV_MAX_CHROMA_BATCH_SIZE,
     ENV_MAX_CHUNKS,
     ENV_MAX_OCR_DIM,
+    ENV_MAX_SESSION_TURNS,
     ENV_MAX_TOKENS,
     ENV_MEDIA_BATCH_SIZE,
     ENV_METRICS_ENABLED,
@@ -132,6 +135,7 @@ from shared.env_names import (
     ENV_REDIS_STAGING_QUEUE,
     ENV_REDIS_WHISPER_JOB_QUEUE,
     ENV_RETRIEVER_TOP_K,
+    ENV_SESSION_TTL_HOURS,
     ENV_STAGING_DIR,
     ENV_SUCCESS_DIR,
     ENV_SUPERVISOR_LLM_ENDPOINTS,
@@ -409,6 +413,10 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "INGESTED_FILE": lambda: _abs_path(
         ENV_INGESTED_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "ingested_files.txt")
     ),
+    # Maximum conversation turns per chat session (oldest dropped when exceeded)
+    "MAX_SESSION_TURNS": lambda: int(os.getenv(ENV_MAX_SESSION_TURNS, str(DEFAULT_MAX_SESSION_TURNS))),
+    # Session TTL in hours (inactive sessions are evicted from Redis)
+    "SESSION_TTL_HOURS": lambda: int(os.getenv(ENV_SESSION_TTL_HOURS, str(DEFAULT_SESSION_TTL_HOURS))),
 }
 
 
