@@ -1,20 +1,64 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# Project context — shown to AI when creating artifacts.
+context: |
+  Project: selfhosted-rag-doc-chat-prototype (Python >=3.11, <3.13)
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack:
+    - FastAPI (REST API, uvicorn, CORS allow_origins=["*"])
+    - Astro v6 + Tailwind v4 + daisyUI (frontend, Node.js v22.12.0+)
+    - Redis (message broker, queue coordination, now also session storage)
+    - DuckDB (relational lifecycle state machine, chunk staging)
+    - Qdrant/Chroma (dual vector DB support via VECTOR_DB_PROFILE)
+    - HAProxy (multi-backend load balancing for LLM/embeddings/Whisper/OCR)
+    - llama-cpp-python / OpenAI-compatible remote endpoints (LLM inference)
+    - e5-large-v2 (embeddings via HuggingFace or remote API)
+
+  Linting: ruff (ruff.toml at repo root, line-length=270, select=[E,F,I])
+  Testing: pytest with async support, conftest.py sets minimal env vars,
+    run with: PYTHONPATH=doc-ingest-chat:shared .venv/bin/python -m pytest
+    frontend: npm test + bash test.sh in astro-frontend/
+
+  Code conventions:
+    - Static methods preferred over classes where stateless
+    - Lazy-loaded settings via shared/config.py _SETTINGS dict
+    - Fork-safe singletons with PID checking (llm_setup.py, database.py)
+    - Chain of Responsibility pattern for content handlers (handlers/)
+    - All new modules must have logger = logging.getLogger("ingest.<name>")
+    - Docstrings: Google style, brief purpose + args + return type
+    - Env vars defined in shared/env_names.py, defaults in shared/defaults.py
+    - Worker entry points at doc-ingest-chat/workers/, use sys.path.insert(0,...)
+
+  Key patterns:
+    - Every new service must include graceful degradation (fail-open) where possible
+    - API changes that remove fields are BREAKING — mark in proposal
+    - Session state stored in Redis, not client-side
+    - Configurable limits via env vars with sensible defaults
+
+  Operational docs: infra/operations/day-1.md (setup checklist) and
+    infra/operations/day-2.md (symptom→diagnosis→fix runbook).
+    Every new service, endpoint, env var, or persistent state must
+    update the relevant playbook.
+
+# Per-artifact rules — applied when creating each artifact type.
+rules:
+  proposal:
+    - "Include a 'Cross-cutting' section covering: error handling patterns, logging/observability, documentation conventions, and testing strategy"
+    - "Every breaking API change must be explicitly marked with **BREAKING**"
+    - "New Redis key patterns must be documented with their TTL policy"
+  design:
+    - "Document error modes and recovery paths for every new component"
+    - "Include rollback strategy for breaking API changes"
+    - "Redis-dependent services must document fallback behavior when Redis is unavailable"
+    - "New env vars must include: name, type, default value, and purpose"
+    - "New services, endpoints, env vars, or persistent state must update infra/operations/ playbooks"
+  specs:
+    - "Every requirement must have at least one testable scenario"
+    - "Scenarios should cover both success and failure paths"
+    - "Requirements use SHALL/MUST for normative behavior (avoid 'should'/'may')"
+    - "Cross-cutting concerns (logging, error handling, observability) should be explicit requirements, not implicit"
+  tasks:
+    - "Include tooling verification steps after implementation: ruff check --fix, pytest (full suite), and any new unit tests"
+    - "Each task should be verifiable independently"
+    - "Frontend changes must note any new npm dependencies"
+    - "New services must include unit tests covering: success path, failure path (Redis unavailable), and edge cases (empty session_id, max turns reached)"

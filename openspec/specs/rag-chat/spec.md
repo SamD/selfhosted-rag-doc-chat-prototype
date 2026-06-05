@@ -62,14 +62,30 @@ The system SHALL map [sourceN] citation tags back to the original filenames and 
 - **WHEN** the LLM response contains no valid citation tags
 - **THEN** the system SHALL log a grounding failure warning and return the response as-is
 
-### Requirement: Chat history accumulation
+### Requirement: Server-side chat history management
 
-The system SHALL accumulate chat history across turns. Each query and response pair SHALL be appended to the chat_history list. The full history SHALL be sent with each subsequent query. There SHALL be no truncation, summarization, or sliding window applied to the history.
+The system SHALL manage chat history server-side in Redis, keyed by session ID. Each query and response pair SHALL be appended to a Redis list for the session. The system SHALL enforce a configurable maximum number of conversation turns (MAX_SESSION_TURNS, default: 20). When the limit is exceeded, the oldest messages SHALL be dropped (oldest-first truncation). Sessions SHALL expire after a configurable inactivity period (SESSION_TTL_HOURS, default: 24).
 
-#### Scenario: History append
-- **WHEN** a query is answered
-- **THEN** the query and response SHALL be appended to chat_history as {"role": "user", "content": <query>} and {"role": "assistant", "content": <response>}
+#### Scenario: History append to Redis
+- **WHEN** a query is answered for a session
+- **THEN** the query and response pair SHALL be RPUSHed to the Redis list at key session:{id}
 
-#### Scenario: History sent with subsequent queries
-- **WHEN** a subsequent query is made
-- **THEN** the complete chat_history array SHALL be included in the messages sent to the LLM
+#### Scenario: Oldest-first truncation
+- **WHEN** the session history exceeds MAX_SESSION_TURNS after appending
+- **THEN** the system SHALL LTRIM the Redis list to keep only the most recent MAX_SESSION_TURNS entries
+
+#### Scenario: Session TTL expiry
+- **WHEN** a session has no activity for SESSION_TTL_HOURS
+- **THEN** the Redis key SHALL be automatically evicted
+
+#### Scenario: History retrieval on query
+- **WHEN** a query arrives with a session_id
+- **THEN** the system SHALL retrieve the full history from Redis and pass it to the LLM for context
+
+#### Scenario: New session creation
+- **WHEN** a query arrives with an unknown or empty session_id
+- **THEN** the system SHALL create a new session with empty history and return the new session_id in the response
+
+#### Scenario: Redis unavailable
+- **WHEN** Redis is unreachable during history retrieval
+- **THEN** the system SHALL fall back to empty history and log the error, rather than failing the query
