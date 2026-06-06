@@ -14,6 +14,7 @@ import traceback
 from typing import Any, Callable, List
 
 from config import settings
+from services.job_service import JobService
 from services.parquet_service import init_schema
 from services.redis_service import get_redis_client
 from utils.metrics import FileMetrics
@@ -78,7 +79,21 @@ def consumer_worker(queue_name: str, shared_data: Any, parq_lock: Any) -> None:
                         log.info(f"📨 [{queue_name}] Retrieved {len(final_chunks)} chunks for {source_file}")
                         # Attempt to find trace_id in chunks if not in sentinel
                         f_trace_id = trace_id or (final_chunks[0].get("trace_id") if final_chunks else None)
-                        run_consumer_graph(source_file, expected, final_chunks, metrics, trace_id=f_trace_id)
+                        graph_ok = run_consumer_graph(source_file, expected, final_chunks, metrics, trace_id=f_trace_id)
+                        if not graph_ok:
+                            log.error(f"💥 Consumer graph failed for {source_file}")
+                            try:
+                                from services.job_service import STATUS_INGEST_FAILED
+                                job_res, _ = JobService._execute_with_retry(
+                                    "SELECT id, pdf_path, md_path FROM ingestion_lifecycle WHERE original_filename = ? ORDER BY finalized_at DESC LIMIT 1",
+                                    (source_file,), fetch=True
+                                )
+                                if job_res:
+                                    jid, pdf, md = job_res
+                                    JobService.transition_job(jid, STATUS_INGEST_FAILED, error="Consumer graph failed")
+                                    log.info(f"📮 Transitioned {source_file} to INGEST_FAILED after graph failure")
+                            except Exception as inner_e:
+                                log.error(f"Failed to record consumer failure for {source_file}: {inner_e}")
                     continue
 
                 if source_file not in timestamps:

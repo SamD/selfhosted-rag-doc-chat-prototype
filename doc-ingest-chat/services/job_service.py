@@ -8,7 +8,7 @@ import datetime
 import logging
 import os
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 log = logging.getLogger("ingest.job_service")
 
@@ -64,8 +64,11 @@ class JobService:
         """
         filename = os.path.basename(original_pdf_path)
 
-        # Duplicate Check
-        existing, _ = JobService._execute_with_retry("SELECT id FROM ingestion_lifecycle WHERE original_filename = ? AND status != ?", (filename, STATUS_INGEST_FAILED), fetch=True)
+        # Duplicate Check — allow re-ingestion after INGEST_FAILED
+        existing, _ = JobService._execute_with_retry(
+            "SELECT id FROM ingestion_lifecycle WHERE original_filename = ? AND status NOT IN (?, ?)",
+            (filename, STATUS_INGEST_FAILED, STATUS_INGEST_SUCCESS), fetch=True
+        )
         if existing:
             return None
 
@@ -112,6 +115,86 @@ class JobService:
             return None
 
     @staticmethod
+    def reclaim_orphaned_jobs(current_status: str, target_status: str, timeout_hours: int = 1) -> List[Dict[str, Any]]:
+        """
+        Reclaims jobs stuck in an intermediate state for longer than timeout_hours.
+        Resets them to target_status so they can be re-claimed by a worker.
+        Returns the list of reclaimed job dicts.
+
+        NOTE: This method is NOT auto-called on worker startup. Worker crashes are
+        handled by Docker's restart: unless-stopped policy — the container restarts
+        and the worker claims new jobs from DuckDB normally. Jobs stuck in an
+        intermediate state from a prior crash are abandoned in place.
+        This method exists for manual use or a future safer trigger
+        (e.g., only on non-zero container exit, not every restart).
+
+        Without auto-reclaim, the workflow remains valid because:
+        - Docker restarts crashed workers, they continue processing other jobs
+        - cleanup_failed_job() purges Redis + DuckDB state on explicit INGEST_FAILED
+        - The consumer checks run_consumer_graph() return value and transitions
+          to INGEST_FAILED on fatal errors, triggering cleanup automatically
+        - Files in INGEST_FAILED can be re-ingested by moving from failed/ to staging/
+        - Stuck intermediate jobs are a known limitation; can be manually reclaimed
+          by calling this method from a Python shell or via SQL UPDATE
+        """
+        state_to_col = {
+            "PREPROCESSING": "preprocessing_at",
+            "INGESTING": "ingesting_at",
+            "CONSUMING": "consuming_at",
+        }
+        ts_col = state_to_col.get(current_status, "new_at")
+        worker_id = str(os.getpid())
+        try:
+            query = f"""
+                UPDATE ingestion_lifecycle
+                SET status = ?, worker_id = ?, error_log = 'Reclaimed by worker {worker_id} after crash timeout'
+                WHERE id = (
+                    SELECT id FROM ingestion_lifecycle
+                    WHERE status = ?
+                    AND {ts_col} < (CURRENT_TIMESTAMP - INTERVAL '{timeout_hours}' HOUR)
+                    ORDER BY {ts_col} ASC
+                    LIMIT 1
+                )
+                RETURNING *
+            """
+            reclaimed = []
+            while True:
+                res, cols = JobService._execute_with_retry(
+                    query, (target_status, worker_id, current_status), fetch=True
+                )
+                if not res:
+                    break
+                reclaimed.append(dict(zip(cols, res)))
+            if reclaimed:
+                log.warning(f"♻️ Reclaimed {len(reclaimed)} orphaned jobs from {current_status} → {target_status}")
+            return reclaimed
+        except Exception as e:
+            log.error(f"Failed to reclaim orphaned jobs from {current_status}: {e}")
+            return []
+
+    @staticmethod
+    def cleanup_failed_job(job_id: str, source_file: str) -> None:
+        """Clean up Redis queue entries and DuckDB staged chunks for a failed job."""
+        try:
+            from config.settings import QUEUE_NAMES
+            from services.redis_service import RedisService, get_redis_client
+
+            # Test Redis connectivity — fail fast if unavailable
+            try:
+                r = get_redis_client()
+                r.ping()
+                RedisService.purge_queue_entries(source_file, QUEUE_NAMES)
+            except Exception as re:
+                log.warning(f"Redis unavailable for cleanup of {source_file}: {re}")
+
+            JobService._execute_with_retry(
+                "DELETE FROM staged_chunks WHERE source_file = ?", (source_file,)
+            )
+            log.info(f"🧹 Purged staged chunks for failed job {job_id} ({source_file})")
+        except Exception as e:
+            log.warning(f"Cleanup for failed job {job_id} encountered errors: {e}")
+
+    @staticmethod
     def transition_job(job_id: str, next_status: str, new_pdf_path: str = None, new_md_path: str = None, error: str = None) -> bool:
         """
         [ATOMIC HANDOFF] Updates DB state.
@@ -136,7 +219,20 @@ class JobService:
         params.append(job_id)
 
         query = f"UPDATE ingestion_lifecycle SET {', '.join(updates)} WHERE id = ?"
-        return JobService._execute_with_retry(query, tuple(params))
+        result = JobService._execute_with_retry(query, tuple(params))
+
+        # On INGEST_FAILED, clean up Redis and DuckDB state
+        if next_status == STATUS_INGEST_FAILED:
+            try:
+                job_info, _ = JobService._execute_with_retry(
+                    "SELECT original_filename FROM ingestion_lifecycle WHERE id = ?", (job_id,), fetch=True
+                )
+                if job_info:
+                    JobService.cleanup_failed_job(job_id, job_info[0])
+            except Exception as cleanup_e:
+                log.warning(f"Cleanup after fail for {job_id} failed: {cleanup_e}")
+
+        return result
 
     # --- LEGACY METHODS (for compatibility) ---
     @staticmethod

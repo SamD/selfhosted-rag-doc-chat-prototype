@@ -20,7 +20,14 @@ WHERE status NOT LIKE '%SUCCESS%'
 
 If `worker_id` is set, that worker likely crashed mid-job.
 
-**Fix:**
+**Fix (automatic):** On restart, workers now reclaim orphaned jobs:
+- Gatekeeper resets `PREPROCESSING` → `NEW`
+- Producer resets `INGESTING` → `PREPROCESSING_COMPLETE`
+- Consumer resets `CONSUMING` → `INGESTING`
+
+This happens automatically within `STUCK_JOB_TIMEOUT_HOURS` (default: 1) of the crash. Simply restart the worker container.
+
+**Fix (manual, if auto-reclaim doesn't trigger):**
 
 ```sql
 -- Force-fail the stuck job so it can be re-processed
@@ -29,7 +36,7 @@ SET status = 'INGEST_FAILED', error_log = 'Stuck — manually failed', finalized
 WHERE id = '<job_id>';
 ```
 
-Then re-place the original file in `staging/` to trigger re-discovery.
+Then move the file from `failed/` back to `staging/` to trigger re-discovery.
 
 ---
 
