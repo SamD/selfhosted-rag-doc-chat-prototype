@@ -32,7 +32,7 @@ REDIS_WHISPER_JOB_QUEUE = os.getenv("REDIS_WHISPER_JOB_QUEUE", "whisper_processi
 # WhisperX specific settings
 DEVICE = os.getenv("DEVICE", "cuda")
 COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")
-BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", 16))
+BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", 8))
 WHISPER_MODEL_ENDPOINTS = os.getenv("WHISPER_MODEL_ENDPOINTS", "/models/whisper")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

@@ -13,6 +13,7 @@ from typing import Any, Optional, Union
 import openai
 from config.llama_strategy import LlamaParamStrategy
 from config.settings import (
+    EMBEDDING_BATCH_SIZE,
     LLAMA_REMOTE_TIMEOUT,
     RETRIEVER_TOP_K,
     SUPERVISOR_LLM_ENDPOINTS,
@@ -74,8 +75,7 @@ class RemoteEmbeddings(Embeddings):
         """Embed a list of documents with internal micro-batching for stability."""
         try:
             results = []
-            # Use a conservative micro-batch size of 2 for remote servers with small physical batch limits
-            MICRO_BATCH_SIZE = 2
+            MICRO_BATCH_SIZE = EMBEDDING_BATCH_SIZE
             
             from more_itertools import chunked
             for micro_batch in chunked(texts, MICRO_BATCH_SIZE):

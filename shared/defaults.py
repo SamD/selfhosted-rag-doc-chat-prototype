@@ -78,6 +78,7 @@ DEFAULT_DEVICE = "cuda"
 DEFAULT_COMPUTE_TYPE = "float16"
 
 # Batch sizes
+DEFAULT_EMBEDDING_BATCH_SIZE = 5
 DEFAULT_MEDIA_BATCH_SIZE = 8
 
 # Stuck job recovery

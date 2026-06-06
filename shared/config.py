@@ -20,6 +20,7 @@ from shared.defaults import (
     DEFAULT_CHUNK_TIMEOUT,
     DEFAULT_COMPUTE_TYPE,
     DEFAULT_DEVICE,
+    DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_FORCE_MARKDOWN_LLM,
     DEFAULT_GATEKEEPER_BATCH_SIZE,
     DEFAULT_HA_INTERLEAVE,
@@ -86,6 +87,7 @@ from shared.env_names import (
     ENV_DEFAULT_DOC_INGEST_ROOT,
     ENV_DEVICE,
     ENV_DUCKDB_FILE,
+    ENV_EMBEDDING_BATCH_SIZE,
     ENV_EMBEDDING_ENDPOINTS,
     ENV_FAILED_DIR,
     ENV_FAILED_FILES,
@@ -379,6 +381,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     ),
     # Compute device for local models ("cuda" or "cpu")
     "DEVICE": lambda: os.getenv(ENV_DEVICE, DEFAULT_DEVICE),
+    # Number of texts sent to the embedding model per API call
+    "EMBEDDING_BATCH_SIZE": lambda: int(os.getenv(ENV_EMBEDDING_BATCH_SIZE, str(DEFAULT_EMBEDDING_BATCH_SIZE))),
     # Batch size for Whisper media transcription
     "MEDIA_BATCH_SIZE": lambda: int(os.getenv(ENV_MEDIA_BATCH_SIZE, str(DEFAULT_MEDIA_BATCH_SIZE))),
     # Precision used for local model inference (e.g. float16, int8)
