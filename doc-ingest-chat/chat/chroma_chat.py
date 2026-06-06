@@ -1,7 +1,6 @@
 import logging
 import re
 
-from config.settings import USE_OLLAMA
 from utils.chat_utils import replace_citation_labels
 from utils.llm_setup import get_chain_or_llama, get_retriever, get_vectorstore
 
@@ -74,19 +73,8 @@ class ChromaChat:
 
     @staticmethod
     def respond(query, chat_history):
-        if USE_OLLAMA:
-            vectorstore = get_vectorstore()
-            retriever = get_retriever(vectorstore)
-            chain, _ = get_chain_or_llama(retriever)
-            result = chain.invoke({"question": query, "chat_history": [(m["content"], a["content"]) for m, a in zip(chat_history[::2], chat_history[1::2])]})
-            output = result["answer"].strip()
-            docs = result.get("source_documents", [])
-            new_history = chat_history + [{"role": "user", "content": query}, {"role": "assistant", "content": output}]
-        else:
-            # We strip the current query from history because simulate_conversational_chain
-            # adds it as the unified 'user_prompt' at the end.
-            output, docs = ChromaChat.simulate_conversational_chain(query, chat_history)
-            new_history = chat_history + [{"role": "user", "content": query}, {"role": "assistant", "content": output}]
+        output, docs = ChromaChat.simulate_conversational_chain(query, chat_history)
+        new_history = chat_history + [{"role": "user", "content": query}, {"role": "assistant", "content": output}]
 
         # Post-process: Map [sourceN] tags back to filenames/metadata
         found_tags = set(re.findall(r"\[source\d+\]|\(source\d+\)", output))

@@ -17,7 +17,6 @@ export SUPERVISOR_LLM_ENDPOINTS=/path/to/qwen3.5-4b-mtp-ud-q4_k_xl.gguf
 
 ```bash
 export VECTOR_DB_PROFILE=qdrant          # or chroma
-export LLAMA_USE_GPU=true                # or false for CPU
 export OCR_ENDPOINTS=LOCAL               # or remote docling-serve URL
 export WHISPER_MODEL_ENDPOINTS=NOT_SET   # or remote URL
 export MAX_SESSION_TURNS=20              # chat history limit
@@ -29,11 +28,11 @@ Full reference: `shared/env_names.py` and `shared/defaults.py`.
 ## 2. Start Services
 
 ```bash
-# GPU + Qdrant (default)
-./run-compose.sh --profile cuda --profile qdrant
+# Qdrant (GPU assumed, cuda profile applied automatically)
+VECTOR_DB_PROFILE=qdrant ./run-compose.sh
 
-# CPU + Chroma
-./run-compose.sh --profile cpu --profile chroma
+# Chroma
+VECTOR_DB_PROFILE=chroma ./run-compose.sh
 ```
 
 ### Verify all containers are running

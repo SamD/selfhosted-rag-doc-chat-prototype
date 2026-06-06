@@ -61,7 +61,7 @@ class TestTokenSafety(unittest.TestCase):
         }
         
         # 3. Setup realistic context window for test
-        with patch('config.settings.LLAMA_N_CTX', 500):
+        with patch('config.settings.SUPERVISOR_N_CTX', 500):
             # CONTEXT_LIMIT will be 400
             # Send 1000 words (definitely over 400)
             massive_content = "word " * 1000

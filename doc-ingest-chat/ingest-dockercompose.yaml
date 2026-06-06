@@ -31,7 +31,6 @@ x-gpu-params: &gpu-params
       BUILDKIT_INLINE_CACHE: 1
       OCR_ENDPOINTS: ${OCR_ENDPOINTS:-LOCAL}
   environment:
-    - LLAMA_USE_GPU=true
     - PYTHONUNBUFFERED=1
     - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
     - REDIS_HOST=redis
