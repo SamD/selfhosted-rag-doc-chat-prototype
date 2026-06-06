@@ -1,6 +1,10 @@
 schema: spec-driven
 
 # Project context — shown to AI when creating artifacts.
+# IMPORTANT: Only one change may be active at a time. Before creating a new
+# change with `openspec new change`, check that no other active changes exist
+# in `openspec/changes/` (excluding the `archive/` directory). If one exists,
+# either archive it first or add the new work to the existing change.
 context: |
   Project: selfhosted-rag-doc-chat-prototype (Python >=3.11, <3.13)
 
@@ -63,3 +67,4 @@ rules:
     - "Frontend changes must note any new npm dependencies"
     - "New services must include unit tests covering: success path, failure path (Redis unavailable), and edge cases (empty session_id, max turns reached)"
     - "Update CHANGELOG.md with all changes under the appropriate [Unreleased] section (Added / Changed / Fixed)"
+    - "Update docs/ (overview.md, quickstart.md, deep-dive.md) and AGENTS.md where the affected capability, flow, or configuration is described — documentation must stay in sync with code changes"

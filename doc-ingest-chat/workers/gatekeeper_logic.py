@@ -343,7 +343,28 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
     else:
         anchor_header = "\n\n\n\n"
 
-    # 2. VERIFIED 'Markdown Formatter' Prompt (FLATTENED - ZERO INDENTATION)
+    from utils.text_utils import get_tokenizer
+
+    # 2. QUALITY CHECK: If text is already clean, skip LLM entirely
+    # Only pages that fail the quality check go through the supervisor LLM.
+    # This is the 3-tier approach: pdfplumber → OCR → LLM (last resort).
+    # Set FORCE_MARKDOWN_LLM=true to bypass quality check and always use LLM.
+    raw_stripped = raw_content.strip()
+    if not settings.FORCE_MARKDOWN_LLM and raw_stripped and not is_bad_ocr(raw_stripped):
+        log.info(f"⏭️ Batch {idx}: quality check passed, skipping LLM ({len(raw_stripped)} chars)")
+        content = raw_stripped
+        final_text = anchor_header + content
+        mode = "w" if idx == 0 else "a"
+        with open(md_path, mode, encoding="utf-8") as f:
+            f.write(final_text)
+            if not final_text.endswith("\n"):
+                f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        log.info(f"📝 Wrote Chunk {idx} to {md_path} (bypassed LLM)")
+        return meta, content
+
+    # 3. VERIFIED 'Markdown Formatter' Prompt (FLATTENED - ZERO INDENTATION)
     user_msg = (
         "You are a Markdown formatter. "
         "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
@@ -356,13 +377,9 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
         f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
     )
 
-    # 3. Payload (Unified User Role)
-    messages = [{"role": "user", "content": user_msg}]
-
     log.info(f"🧠 Normalizing Batch {idx} (High-Fidelity Verified Prompt)...")
 
     llm, _ = get_llm_and_grammar()
-    from utils.text_utils import get_tokenizer
     tokenizer = get_tokenizer()
 
     # ENFORCE CONTEXT LIMIT: Truncate if batch is somehow massive (e.g. OCR error/leak)
@@ -372,12 +389,8 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
     
     if len(encoded_prompt) > CONTEXT_LIMIT:
         log.warning(f"⚠️ Batch {idx} is too large ({len(encoded_prompt)} tokens). Truncating to {CONTEXT_LIMIT} to fit context window.")
-        # Truncate raw_content instead of entire prompt for better model behavior
-        # Subtract prompt overhead (~200 tokens)
         truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
         raw_content = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
-        
-        # Rebuild user_msg with truncated content
         user_msg = (
             "You are a Markdown formatter. "
             "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
@@ -389,12 +402,11 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
             "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
             f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
         )
-        messages = [{"role": "user", "content": user_msg}]
 
+    # 4. LLM NORMALIZATION (last resort)
     response = llm.create_chat_completion(
-        messages=messages,
+        messages=[{"role": "user", "content": user_msg}],
         stop=["END_OF_RAW_TEXT"],
-        # max_tokens=settings.SUPERVISOR_MAX_TOKENS,
     )
 
     content = response["choices"][0]["message"]["content"] or ""

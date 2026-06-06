@@ -41,9 +41,11 @@ class TestTokenSafety(unittest.TestCase):
 
     @patch('os.fsync')
     @patch('workers.gatekeeper_logic.get_llm_and_grammar')
+    @patch('workers.gatekeeper_logic.is_bad_ocr')
     @patch('utils.text_utils.get_tokenizer')
     @patch('builtins.open', new_callable=MagicMock)
-    def test_gatekeeper_enforces_context_limit(self, mock_open, mock_get_tokenizer, mock_get_llm_grammar, mock_fsync):
+    def test_gatekeeper_enforces_context_limit(self, mock_open, mock_get_tokenizer, mock_bad_ocr, mock_get_llm_grammar, mock_fsync):
+        mock_bad_ocr.return_value = True  # Force LLM path (skip quality bypass)
         """Verify that gatekeeper truncates batches that exceed the LLM context window."""
         
         # 1. Mock Tokenizer

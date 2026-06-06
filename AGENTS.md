@@ -139,7 +139,7 @@ All workers use `get_env_strategy().apply()` early:
 - `run_producer.py` - Producer worker (ingests files)
 - `run_consumer.py` - Consumer worker (processes chunks)
 - `run_ocr_worker.py` - OCR worker (extracts text from images)
-- `run_gatekeeper.py` - Gatekeeper worker (extracts + normalizes via supervisor LLM)
+- `run_gatekeeper.py` - Gatekeeper worker (extracts + normalizes via supervisor LLM only for low-quality text; clean text bypasses LLM)
 - `run_whisperx_worker.py` - WhisperX worker (transcribes audio/video)
 
 ## FastAPI Backend

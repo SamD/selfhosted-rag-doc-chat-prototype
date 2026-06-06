@@ -20,6 +20,8 @@ from shared.defaults import (
     DEFAULT_CHUNK_TIMEOUT,
     DEFAULT_COMPUTE_TYPE,
     DEFAULT_DEVICE,
+    DEFAULT_EMBEDDING_BATCH_SIZE,
+    DEFAULT_FORCE_MARKDOWN_LLM,
     DEFAULT_GATEKEEPER_BATCH_SIZE,
     DEFAULT_HA_INTERLEAVE,
     DEFAULT_LATIN_SCRIPT_MIN_RATIO,
@@ -85,9 +87,11 @@ from shared.env_names import (
     ENV_DEFAULT_DOC_INGEST_ROOT,
     ENV_DEVICE,
     ENV_DUCKDB_FILE,
+    ENV_EMBEDDING_BATCH_SIZE,
     ENV_EMBEDDING_ENDPOINTS,
     ENV_FAILED_DIR,
     ENV_FAILED_FILES,
+    ENV_FORCE_MARKDOWN_LLM,
     ENV_GATEKEEPER_BATCH_SIZE,
     ENV_GATEKEEPER_FAILURE_DB,
     ENV_HA_INTERLEAVE,
@@ -377,6 +381,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     ),
     # Compute device for local models ("cuda" or "cpu")
     "DEVICE": lambda: os.getenv(ENV_DEVICE, DEFAULT_DEVICE),
+    # Number of texts sent to the embedding model per API call
+    "EMBEDDING_BATCH_SIZE": lambda: int(os.getenv(ENV_EMBEDDING_BATCH_SIZE, str(DEFAULT_EMBEDDING_BATCH_SIZE))),
     # Batch size for Whisper media transcription
     "MEDIA_BATCH_SIZE": lambda: int(os.getenv(ENV_MEDIA_BATCH_SIZE, str(DEFAULT_MEDIA_BATCH_SIZE))),
     # Precision used for local model inference (e.g. float16, int8)
@@ -386,7 +392,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     # Number of PDF pages to batch together for normalization
     "GATEKEEPER_BATCH_SIZE": lambda: int(os.getenv(ENV_GATEKEEPER_BATCH_SIZE, str(DEFAULT_GATEKEEPER_BATCH_SIZE))),
     # Whether to force OCR for all PDFs (high fidelity but slower)
-    "PDF_FORCE_OCR": lambda: os.getenv(ENV_PDF_FORCE_OCR, DEFAULT_PDF_FORCE_OCR).lower() == "true",
+    "PDF_FORCE_OCR": lambda: os.getenv(ENV_PDF_FORCE_OCR, DEFAULT_PDF_FORCE_OCR).lower() in ("1", "true"),
+    "FORCE_MARKDOWN_LLM": lambda: os.getenv(ENV_FORCE_MARKDOWN_LLM, DEFAULT_FORCE_MARKDOWN_LLM).lower() in ("1", "true"),
     # Enable HA batch interleaving: concurrent dispatch across multiple backends
     "HA_INTERLEAVE": lambda: os.getenv(ENV_HA_INTERLEAVE, DEFAULT_HA_INTERLEAVE).lower() in ("1", "true"),
     # Metrics reporting toggle
