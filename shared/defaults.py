@@ -80,6 +80,9 @@ DEFAULT_COMPUTE_TYPE = "float16"
 # Batch sizes
 DEFAULT_MEDIA_BATCH_SIZE = 8
 
+# Stuck job recovery
+DEFAULT_STUCK_JOB_TIMEOUT_HOURS = 1
+
 # Retrieval
 DEFAULT_RETRIEVER_TOP_K = 4
 

@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Ingestion error recovery**: Workers now reclaim orphaned jobs on startup. Gatekeeper resets `PREPROCESSING` → `NEW`, Producer resets `INGESTING` → `PREPROCESSING_COMPLETE`, Consumer resets `CONSUMING` → `INGESTING`. New env var `STUCK_JOB_TIMEOUT_HOURS` (default 1). 5 unit tests.
+- **Cleanup on INGEST_FAILED**: Redis queue entries and DuckDB staged chunks are purged when a job transitions to `INGEST_FAILED`. New `RedisService.purge_queue_entries()` method.
+- **Re-ingestion after failure**: Files previously in `INGEST_FAILED` can now be re-ingested by moving them back to `staging/`. The old failure record is preserved for audit.
+- **Consumer graph failure handling**: The consumer worker now checks the return value of `run_consumer_graph()` and transitions to `INGEST_FAILED` on fatal graph errors.
 - **Redis-backed chat session management**: New `ChatSessionService` stores chat history server-side in Redis. API models replaced `chat_history` with `session_id` in request/response (BREAKING). Frontend generates UUID v4 session_id in localStorage. New env vars: `MAX_SESSION_TURNS` (default 20), `SESSION_TTL_HOURS` (default 24). 12 unit tests.
 - **`SUPERVISOR_N_CTX` env var**: Separate context window setting for the gatekeeper supervisor LLM prompt truncation. Previously shared `LLAMA_N_CTX` with the main RAG LLM. Default: 8192.
 - **Operational playbooks**: `infra/operations/day-1.md` (setup checklist) and `infra/operations/day-2.md` (symptom→diagnosis→fix runbook).

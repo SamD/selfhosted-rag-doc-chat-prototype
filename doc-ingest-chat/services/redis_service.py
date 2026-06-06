@@ -37,6 +37,28 @@ class RedisService:
         self.client.lpush(reply_key, json.dumps(data))
         self.client.expire(reply_key, expire)
 
+    @staticmethod
+    def purge_queue_entries(source_file: str, queue_names: List[str]) -> None:
+        """Remove all entries matching source_file from the given Redis queues."""
+        client = get_redis_client()
+        for qname in queue_names:
+            try:
+                count = 0
+                while True:
+                    entry = client.lpop(qname)
+                    if entry is None:
+                        break
+                    try:
+                        data = json.loads(entry)
+                        if data.get("source_file") != source_file:
+                            client.rpush(qname, entry)
+                    except json.JSONDecodeError:
+                        client.rpush(qname, entry)
+                    count += 1
+                log.info(f"🧹 Scanned {count} entries in '{qname}' for {source_file}")
+            except Exception as e:
+                log.warning(f"Failed to scan queue {qname}: {e}")
+
     def blocking_push_with_backpressure(self, queue_name: str, entries: List[str], max_queue_length: int = 1000, poll_interval: float = 0.5, warn_after: float = 10.0, rel_path: str = "unknown") -> None:
         """Push entries to queue with backpressure handling."""
         push_script = self.client.register_script("""

@@ -8,14 +8,14 @@ The file ingestion capability manages the end-to-end lifecycle of document proce
 
 ### Requirement: File discovery and lifecycle registration
 
-The system SHALL watch the staging directory for new files and register them in the DuckDB ingestion_lifecycle table with a NEW status. Each file SHALL be assigned a unique UUID job ID and a trace ID. Duplicate filenames SHALL be rejected unless the previous job is in INGEST_FAILED state.
+The system SHALL watch the staging directory for new files and register them in the DuckDB ingestion_lifecycle table with a NEW status. Each file SHALL be assigned a unique UUID job ID and a trace ID. Duplicate filenames SHALL be rejected unless the previous job is in INGEST_FAILED or INGEST_SUCCESS state — allowing re-ingestion of failed files by moving them from the failed directory back to staging.
 
 #### Scenario: New file discovered in staging
 - **WHEN** a file is placed in the staging directory
 - **THEN** the system creates an ingestion_lifecycle record with status NEW, a UUID, a trace ID, and the original filename
 
 #### Scenario: Duplicate file rejection
-- **WHEN** a file with the same name already exists in ingestion_lifecycle with a non-failed status
+- **WHEN** a file with the same name already exists in ingestion_lifecycle with a non-terminal status
 - **THEN** the system SHALL return None and not create a duplicate record
 
 ### Requirement: Gatekeeper normalization
@@ -58,6 +58,8 @@ The system SHALL claim jobs in PREPROCESSING_COMPLETE status and transition them
 
 The system SHALL listen on partitioned Redis consumer queues. Chunks SHALL be staged in DuckDB as they arrive. When a file_end sentinel is received, the Consumer SHALL validate all staged chunks (sub-splitting any oversized chunks), embed them via the e5-large-v2 model, upsert to the configured vector database (Qdrant or Chroma), archive to Parquet, and move the processed file to the success directory. Status SHALL transition to INGEST_SUCCESS.
 
+If the consumer graph fails (returns False from run_consumer_graph), the consumer worker SHALL transition the job to INGEST_FAILED and log the error. The return value of run_consumer_graph() SHALL NOT be ignored.
+
 #### Scenario: Consumer processes a file_end sentinel
 - **WHEN** a file_end sentinel is popped from a consumer queue
 - **THEN** the Consumer retrieves all staged chunks for that file, embeds them, upserts to vector DB, and archives to Parquet
@@ -69,6 +71,10 @@ The system SHALL listen on partitioned Redis consumer queues. Chunks SHALL be st
 #### Scenario: Successful ingestion finalization
 - **WHEN** all chunks are embedded and stored
 - **THEN** the file is moved to the success directory and status transitions to INGEST_SUCCESS
+
+#### Scenario: Consumer graph failure
+- **WHEN** run_consumer_graph() returns False
+- **THEN** the consumer worker SHALL transition the job to INGEST_FAILED and log the error
 
 ### Requirement: DuckDB lifecycle state machine
 

@@ -54,6 +54,7 @@ from shared.defaults import (
     DEFAULT_REDIS_WHISPER_JOB_QUEUE,
     DEFAULT_RETRIEVER_TOP_K,
     DEFAULT_SESSION_TTL_HOURS,
+    DEFAULT_STUCK_JOB_TIMEOUT_HOURS,
     DEFAULT_SUPERVISOR_MAX_TOKENS,
     DEFAULT_SUPERVISOR_N_CTX,
     DEFAULT_SUPERVISOR_REMOTE_MODEL_NAME,
@@ -131,6 +132,7 @@ from shared.env_names import (
     ENV_RETRIEVER_TOP_K,
     ENV_SESSION_TTL_HOURS,
     ENV_STAGING_DIR,
+    ENV_STUCK_JOB_TIMEOUT_HOURS,
     ENV_SUCCESS_DIR,
     ENV_SUPERVISOR_LLM_ENDPOINTS,
     ENV_SUPERVISOR_MAX_TOKENS,
@@ -405,6 +407,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "MAX_SESSION_TURNS": lambda: int(os.getenv(ENV_MAX_SESSION_TURNS, str(DEFAULT_MAX_SESSION_TURNS))),
     # Session TTL in hours (inactive sessions are evicted from Redis)
     "SESSION_TTL_HOURS": lambda: int(os.getenv(ENV_SESSION_TTL_HOURS, str(DEFAULT_SESSION_TTL_HOURS))),
+    # Hours before a job stuck in an intermediate state is eligible for reclaim
+    "STUCK_JOB_TIMEOUT_HOURS": lambda: int(os.getenv(ENV_STUCK_JOB_TIMEOUT_HOURS, str(DEFAULT_STUCK_JOB_TIMEOUT_HOURS))),
 }
 
 
