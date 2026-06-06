@@ -40,14 +40,7 @@ REQUIRED_VARS=(
   "VECTOR_DB_BATCH_SIZE:any"
 )
 
-# 1. PROFILE SELECTION
-GPU_CPU_PROFILE="cuda"
-if [[ "${1:-}" == "--cpu" ]]; then
-  GPU_CPU_PROFILE="cpu"
-  shift
-fi
-
-# 2. LOAD ENV FILE INTO MAP FIRST
+# 1. LOAD ENV FILE INTO MAP FIRST
 ENV_FILE="ingest-svc.env"
 declare -A env_map
 
@@ -61,7 +54,7 @@ if [[ -f "$ENV_FILE" ]]; then
   done < "$ENV_FILE"
 fi
 
-# 3. SET DEFAULTS AND EXPORTS
+# 2. SET DEFAULTS AND EXPORTS
 if [[ -z "${VECTOR_DB_PROFILE:-}" ]]; then
   VECTOR_DB_PROFILE="${env_map[VECTOR_DB_PROFILE]:-qdrant}"
 fi
@@ -73,9 +66,8 @@ export VECTOR_DB_TIMEOUT="${VECTOR_DB_TIMEOUT:-${env_map[VECTOR_DB_TIMEOUT]:-60.
 export VECTOR_DB_BATCH_SIZE="${VECTOR_DB_BATCH_SIZE:-${env_map[VECTOR_DB_BATCH_SIZE]:-20}}"
 export VECTOR_DB_PROFILE
 
-# 4. PROFILE LOGIC
-COMBINED_PROFILE="${GPU_CPU_PROFILE}-${VECTOR_DB_PROFILE}"
-COMPOSE_FILE_OPTS="--profile $COMBINED_PROFILE --profile $GPU_CPU_PROFILE --profile $VECTOR_DB_PROFILE --profile with-frontend"
+# 3. PROFILE LOGIC
+COMPOSE_FILE_OPTS="--profile cuda-$VECTOR_DB_PROFILE --profile cuda --profile with-frontend"
 
 case "$VECTOR_DB_URL" in
   http://*|https://*)

@@ -6,7 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Redis-backed chat session management**: New `ChatSessionService` stores chat history server-side in Redis. API models replaced `chat_history` with `session_id` in request/response (BREAKING). Frontend generates UUID v4 session_id in localStorage. New env vars: `MAX_SESSION_TURNS` (default 20), `SESSION_TTL_HOURS` (default 24). 12 unit tests.
+- **`SUPERVISOR_N_CTX` env var**: Separate context window setting for the gatekeeper supervisor LLM prompt truncation. Previously shared `LLAMA_N_CTX` with the main RAG LLM. Default: 8192.
+- **Operational playbooks**: `infra/operations/day-1.md` (setup checklist) and `infra/operations/day-2.md` (symptom→diagnosis→fix runbook).
+- **OpenSpec baseline**: 7 capability specs documenting current architecture (`openspec/specs/`). Project context and per-artifact rules in `openspec/config.yaml`.
+
 ### Changed
+- **CPU profile removed**: Removed `--cpu` flag from `run-compose.sh`, `CPUEnvConfig` from `env_strategy.py`, `LLAMA_USE_GPU` env var, `USE_OLLAMA` env var, and `run-compose-cpu.sh`. Device hardcoded to `"cuda"` — non-GPU deployments use remote HTTP endpoints.
+- **Ollama code path removed**: `USE_OLLAMA` branch removed from `chroma_chat.py` and `utils/llm_setup.py`. Users who want Ollama set `LLM_PATH` to the Ollama server URL (OpenAI-compatible).
+- **Gatekeeper context limit**: Now uses `SUPERVISOR_N_CTX` instead of `LLAMA_N_CTX * 0.8`. Decouples supervisor prompt truncation from main LLM context.
 - **Environment variable consolidation**: Renamed all single-endpoint service env vars to use the `*_ENDPOINTS` naming convention for consistency. `SUPERVISOR_LLM_PATH`→`SUPERVISOR_LLM_ENDPOINTS`, `EMBEDDING_MODEL_PATH`→`EMBEDDING_ENDPOINTS`, `WHISPER_MODEL_PATH`→`WHISPER_MODEL_ENDPOINTS`, `OCR_PATH`→`OCR_ENDPOINTS`. Each var now supports both single URLs and comma-separated multi-endpoint lists for HAProxy load balancing.
 - **`run-compose.sh`**: HAProxy auto-override now saves original endpoints to `HAPROXY_*` vars so haproxy containers receive the raw endpoint list (not the overridden proxy URL).
 - **`astro-frontend`: Replaced `@astrojs/tailwind` with `@tailwindcss/vite` and updated `astro` to `6.4.4`.
@@ -23,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`shared/config.py`**: Added `HA_INTERLEAVE` setting.
 - **`ingest-dockercompose.yaml`**: Added `HA_INTERLEAVE` and `HAPROXY_*` env vars to worker containers.
 - **Tests for `EndpointDispatcher`**: 16 new tests in `shared/tests/test_utils.py` covering constructor validation, round-robin, pinned mode, result ordering, error propagation, job labels, counter persistence, and max workers clamping.
+
+### Removed
+- **Stale standalone scripts**: `run_full_ingestion.py`, `run_full_normalization.py`, `run_full_normalization_test.py`, `run-compose-cpu.sh` — old test scripts with hardcoded paths, superseded by the worker pipeline and `run-compose.sh`.
 
 ### Fixed
 - **Chunk content loss**: Added regex in `text_processor.py` to separate `### [INTERNAL_PAGE_X]` headers from inline content before MarkdownHeaderTextSplitter processes them. Prevents the splitter from swallowing content into header metadata when the supervisor LLM places text on the same line as the header.

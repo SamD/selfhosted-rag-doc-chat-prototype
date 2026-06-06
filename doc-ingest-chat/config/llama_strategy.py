@@ -17,7 +17,6 @@ from config.settings import (
     LLM_PATH,
 )
 
-from shared.defaults import DEFAULT_LLAMA_USE_GPU
 from shared.env_names import (
     ENV_LLAMA_CHAT_FORMAT,
     ENV_LLAMA_F16_KV,
@@ -31,7 +30,6 @@ from shared.env_names import (
     ENV_LLAMA_TEMPERATURE,
     ENV_LLAMA_TOP_K,
     ENV_LLAMA_TOP_P,
-    ENV_LLAMA_USE_GPU,
     ENV_LLAMA_VERBOSE,
     ENV_LLM_PATH,
 )
@@ -59,9 +57,6 @@ class LlamaParamStrategy:
             "seed": int(os.getenv(ENV_LLAMA_SEED, str(LLAMA_SEED))),
             "use_mmap": False,
         }
-
-        if os.getenv(ENV_LLAMA_USE_GPU, DEFAULT_LLAMA_USE_GPU).lower() == "false":
-            params["n_gpu_layers"] = 0
 
         print(f"DEBUG [LlamaParamStrategy]: Path={params['model_path']}, GPU={params['n_gpu_layers']}, CTX={params['n_ctx']}")
 

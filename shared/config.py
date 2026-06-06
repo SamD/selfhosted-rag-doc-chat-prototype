@@ -36,7 +36,6 @@ from shared.defaults import (
     DEFAULT_LLAMA_TEMPERATURE,
     DEFAULT_LLAMA_TOP_K,
     DEFAULT_LLAMA_TOP_P,
-    DEFAULT_LLAMA_USE_GPU,
     DEFAULT_LLAMA_VERBOSE,
     DEFAULT_MAX_CHUNKS,
     DEFAULT_MAX_OCR_DIM,
@@ -46,8 +45,6 @@ from shared.defaults import (
     DEFAULT_METRICS_ENABLED,
     DEFAULT_METRICS_LOG_TO_STDOUT,
     DEFAULT_OCR_ENDPOINTS,
-    DEFAULT_OLLAMA_MODEL,
-    DEFAULT_OLLAMA_URL,
     DEFAULT_PDF_FORCE_OCR,
     DEFAULT_REDIS_HOST,
     DEFAULT_REDIS_INGEST_QUEUE,
@@ -58,11 +55,11 @@ from shared.defaults import (
     DEFAULT_RETRIEVER_TOP_K,
     DEFAULT_SESSION_TTL_HOURS,
     DEFAULT_SUPERVISOR_MAX_TOKENS,
+    DEFAULT_SUPERVISOR_N_CTX,
     DEFAULT_SUPERVISOR_REMOTE_MODEL_NAME,
     DEFAULT_SUPERVISOR_TEMPERATURE,
     DEFAULT_SUPERVISOR_TOP_K,
     DEFAULT_SUPPORTED_MEDIA_EXT,
-    DEFAULT_USE_OLLAMA,
     DEFAULT_VECTOR_DB_BATCH_SIZE,
     DEFAULT_VECTOR_DB_COLLECTION,
     DEFAULT_VECTOR_DB_GRPC_PORT,
@@ -109,7 +106,6 @@ from shared.env_names import (
     ENV_LLAMA_TEMPERATURE,
     ENV_LLAMA_TOP_K,
     ENV_LLAMA_TOP_P,
-    ENV_LLAMA_USE_GPU,
     ENV_LLAMA_VERBOSE,
     ENV_LLM_PATH,
     ENV_MAX_CHROMA_BATCH_SIZE,
@@ -122,8 +118,6 @@ from shared.env_names import (
     ENV_METRICS_LOG_FILE,
     ENV_METRICS_LOG_TO_STDOUT,
     ENV_OCR_ENDPOINTS,
-    ENV_OLLAMA_MODEL,
-    ENV_OLLAMA_URL,
     ENV_PARQUET_FILE,
     ENV_PDF_FORCE_OCR,
     ENV_PREPROCESSING_DIR,
@@ -140,11 +134,11 @@ from shared.env_names import (
     ENV_SUCCESS_DIR,
     ENV_SUPERVISOR_LLM_ENDPOINTS,
     ENV_SUPERVISOR_MAX_TOKENS,
+    ENV_SUPERVISOR_N_CTX,
     ENV_SUPERVISOR_REMOTE_MODEL_NAME,
     ENV_SUPERVISOR_TEMPERATURE,
     ENV_SUPERVISOR_TOP_K,
     ENV_SUPPORTED_MEDIA_EXT,
-    ENV_USE_OLLAMA,
     ENV_VECTOR_DB_BATCH_SIZE,
     ENV_VECTOR_DB_COLLECTION,
     ENV_VECTOR_DB_GRPC_PORT,
@@ -207,8 +201,6 @@ def _get_vector_db_port() -> int:
 # ---------------------------------------------------------------------------
 
 _SETTINGS: dict[str, Callable[[], Any]] = {
-    # Boolean flag to enable/disable CUDA usage
-    "LLAMA_USE_GPU": lambda: os.getenv(ENV_LLAMA_USE_GPU, DEFAULT_LLAMA_USE_GPU).lower() == "true",
     # Context window size for the local Llama model
     "LLAMA_N_CTX": lambda: int(os.getenv(ENV_LLAMA_N_CTX, str(DEFAULT_LLAMA_N_CTX))),
     # Number of tokens to process in a single batch
@@ -291,6 +283,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "SUPERVISOR_TOP_K": lambda: int(os.getenv(ENV_SUPERVISOR_TOP_K, str(DEFAULT_SUPERVISOR_TOP_K))),
     # Maximum tokens the supervisor LLM can generate in one response
     "SUPERVISOR_MAX_TOKENS": lambda: int(os.getenv(ENV_SUPERVISOR_MAX_TOKENS, str(DEFAULT_SUPERVISOR_MAX_TOKENS))),
+    # Context window for the supervisor LLM (used for gatekeeper prompt truncation)
+    "SUPERVISOR_N_CTX": lambda: int(os.getenv(ENV_SUPERVISOR_N_CTX, str(DEFAULT_SUPERVISOR_N_CTX))),
     # Path to the Parquet archival file for all chunks
     "PARQUET_FILE": lambda: _abs_path(
         ENV_PARQUET_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "chunks.parquet")
@@ -299,12 +293,6 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "DUCKDB_FILE": lambda: _abs_path(
         ENV_DUCKDB_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "chunks.duckdb")
     ),
-    # Use Ollama instead of local llama-cpp-python
-    "USE_OLLAMA": lambda: os.getenv(ENV_USE_OLLAMA, DEFAULT_USE_OLLAMA).lower() == "true",
-    # Base URL for the Ollama API
-    "OLLAMA_URL": lambda: os.getenv(ENV_OLLAMA_URL, DEFAULT_OLLAMA_URL),
-    # Model name to use on the Ollama server
-    "OLLAMA_MODEL": lambda: os.getenv(ENV_OLLAMA_MODEL, DEFAULT_OLLAMA_MODEL),
     # Hostname for the Redis message broker
     "REDIS_HOST": lambda: os.environ.get(ENV_REDIS_HOST) or os.getenv(ENV_REDIS_HOST, DEFAULT_REDIS_HOST),
     # Port for the Redis message broker

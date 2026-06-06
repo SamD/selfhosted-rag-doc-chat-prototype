@@ -119,7 +119,7 @@ When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to
 
 ### GPU / Inference
 
-- `LLAMA_USE_GPU` - `true`/`false` (default: `true`)
+
 - `SUPERVISOR_REMOTE_MODEL_NAME` - Model name for remote supervisor (default: `local-model`)
 - `LLAMA_REMOTE_TIMEOUT` - Timeout for remote LLM requests in seconds (default: `300`)
 
@@ -167,8 +167,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 
 `config/env_strategy.py`:
 - `GPUEnvConfig` - Sets `CUDA_VISIBLE_DEVICES="0"` and `PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"`
-- `CPUEnvConfig` - Sets `CUDA_VISIBLE_DEVICES=""` and pops `PYTORCH_CUDA_ALLOC_CONF`
-- `get_env_strategy()` checks `LLAMA_USE_GPU` env var (default: `true`)
+- `get_env_strategy()` always returns `GPUEnvConfig`
 
 ## Settings
 
@@ -330,7 +329,7 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 - `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated)
 - `VECTOR_DB_PROFILE` - `qdrant` or `chroma`
 - `VECTOR_DB_URL` - Remote vector DB URL (bypasses host/port)
-- `LLAMA_USE_GPU` - `true`/`false`
+
 - `OCR_ENDPOINTS` - `LOCAL` or docling-serve URL
 - `WHISPER_MODEL_ENDPOINTS` - Whisper model dir or URL
 

@@ -2,21 +2,17 @@
 
 ## Purpose
 
-The infrastructure capability manages deployment, containerization, environment configuration, and startup sequencing. It defines Docker Compose profiles for GPU/CPU and vector DB selection, worker Docker images, the 60+ environment variable configuration system, and the warmup sequence that initializes models and services.
+The infrastructure capability manages deployment, containerization, environment configuration, and startup sequencing. It defines Docker Compose profiles for GPU and vector DB selection, worker Docker images, the 60+ environment variable configuration system, and the warmup sequence that initializes models and services.
 
 ## Requirements
 
 ### Requirement: Docker Compose deployment
 
-The system SHALL be deployable via Docker Compose with profile support. Supported profiles SHALL include: cuda (NVIDIA GPU acceleration), cpu (CPU-only mode), qdrant (Qdrant vector DB), and chroma (Chroma vector DB). Multiple profiles SHALL be composable (e.g., --profile cuda --profile qdrant).
+The system SHALL be deployable via Docker Compose with profile support. Supported profiles SHALL include: cuda (NVIDIA GPU acceleration), qdrant (Qdrant vector DB), and chroma (Chroma vector DB). The cpu profile SHALL be removed — users without GPU access SHALL use remote HTTP endpoints. Multiple profiles SHALL be composable (e.g., --profile cuda --profile qdrant).
 
 #### Scenario: GPU deployment
 - **WHEN** deployed with --profile cuda
 - **THEN** containers SHALL have NVIDIA GPU access and CUDA acceleration enabled
-
-#### Scenario: CPU-only deployment
-- **WHEN** deployed with --profile cpu
-- **THEN** containers SHALL run without GPU access
 
 #### Scenario: Vector DB profile selection
 - **WHEN** deployed with --profile qdrant
@@ -55,8 +51,8 @@ The system SHALL run a warmup sequence on startup. The warmup SHALL perform mode
 - **THEN** the warmup SHALL skip importing Docling to reduce startup time and memory
 
 #### Scenario: GPU environment strategy
-- **WHEN** LLAMA_USE_GPU is "true"
-- **THEN** the system SHALL set CUDA_VISIBLE_DEVICES="0" and PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+- **WHEN** the system starts
+- **THEN** the system SHALL set CUDA_VISIBLE_DEVICES="0" and PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True" (GPU is always assumed; non-GPU deployments use remote HTTP endpoints)
 
 ### Requirement: HAProxy container lifecycle
 

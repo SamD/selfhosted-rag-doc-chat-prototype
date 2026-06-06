@@ -6,7 +6,7 @@ Database service for vector database operations (ChromaDB or Qdrant).
 from typing import Any, Dict, List, Optional
 
 import chromadb
-from config.settings import EMBEDDING_ENDPOINTS, LLAMA_USE_GPU, QDRANT_DENSE_WEIGHT, QDRANT_RETRIEVER_K, QDRANT_SPARSE_WEIGHT, USE_QDRANT, VECTOR_DB_COLLECTION, VECTOR_DB_HOST, VECTOR_DB_PORT
+from config.settings import EMBEDDING_ENDPOINTS, QDRANT_DENSE_WEIGHT, QDRANT_RETRIEVER_K, QDRANT_SPARSE_WEIGHT, USE_QDRANT, VECTOR_DB_COLLECTION, VECTOR_DB_HOST, VECTOR_DB_PORT
 from langchain.callbacks.manager import CallbackManagerForRetrieverRun
 from langchain.schema import BaseRetriever, Document
 from langchain_chroma import Chroma
@@ -18,7 +18,7 @@ from utils.logging_config import setup_logging
 
 log = setup_logging("database_service.log")
 
-device = "cuda" if LLAMA_USE_GPU else "cpu"
+device = "cuda"
 log.info(f"Device: {device}")
 log.info(f"Vector DB Type: {'Qdrant' if USE_QDRANT else 'ChromaDB'}")
 

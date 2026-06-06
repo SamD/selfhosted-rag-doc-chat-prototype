@@ -40,8 +40,8 @@ export EMBEDDING_ENDPOINTS=/home/user/models/e5-large-v2
 export WHISPER_MODEL_ENDPOINTS=/home/user/models/whisper
 export OCR_ENDPOINTS=LOCAL
 export VECTOR_DB_PROFILE=qdrant
-export LLAMA_USE_GPU=true
 ```
+
 
 ---
 
@@ -67,6 +67,18 @@ These three must be set. Each accepts a remote URL or a local path.
 
 ---
 
+## All Settings Are Overridable
+
+Every env var in `ingest-svc.env` and `shared/defaults.py` can be overridden at runtime by exporting it before starting the stack. This includes LLM context sizes, batch sizes, timeouts, and compute settings. For example:
+
+```bash
+export SUPERVISOR_N_CTX=65536      # Override supervisor context window
+export GATEKEEPER_BATCH_SIZE=15     # More pages per normalization call
+export RETRIEVER_TOP_K=10          # More chunks for RAG context
+```
+
+The full reference is in `shared/env_names.py` (all variable names) and `shared/defaults.py` (all default values).
+
 ## Optional Service Endpoints
 
 The remaining services have defaults and only need configuration when using remote hosts.
@@ -79,7 +91,7 @@ The remaining services have defaults and only need configuration when using remo
 | `WHISPER_MODEL_ENDPOINTS` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_ENDPOINTS` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
-| `LLAMA_USE_GPU` | Enable GPU acceleration for locally-loaded models | `true` | `true` or `false` |
+
 
 ---
 

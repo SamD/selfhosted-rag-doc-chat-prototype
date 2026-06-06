@@ -153,7 +153,7 @@ def _normalize_with_endpoint(endpoint_url: str, raw_content: str, idx: int, file
     messages = [{"role": "user", "content": user_msg}]
 
     # Enforce context limit
-    CONTEXT_LIMIT = int(settings.LLAMA_N_CTX * 0.8)
+    CONTEXT_LIMIT = int(settings.SUPERVISOR_N_CTX * 0.8)
     encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
     if len(encoded_prompt) > CONTEXT_LIMIT:
         truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
@@ -367,7 +367,7 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
 
     # ENFORCE CONTEXT LIMIT: Truncate if batch is somehow massive (e.g. OCR error/leak)
     # We target 80% of context size for safety
-    CONTEXT_LIMIT = int(settings.LLAMA_N_CTX * 0.8)
+    CONTEXT_LIMIT = int(settings.SUPERVISOR_N_CTX * 0.8)
     encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
     
     if len(encoded_prompt) > CONTEXT_LIMIT:

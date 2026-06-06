@@ -267,7 +267,7 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
   - `--profile cpu` — CPU-only mode
   - `--profile qdrant` or `--profile chroma` — vector database selection
 - **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)
-- **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation based on `LLAMA_USE_GPU`
+- **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation for GPU
 - **Network diagram**: See [docs/infra/sample-lab-deployment.puml](infra/sample-lab-deployment.puml) for the reference lab topology. This is a PlantUML diagram — use a PlantUML viewer (VS Code extension, [plantuml.com](https://www.plantuml.com), or `plantuml` CLI) to render it. Consider requesting a pre-rendered image if plaintext viewing is needed.
 
 ---

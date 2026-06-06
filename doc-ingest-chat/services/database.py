@@ -9,7 +9,6 @@ import duckdb
 from config import settings
 from config.settings import (
     EMBEDDING_ENDPOINTS,
-    LLAMA_USE_GPU,
     USE_QDRANT,
     VECTOR_DB_COLLECTION,
     VECTOR_DB_GRPC_PORT,
@@ -28,7 +27,7 @@ from qdrant_client import QdrantClient
 
 log = logging.getLogger("ingest.database")
 
-device = "cuda" if LLAMA_USE_GPU else "cpu"
+device = "cuda"
 
 # Per-process singletons
 _EMBEDDINGS_CACHE: Optional[Embeddings] = None

@@ -62,3 +62,4 @@ rules:
     - "Each task should be verifiable independently"
     - "Frontend changes must note any new npm dependencies"
     - "New services must include unit tests covering: success path, failure path (Redis unavailable), and edge cases (empty session_id, max turns reached)"
+    - "Update CHANGELOG.md with all changes under the appropriate [Unreleased] section (Added / Changed / Fixed)"
