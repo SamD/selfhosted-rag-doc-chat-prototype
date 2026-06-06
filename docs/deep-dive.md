@@ -58,6 +58,7 @@ The system uses two distinct LLMs. Both support local GGUF inference via llama-c
 - **Local config**: CPU-only (`n_gpu_layers=0`), 4K context window, flash attention enabled — keeps VRAM free for the RAG LLM
 - **Remote config**: Any OpenAI-compatible endpoint — the server handles its own context and GPU settings
 - **Why separate**: Normalization requires clean structural output, not conversational reasoning. A smaller, focused model suffices and avoids VRAM contention with the RAG LLM.
+- **Quality bypass**: Before calling the LLM, extracted text runs through `is_bad_ocr()` — a multi-heuristic quality check (gibberish detection, repetition ratio, word length analysis, visible corruption). Pages that pass are written directly as Markdown, skipping the LLM entirely. Only pages that fail the quality check consume supervisor LLM tokens. This is the three-tier approach: pdfplumber → OCR → LLM (last resort).
 
 ### RAG LLM (Chat)
 

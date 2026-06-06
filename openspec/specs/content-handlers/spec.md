@@ -50,6 +50,10 @@ PDFContentTypeHandler SHALL handle files with MIME type application/pdf. It SHAL
 - **WHEN** OCR returns text that fails validation (is_bad_ocr returns True)
 - **THEN** the handler SHALL request re-processing of that page
 
+#### Scenario: PDF_FORCE_OCR skips pdfplumber entirely
+- **WHEN** PDF_FORCE_OCR is set to true or 1
+- **THEN** pdfplumber extraction SHALL be skipped and all pages SHALL be sent directly to OCR
+
 ### Requirement: Media file transcription
 
 The system SHALL support audio and video file transcription via WhisperX. MP4ContentTypeHandler SHALL handle video files (.mp4, .mov, .mkv) with MIME type video/mp4. MP3ContentTypeHandler SHALL handle audio files (.mp3, .wav, .m4a, .aac, .flac) with MIME type guessed from extension. Both handlers SHALL delegate transcription to the whisperx worker via send_media_to_whisperx().

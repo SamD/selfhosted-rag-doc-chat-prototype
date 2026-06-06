@@ -1,8 +1,20 @@
 # Self-Hosted RAG Pipeline
 
-Drop PDFs, videos, or audio files into a folder and chat with them using an AI that cites its sources — all running on your own hardware with no internet connection required.
+A production-grade, air-gapped semantic search and document intelligence system. Drop PDFs, videos, or audio files into a folder and chat with them using an AI that cites its sources — all running on your own hardware with zero internet dependency.
 
-**What you can drop in:**
+---
+
+## About This Project
+
+I built this system to solve a real problem: how do you make thousands of documents — PDFs, meeting recordings, video training, scanned archives — semantically searchable and queryable by natural language, without sending any data to a third party?
+
+The answer is a distributed, multi-worker ingestion pipeline that runs entirely on dedicated LAN hardware. Every component — from the OCR fallback chain to the HAProxy load balancers to the DuckDB-backed state machine — is explicitly implemented for production-grade semantic search, not as a demo.
+
+**This is production semantic search infrastructure, not a notebook.** It runs continuously, recovers from failures, load-balances across multiple GPUs, and has been tested against real-world document volumes.
+
+---
+
+## What It Does
 
 | Format | How it's processed |
 |--------|-------------------|
@@ -12,50 +24,17 @@ Drop PDFs, videos, or audio files into a folder and chat with them using an AI t
 | `.mp3`, `.wav`, `.m4a`, `.aac`, `.flac` | WhisperX audio transcription |
 | `.txt`, `.md`, `.html` | Direct read with charset detection |
 
-**What you get out:** A chat interface where every answer sentence is traced back to its source with clickable citations linking to the original file and page.
+**What you get out:** A semantic search chat interface where every answer sentence is traced back to its source with clickable citations linking to the original file and page.
 
 Everything runs locally on dedicated LAN hosts — no cloud services, no external API calls, no data leaves your network.
-
-**Technologies**: Python, llama-cpp, FastAPI, Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, Docker Compose, Astro, Tailwind CSS
 
 ![Self Hosted Rag Doc Pipeline](./docs/selfhosted-rag-doc-ingest.gif)
 
 ---
-**Drop PDF, MP3, or MP4 files into the staging directory, for example:**
 
-```bash
-cp Godfather_of_AI_has_a_plan_for_humanity_to_survive_AI.mp4 TESTING/staging/
-```
+## Architecture Highlights
 
-<img alt="Job Created" height="600" src="./docs/img/mp4-flow-1.png" width="600"/>
-
-<img alt="Job Ingested" height="600" src="./docs/img/mp4-flow-2.png" width="600"/>
-
-<img alt="RAG (Semantic Search)" height="600" src="./docs/img/mp4-flow-3.png" width="600"/>
-
----
-
-## Contents
-
-- [What It Does](#what-it-does)
-- [How It Works](#how-it-works)
-- [Documentation](#documentation)
-- [Quick Start](#quick-start)
-
----
-
-## What It Does
-
-- **Multi-format ingestion**: Drop PDFs, HTML, Markdown, MP3, MP4, and WAV files into a staging folder for automatic processing.
-- **Markdown-first normalization**: All raw text is normalized into clean, structured Markdown with page anchors before chunking. Noisy footers, page numbers, and OCR artifacts are stripped.
-- **Zero-drop chunking**: Hierarchical splitting preserves document structure. Oversized chunks are sub-split rather than truncated. Deterministic IDs via MurmurHash3 prevent duplication on re-ingestion.
-- **Semantic search**: Embeddings via e5 models, stored in Qdrant (or Chroma). Asymmetric search with `query:` and `passage:` prefixes for accurate retrieval.
-- **RAG chat with citations**: Query your documents via a chat UI. Every answer sentence is traced back to its source with clickable citations linking to the original file and page.
-- **Air-gapped by design**: Every service runs on dedicated LAN hosts with no internet access required. HuggingFace offline mode baked into all containers.
-
----
-
-## How It Works
+### Distributed, Fault-Tolerant Pipeline
 
 ```
 staging/ → Gatekeeper (extract + normalize to Markdown) → Producer (chunk + enqueue)
@@ -63,30 +42,31 @@ staging/ → Gatekeeper (extract + normalize to Markdown) → Producer (chunk + 
                                                           → success/
 ```
 
-![Flow](./docs/arch.png)
+Six workers coordinate via Redis queues and a DuckDB-backed state machine with atomic `UPDATE ... RETURNING *` transitions. Each worker runs in its own Docker container with `restart: unless-stopped` for self-healing. The result is a semantic search pipeline that ingests, indexes, and retrieves documents by meaning, not just keyword matches.
 
-1. **Gatekeeper**: A chain of responsibility routes each file to the correct handler. PDFs get pdfplumber extraction with automatic OCR fallback for scanned pages. Media files get WhisperX transcription. Raw text from all sources is normalized to clean Markdown by a supervisor LLM.
+![Architecture Diagram](./docs/arch.png)
 
-2. **Producer**: Normalized Markdown is split into 512-token chunks using hierarchical header boundaries. Each chunk gets a deterministic `[DOC_XXXX]` ID and is enqueued to Redis.
+### Production Engineering Decisions
 
-3. **Consumer**: Chunks are staged in DuckDB for safety, then embedded and batch-upserted to Qdrant atomically per file. Files move to `success/` on completion.
+| Decision | Rationale |
+|----------|-----------|
+| **Dual-LLM architecture** | Separate models for normalization (gatekeeper) and chat (RAG). Each optimized for its task — smaller context for normalization, larger for chat. |
+| **Markdown-first normalization** | Raw text → clean Markdown → chunk. Eliminates OCR noise, page numbers, and footers before they reach the vector DB. |
+| **Zero-drop chunking** | Hierarchical header splitting with recursive sub-splitting. No content is ever truncated — oversized chunks are split, not dropped. |
+| **DuckDB staging** | Chunks are persisted to DuckDB before embedding. A file_end sentinel triggers atomic batch upsert to Qdrant — zero partial-visibility for RAG. |
+| **HAProxy load balancing** | Auto-detects multiple LLM/embedding/Whisper/OCR backends and distributes requests with health checks and failover. |
+| **Dual vector DB support** | Qdrant (gRPC + REST) and Chroma both supported via `VECTOR_DB_PROFILE`. |
+| **Deterministic chunk IDs** | MurmurHash3-based IDs prevent duplicate vectors on re-ingestion. |
+| **20-retry exponential backoff** | DuckDB lock contention is handled gracefully under high concurrency. |
+| **Session-managed chat history** | Chat history stored in Redis per session ID, not passed client-side. Enables stateless API load balancing. |
 
-4. **Chat**: The FastAPI backend retrieves relevant chunks from Qdrant, formats context with citation tags, and streams an LLM response with clickable source links.
+### Tech Stack
 
-Ingestion and querying are fully concurrent. You can chat with already-processed documents while thousands more are being ingested.
+**Backend**: Python 3.12, FastAPI, llama-cpp-python, LangChain (vector store wrappers only), Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, HAProxy
 
----
+**Frontend**: Astro v6, Tailwind CSS v4, daisyUI 5.5
 
-## Documentation
-
-| | | |
-|---|---|---|
-| **[Quick Start](docs/quickstart.md)** | Full environment configuration, service setup, and deployment diagram |
-| **[Architecture](docs/overview.md)** | System flow, component map, state machine, and Redis queue architecture |
-| **[Deep Dive](docs/deep-dive.md)** | Design rationale, dual-LLM architecture, chunking strategy, production roadmap |
-| **[Operations](docs/operations.md)** | Debugging queries for DuckDB, Redis, and Qdrant. Metrics, schema evolution, war room scenarios |
-| **[Edge Agent](docs/edge-agent.md)** | Deploy MQTT SRE agents on standalone Debian minipcs for telemetry and task execution |
-| **[Changelog](CHANGELOG.md)** | Version history and feature tracking |
+**Infrastructure**: Docker Compose with profile support (cuda/qdrant/chroma), multi-architecture worker images
 
 ---
 
@@ -150,8 +130,6 @@ export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 ```
 
-See [docs/quickstart.md](docs/quickstart.md#multi-endpoint-load-balancing) for full details.
-
 ### Launch
 
 ```bash
@@ -161,3 +139,40 @@ See [docs/quickstart.md](docs/quickstart.md#multi-endpoint-load-balancing) for f
 ### Use
 
 Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. The system auto-detects and processes them. Open [http://localhost:4321](http://localhost:4321) to chat with your documents.
+
+<img alt="Job Created" height="600" src="./docs/img/mp4-flow-1.png"/>
+<img alt="Job Ingested" height="600" src="./docs/img/mp4-flow-2.png"/>
+<img alt="RAG (Semantic Search)" height="600" src="./docs/img/mp4-flow-3.png"/>
+
+---
+
+## Documentation
+
+| | | |
+|---|---|---|
+| **[Quick Start](docs/quickstart.md)** | Full environment configuration, service setup, and deployment diagram |
+| **[Architecture](docs/overview.md)** | System flow, component map, state machine, and Redis queue architecture |
+| **[Deep Dive](docs/deep-dive.md)** | Design rationale, dual-LLM architecture, chunking strategy, production roadmap |
+| **[Operations](infra/operations/day-1.md)** | Setup checklist and Day 1 / Day 2 operational playbooks with symptom-driven runbooks |
+| **[Edge Agent](docs/edge-agent.md)** | Deploy MQTT SRE agents on standalone Debian minipcs for telemetry and task execution |
+| **[Changelog](CHANGELOG.md)** | Version history and feature tracking |
+
+---
+
+## Why Air-Gapped?
+
+Three reasons:
+
+1. **Data sovereignty**: Legal, medical, and internal documents cannot be sent to third-party APIs. This system processes everything on your own hardware.
+2. **Offline resilience**: No dependency on internet connectivity. Works in air-gapped environments, remote sites, or during outages.
+3. **Cost predictability**: No per-token API costs. Once the hardware is in place, the marginal cost per document is effectively zero.
+
+The system was designed from day one for air-gapped deployment — HuggingFace offline mode is baked into every container, all model paths support local files or LAN HTTP endpoints, and there are no hardcoded external service dependencies.
+
+---
+
+## About the Author
+
+I'm a software engineer who builds semantic search and AI infrastructure that bridges the gap between research and production deployment. This project represents my approach to engineering: understand the problem deeply, build for reliability first, and make every architectural decision explicit and auditable.
+
+If this kind of work interests you, let's talk. The best way to reach me is through GitHub.

@@ -101,7 +101,7 @@ The ingestion workers run on the coordinator host. They handle document lifecycl
 
 | Worker | Entry Point | Role |
 |--------|------------|------|
-| **Gatekeeper** | `run_gatekeeper.py` | Claims files from staging, extracts raw text via content handlers, normalizes to Markdown via the supervisor LLM, writes `.md` output |
+| **Gatekeeper** | `run_gatekeeper.py` | Claims files from staging, extracts raw text via content handlers, normalizes to Markdown (via supervisor LLM only for low-quality text; clean text bypasses the LLM), writes `.md` output |
 | **Producer** | `run_producer.py` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues |
 | **Consumer** | `run_consumer.py` | Buffers chunks in DuckDB, embeds via the embedding service, batch-upserts to Qdrant, archives to Parquet |
 | **OCR Worker** | `run_ocr_worker.py` | Processes image-based PDF pages via docling-serve |

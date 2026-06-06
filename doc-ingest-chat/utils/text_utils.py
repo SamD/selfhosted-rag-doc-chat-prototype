@@ -147,6 +147,42 @@ class TextUtils:
         return len(tokens) < min_tokens
 
     @staticmethod
+    def is_repetitive(text: str) -> bool:
+        """Check if text has abnormally high repetition (footer noise, OCR artifacts)."""
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        if len(lines) < 3:
+            return False
+        unique_lines = len(set(lines))
+        line_ratio = unique_lines / len(lines)
+        if line_ratio < 0.3:
+            return True
+
+        words = text.split()
+        if len(words) < 10:
+            return False
+        unique_words = len(set(words))
+        word_ratio = unique_words / len(words)
+        if word_ratio < 0.2:
+            return True
+
+        return False
+
+    @staticmethod
+    def has_abnormal_word_lengths(text: str) -> bool:
+        """Check if text has abnormal mean word length or excessive long words."""
+        words = [w for w in text.split() if len(w) > 1]
+        if len(words) < 5:
+            return False
+        lengths = [len(w) for w in words]
+        mean_len = sum(lengths) / len(lengths)
+        if mean_len < 2.0 or mean_len > 20.0:
+            return True
+        long_words = sum(1 for wlen in lengths if wlen > 30)
+        if long_words / len(lengths) > 0.1:
+            return True
+        return False
+
+    @staticmethod
     def is_bad_ocr(text: str, tokenizer: Any = None) -> bool:
         """Check if OCR text is of poor quality.
 
@@ -158,7 +194,13 @@ class TextUtils:
             return True
         if not tokenizer:
             tokenizer = get_tokenizer()
-        return TextUtils.is_gibberish(text) or TextUtils.is_visibly_corrupt(text) or TextUtils.is_low_quality(text, tokenizer)
+        return (
+            TextUtils.is_gibberish(text)
+            or TextUtils.is_visibly_corrupt(text)
+            or TextUtils.is_low_quality(text, tokenizer)
+            or TextUtils.is_repetitive(text)
+            or TextUtils.has_abnormal_word_lengths(text)
+        )
 
     @staticmethod
     def is_invalid_text(text: str) -> bool:
@@ -211,5 +253,7 @@ is_invalid_text = TextUtils.is_invalid_text
 is_gibberish = TextUtils.is_gibberish
 is_visibly_corrupt = TextUtils.is_visibly_corrupt
 is_low_quality = TextUtils.is_low_quality
+is_repetitive = TextUtils.is_repetitive
+has_abnormal_word_lengths = TextUtils.has_abnormal_word_lengths
 is_valid_pdf = TextUtils.is_valid_pdf
 is_bad_ocr = TextUtils.is_bad_ocr

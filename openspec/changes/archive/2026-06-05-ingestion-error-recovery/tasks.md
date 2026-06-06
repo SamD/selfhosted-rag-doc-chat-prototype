@@ -33,7 +33,18 @@
 - [x] 6.4 Write unit tests for consumer graph failure handling — covered by cleanup test
 - [x] 6.5 Write unit tests for re-ingestion after INGEST_FAILED — 2 tests
 
-## 7. Documentation
+## 7. Quality Bypass and Flags
 
-- [x] 7.1 Update `infra/operations/day-2.md` — add runbook entry for stuck job recovery
-- [x] 7.2 Update `CHANGELOG.md`
+- [x] 7.1 Add quality check bypass in `process_chunk()` — `is_bad_ocr()` runs before LLM call, skips LLM for clean text
+- [x] 7.2 Add `is_repetitive()` and `has_abnormal_word_lengths()` heuristics to `is_bad_ocr()`
+- [x] 7.3 Add `FORCE_MARKDOWN_LLM` env var (default: false) — when true, bypasses quality check and always routes to LLM
+- [x] 7.4 Make `PDF_FORCE_OCR` and `FORCE_MARKDOWN_LLM` accept both `true`/`1` and `false`/`0` for consistency with `HA_INTERLEAVE`
+- [x] 7.5 Add `FORCE_MARKDOWN_LLM` to `ingest-svc.env`
+- [x] 7.6 Add 4 unit tests for FORCE_MARKDOWN_LLM (2) and PDF_FORCE_OCR (2)
+- [x] 7.7 Update test_gatekeeper_enforces_context_limit to mock is_bad_ocr
+
+## 8. Documentation
+
+- [x] 8.1 Update `infra/operations/day-2.md` — add runbook entry for stuck job recovery
+- [x] 8.2 Update `docs/overview.md`, `docs/quickstart.md`, `docs/deep-dive.md`, `AGENTS.md` — supervisor LLM now has quality bypass
+- [x] 8.3 Update `CHANGELOG.md`

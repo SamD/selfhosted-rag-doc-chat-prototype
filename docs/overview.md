@@ -179,7 +179,7 @@ The FastAPI backend serves HTTP requests on port 8000 — it does not operate on
 |-----------|------------|-----------|------|
 | **FastAPI** | `apimain.py` | HTTP :8000 | REST API for chat queries, status, and health checks |
 
-The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_ENDPOINTS`) for normalization. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
+The **Gatekeeper** worker uses the supervisor LLM (configured via `SUPERVISOR_LLM_ENDPOINTS`) for normalization, but only as a last resort. Before calling the LLM, extracted text runs through `is_bad_ocr()` — if quality passes, it is written directly as Markdown without LLM inference. This three-tier approach (pdfplumber → OCR → supervisor LLM) avoids paying LLM token cost for pages that are already clean. The **RAG chat** uses a separate LLM (configured via `LLM_PATH`). In many deployments these run on the same GPU host but are distinct conceptual roles — normalization during ingestion vs. inference during chat.
 
 ---
 
