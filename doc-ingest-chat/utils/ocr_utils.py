@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import redis
-from config.settings import DEVICE, HF_HOME, MAX_OCR_DIM, OCR_ENDPOINTS, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
+from config.settings import HF_HOME, MAX_OCR_DIM, OCR_ENDPOINTS, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
 from PIL import Image
 from utils.trace_utils import get_logger, set_trace_id
 
@@ -147,7 +147,7 @@ def get_docling_converter():
             log.info(f"🚀 Initializing Docling Converter (STRICT OFFLINE MODE) cache: {CACHE_PATH}")
 
             # Modern Docling 2.x Acceleration Setup
-            device_type = DEVICE.lower()
+            device_type = os.getenv("DEVICE", "cpu").lower()
             accel_device = AcceleratorDevice.CUDA if device_type == "cuda" else AcceleratorDevice.CPU
             log.info(f"⚡ Setting Docling acceleration to: {accel_device}")
 
@@ -293,6 +293,9 @@ def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> T
                 log.warning(f"⚠️ Remote OCR succeeded but text extraction failed. FULL RESPONSE: {json.dumps(result)}")
                 return None, "remote_ocr_no_text", execution_time_ms
 
+            if len(text) > 50000:
+                log.warning(f"⚠️ Remote OCR returned {len(text)} chars for {rel_path} P{page_num}, truncating to 50000")
+                text = text[:50000]
             log.info(f"✅ Remote OCR succeeded for {rel_path} P{page_num} ({len(text)} chars)")
             return text, "remote_docling_serve", execution_time_ms
         else:
