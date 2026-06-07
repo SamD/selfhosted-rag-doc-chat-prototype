@@ -22,18 +22,20 @@ import time
 import traceback
 
 import redis
-from utils.trace_utils import get_logger, set_trace_id
 
 # Minimal config for the worker - can be overridden by ENV
-REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_WHISPER_JOB_QUEUE = os.getenv("REDIS_WHISPER_JOB_QUEUE", "whisper_processing_job")
+from config.settings import (
+    COMPUTE_TYPE,
+    DEVICE,
+    MEDIA_BATCH_SIZE,
+    REDIS_HOST,
+    REDIS_PORT,
+    REDIS_WHISPER_JOB_QUEUE,
+    WHISPER_MODEL_ENDPOINTS,
+)
+from utils.trace_utils import get_logger, set_trace_id
 
-# WhisperX specific settings
-DEVICE = os.getenv("DEVICE", "cuda")
-COMPUTE_TYPE = os.getenv("COMPUTE_TYPE", "float16")
-BATCH_SIZE = int(os.getenv("MEDIA_BATCH_SIZE", 8))
-WHISPER_MODEL_ENDPOINTS = os.getenv("WHISPER_MODEL_ENDPOINTS", "/models/whisper")
+BATCH_SIZE = MEDIA_BATCH_SIZE
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 log = get_logger("whisperx_worker")

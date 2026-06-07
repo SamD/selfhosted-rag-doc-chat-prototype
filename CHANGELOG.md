@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Unified worker settings**: All workers now load configuration through `config.settings` instead of direct `os.getenv()` calls. Added missing `API_BASE_URL`, `HF_HOME`, and `HF_HUB_OFFLINE` settings to shared config. Removed direct `shared.env_names` imports from `llama_strategy.py`. Consolidated shared config files with `shared/config.py` as the single entry point.
+- **Embedding batch progress logging**: `RemoteEmbeddings.embed_documents()` now logs `📤 Embedding batch X/Y texts...` for visibility into embedding throughput.
 - **Ingestion error recovery**: Workers now reclaim orphaned jobs on startup. Gatekeeper resets `PREPROCESSING` → `NEW`, Producer resets `INGESTING` → `PREPROCESSING_COMPLETE`, Consumer resets `CONSUMING` → `INGESTING`. New env var `STUCK_JOB_TIMEOUT_HOURS` (default 1). 5 unit tests.
 - **Cleanup on INGEST_FAILED**: Redis queue entries and DuckDB staged chunks are purged when a job transitions to `INGEST_FAILED`. New `RedisService.purge_queue_entries()` method.
 - **Re-ingestion after failure**: Files previously in `INGEST_FAILED` can now be re-ingested by moving them back to `staging/`. The old failure record is preserved for audit.
