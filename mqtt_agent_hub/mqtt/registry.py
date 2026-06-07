@@ -5,7 +5,7 @@ import time
 from collections import defaultdict
 from typing import Any
 
-from shared.defaults import AGENT_HEARTBEAT_TIMEOUT, TELEMETRY_BUFFER_SIZE
+from shared.config import AGENT_HEARTBEAT_TIMEOUT, TELEMETRY_BUFFER_SIZE
 from shared.models import AgentDiscovery, TaskResult, TelemetryReport
 
 

@@ -27,13 +27,11 @@ elif os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sha
 import paho.mqtt.client as mqtt  # noqa: E402
 import psutil  # noqa: E402
 
-from shared.defaults import (  # noqa: E402
+from shared.config import (  # noqa: E402
     DEFAULT_AGENT_VERSION,
     DEFAULT_MQTT_BROKER_HOST,
     DEFAULT_MQTT_BROKER_PORT,
     DEFAULT_MQTT_HUB_TOKEN,
-)
-from shared.env_names import (  # noqa: E402
     ENV_AGENT_VERSION,
     ENV_MQTT_BROKER_HOST,
     ENV_MQTT_BROKER_PORT,

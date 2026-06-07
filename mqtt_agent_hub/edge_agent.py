@@ -47,13 +47,11 @@ import paho.mqtt.client as mqtt  # noqa: E402
 import psutil  # noqa: E402
 from sre_prompt import AVAILABLE_TOOLS, SRE_SYSTEM_PROMPT  # noqa: E402
 
-from shared.defaults import (  # noqa: E402
+from shared.config import (  # noqa: E402
     DEFAULT_AGENT_VERSION,
     DEFAULT_MQTT_BROKER_HOST,
     DEFAULT_MQTT_BROKER_PORT,
     DEFAULT_MQTT_HUB_TOKEN,
-)
-from shared.env_names import (  # noqa: E402
     ENV_AGENT_VERSION,
     ENV_LLM_PATH,
     ENV_MQTT_BROKER_HOST,

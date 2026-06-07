@@ -1,13 +1,11 @@
 import os
 
-from shared.defaults import (
+from shared.config import (
     DEFAULT_HUB_PORT,
     DEFAULT_MQTT_BROKER_HOST,
     DEFAULT_MQTT_BROKER_PORT,
     DEFAULT_MQTT_HUB_TOKEN,
     DEFAULT_MQTT_WS_PORT,
-)
-from shared.env_names import (
     ENV_HUB_PORT,
     ENV_MQTT_BROKER_HOST,
     ENV_MQTT_BROKER_PORT,
