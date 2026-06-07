@@ -49,18 +49,18 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                             if np_image is not None:
                                 ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, file_path, page_num, trace_id=get_trace_id())
                                 if ocr_text and len(ocr_text) > 50000:
-                                    log.warning(f"⚠️ Page {page_num}: OCR returned {len(ocr_text)} chars, truncating to 50000")
-                                    ocr_text = ocr_text[:50000]
+                                    log.warning(f"⚠️ Page {page_num}: OCR returned {len(ocr_text)} chars — too large, treating as failed")
+                                    ocr_text = None
                                 t = ocr_text
 
                             for img in images:
                                 img.close()
 
                     if not t:
-                        log.error(f"❌ Extraction failed for {file_path} page {page_num}. Stopping.")
-                        raise RuntimeError(f"Failed to extract text for page {page_num}")
-
-                    yield t
+                        log.warning(f"⚠️ No text for {file_path} page {page_num}, yielding empty")
+                        yield ""
+                    else:
+                        yield t
 
         except Exception as e:
             log.error(f"❌ PDF extraction failed: {e}")

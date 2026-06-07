@@ -238,6 +238,10 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             if chunk_idx == 0:
                 first_chunk_meta = meta
 
+        if chunk_idx == 0 and not batch_text:
+            log.warning(f"⚠️ No content extracted from {file_path}")
+            return False, None
+
         if os.path.exists(tmp_md_path):
             shutil.move(tmp_md_path, md_path)
             log.info(f"🚚 Atomic finalize: Moved {tmp_md_path} -> {md_path}")
