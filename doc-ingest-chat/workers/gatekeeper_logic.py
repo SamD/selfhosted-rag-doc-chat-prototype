@@ -20,8 +20,6 @@ from utils.ocr_utils import preprocess_image, send_image_to_ocr
 from utils.text_utils import is_bad_ocr, is_valid_pdf
 from utils.trace_utils import get_logger, set_trace_id
 
-from shared.utils import EndpointDispatcher, parse_endpoints
-
 # Set CUDA optimization
 os.environ["GGML_CUDA_GRAPH_OPT"] = "1"
 
@@ -208,76 +206,37 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
         log.info(f"📄 Extracting {file_path} in batches of {settings.GATEKEEPER_BATCH_SIZE} content units...")
         batch_text = []
         unit_count = 0
-        all_batch_contents: list[str] = []
-        batch_start_indices: list[int] = []
 
         for t in content_stream:
             unit_count += 1
             if not t:
                 continue
+            if len(t) > 10000:
+                log.warning(f"⚠️ Page {unit_count}: large content ({len(t)} chars, {len(t.split())} words)")
             tagged_text = f"### [INTERNAL_PAGE_{unit_count}]\n{t}"
             batch_text.append(tagged_text)
 
             if len(batch_text) >= settings.GATEKEEPER_BATCH_SIZE:
-                all_batch_contents.append("\n\n".join(batch_text))
-                batch_start_indices.append(unit_count - len(batch_text) + 1)
-                batch_text = []
-
-        if batch_text:
-            all_batch_contents.append("\n\n".join(batch_text))
-            batch_start_indices.append(unit_count - len(batch_text) + 1)
-
-        if not all_batch_contents:
-            raise ValueError("No content extracted for normalization")
-
-        # Determine whether to interleave across HA backends
-        haproxy_endpoints_str = os.environ.get("HAPROXY_SUPERVISOR_ENDPOINTS", "")
-        haproxy_endpoints = parse_endpoints(haproxy_endpoints_str)
-        use_interleave = (
-            settings.HA_INTERLEAVE
-            and len(haproxy_endpoints) > 1
-            and all(e.startswith(("http://", "https://")) for e in haproxy_endpoints)
-        )
-
-        if use_interleave:
-            log.info(f"🔀 HA Interleaving enabled across {len(haproxy_endpoints)} backends for {len(all_batch_contents)} batches")
-            dispatcher = EndpointDispatcher(haproxy_endpoints, interleave=True)
-
-            def normalize_batch(endpoint: str, raw_content: str, idx: int, slug: str) -> Tuple[dict, str]:
-                content = _normalize_with_endpoint(endpoint, raw_content, idx, slug)
-                meta = assemble_metadata(file_path, slug, idx, len(all_batch_contents))
-                if not content.strip():
-                    log.warning(f"🈳 Batch {idx}: returned empty")
-                return meta, content
-
-            args_list = [(c, i, file_slug) for i, c in enumerate(all_batch_contents)]
-            results = dispatcher.dispatch(normalize_batch, args_list, job_label=file_slug)
-
-            for idx, (meta, normalized_text) in enumerate(results):
+                full_content = "\n\n".join(batch_text)
+                start = unit_count - len(batch_text) + 1
+                log.info(f"📊 Normalizing Batch (Units {start}-{unit_count})...")
+                meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+                if not normalized_text.strip():
+                    empty_chunks += 1
                 if chunk_idx == 0:
                     first_chunk_meta = meta
                 chunk_idx += 1
-                if not normalized_text.strip():
-                    empty_chunks += 1
-                    continue
-                anchor_header = assemble_metadata_anchor(idx, meta, trace_id)
-                final_text = anchor_header + normalized_text
-                mode = "w" if idx == 0 else "a"
-                with open(tmp_md_path, mode, encoding="utf-8") as f:
-                    f.write(final_text)
-                    if not final_text.endswith("\n"):
-                        f.write("\n")
-                    f.flush()
-                    os.fsync(f.fileno())
-        else:
-            for idx, full_content in enumerate(all_batch_contents):
-                start = batch_start_indices[idx] if idx < len(batch_start_indices) else 1
-                log.info(f"📊 Normalizing Batch (Units {start}-{start + settings.GATEKEEPER_BATCH_SIZE - 1})...")
-                meta, normalized_text = process_chunk(idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
-                if not normalized_text.strip():
-                    empty_chunks += 1
-                if idx == 0:
-                    first_chunk_meta = meta
+                batch_text = []
+
+        if batch_text:
+            full_content = "\n\n".join(batch_text)
+            start = unit_count - len(batch_text) + 1
+            log.info(f"📊 Normalizing Batch (Units {start}-{unit_count})...")
+            meta, normalized_text = process_chunk(chunk_idx, full_content, file_path, file_slug, tmp_md_path, trace_id=trace_id)
+            if not normalized_text.strip():
+                empty_chunks += 1
+            if chunk_idx == 0:
+                first_chunk_meta = meta
 
         if os.path.exists(tmp_md_path):
             shutil.move(tmp_md_path, md_path)
