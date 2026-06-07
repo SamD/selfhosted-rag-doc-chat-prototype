@@ -6,6 +6,7 @@ Utility functions for chat formatting and citation.
 import os
 from collections import OrderedDict
 
+from config.settings import API_BASE_URL
 from langchain_core.documents import Document
 
 
@@ -30,7 +31,7 @@ def replace_citation_labels(output: str, docs: list[Document]) -> str:
 
     # Base URL for file access (linked to FastAPI backend)
     # We use localhost:8000 by default since that's where api_gpu serves /files
-    api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+    api_url = API_BASE_URL
 
     for i, doc in enumerate(docs):
         source_num = i + 1

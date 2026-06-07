@@ -11,7 +11,7 @@ import unicodedata
 from typing import Any
 
 import regex  # third-party regex with Unicode script support
-from config.settings import ALLOW_LATIN_EXTENDED, EMBEDDING_ENDPOINTS, LATIN_SCRIPT_MIN_RATIO
+from config.settings import ALLOW_LATIN_EXTENDED, EMBEDDING_ENDPOINTS, HF_HUB_OFFLINE, LATIN_SCRIPT_MIN_RATIO
 from ftfy import fix_text
 from transformers import AutoTokenizer
 
@@ -28,7 +28,7 @@ def get_tokenizer():
         try:
             model_path = EMBEDDING_ENDPOINTS
             # Determine if we should allow remote downloads
-            hub_offline = os.getenv("HF_HUB_OFFLINE", "0") == "1"
+            hub_offline = HF_HUB_OFFLINE == "1"
             local_only = hub_offline
 
             if model_path.startswith(("http://", "https://")):

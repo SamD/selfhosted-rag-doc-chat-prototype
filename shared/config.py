@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from shared.defaults import (
     DEFAULT_ALLOW_LATIN_EXTENDED,
+    DEFAULT_API_BASE_URL,
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     DEFAULT_CHUNK_TIMEOUT,
@@ -24,6 +25,7 @@ from shared.defaults import (
     DEFAULT_FORCE_MARKDOWN_LLM,
     DEFAULT_GATEKEEPER_BATCH_SIZE,
     DEFAULT_HA_INTERLEAVE,
+    DEFAULT_HF_HUB_OFFLINE,
     DEFAULT_LATIN_SCRIPT_MIN_RATIO,
     DEFAULT_LLAMA_CHAT_FORMAT,
     DEFAULT_LLAMA_F16_KV,
@@ -75,6 +77,7 @@ from shared.defaults import (
 )
 from shared.env_names import (
     ENV_ALLOW_LATIN_EXTENDED,
+    ENV_API_BASE_URL,
     ENV_CHROMA_COLLECTION,
     ENV_CHROMA_HOST,
     ENV_CHROMA_PORT,
@@ -95,6 +98,8 @@ from shared.env_names import (
     ENV_GATEKEEPER_BATCH_SIZE,
     ENV_GATEKEEPER_FAILURE_DB,
     ENV_HA_INTERLEAVE,
+    ENV_HF_HOME,
+    ENV_HF_HUB_OFFLINE,
     ENV_INGESTED_FILE,
     ENV_INGESTION_DIR,
     ENV_LATIN_SCRIPT_MIN_RATIO,
@@ -416,6 +421,12 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "SESSION_TTL_HOURS": lambda: int(os.getenv(ENV_SESSION_TTL_HOURS, str(DEFAULT_SESSION_TTL_HOURS))),
     # Hours before a job stuck in an intermediate state is eligible for reclaim
     "STUCK_JOB_TIMEOUT_HOURS": lambda: int(os.getenv(ENV_STUCK_JOB_TIMEOUT_HOURS, str(DEFAULT_STUCK_JOB_TIMEOUT_HOURS))),
+    # Base URL for chat API (frontend-facing)
+    "API_BASE_URL": lambda: os.getenv(ENV_API_BASE_URL, DEFAULT_API_BASE_URL),
+    # Cache directory for HuggingFace models
+    "HF_HOME": lambda: os.getenv(ENV_HF_HOME, "/usr/local/model_cache"),
+    # HuggingFace offline mode
+    "HF_HUB_OFFLINE": lambda: os.getenv(ENV_HF_HUB_OFFLINE, DEFAULT_HF_HUB_OFFLINE),
 }
 
 

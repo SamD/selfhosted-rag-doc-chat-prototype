@@ -16,7 +16,7 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 import redis
-from config.settings import MAX_OCR_DIM, OCR_ENDPOINTS, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
+from config.settings import DEVICE, HF_HOME, MAX_OCR_DIM, OCR_ENDPOINTS, REDIS_HOST, REDIS_OCR_JOB_QUEUE, REDIS_PORT
 from PIL import Image
 from utils.trace_utils import get_logger, set_trace_id
 
@@ -147,7 +147,7 @@ def get_docling_converter():
             log.info(f"🚀 Initializing Docling Converter (STRICT OFFLINE MODE) cache: {CACHE_PATH}")
 
             # Modern Docling 2.x Acceleration Setup
-            device_type = os.getenv("DEVICE", "cpu").lower()
+            device_type = DEVICE.lower()
             accel_device = AcceleratorDevice.CUDA if device_type == "cuda" else AcceleratorDevice.CPU
             log.info(f"⚡ Setting Docling acceleration to: {accel_device}")
 
@@ -164,7 +164,7 @@ def get_docling_converter():
 
             # 2. LOCAL ARTIFACTS: Pointing to HF_HOME for local loading
             # This implicitly disables model downloads in Docling 2.x
-            pipeline_options.artifacts_path = os.getenv("HF_HOME", "/usr/local/model_cache")
+            pipeline_options.artifacts_path = HF_HOME
 
             # Apply modern acceleration settings
             pipeline_options.accelerator_options = AcceleratorOptions(

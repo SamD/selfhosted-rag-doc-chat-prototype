@@ -76,9 +76,14 @@ class RemoteEmbeddings(Embeddings):
         try:
             results = []
             MICRO_BATCH_SIZE = EMBEDDING_BATCH_SIZE
-            
+            total = len(texts)
+            sent = 0
+
             from more_itertools import chunked
             for micro_batch in chunked(texts, MICRO_BATCH_SIZE):
+                batch_size = len(micro_batch)
+                sent += batch_size
+                log.info(f"📤 Embedding batch {sent}/{total} texts ({batch_size} texts, {sent - batch_size + 1}-{sent})...")
                 response = self.client.embeddings.create(input=micro_batch, model=self.model_name)
                 results.extend([data.embedding for data in response.data])
             return results
