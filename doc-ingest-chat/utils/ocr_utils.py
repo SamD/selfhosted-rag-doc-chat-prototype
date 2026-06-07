@@ -252,12 +252,30 @@ def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> T
 
         if response.status_code == 200:
             result = response.json()
+
+            # Debug: log response structure to diagnose oversized returns
+            def log_structure(obj, path="", depth=0):
+                if depth > 3:
+                    return
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if isinstance(v, str) and len(v) > 100:
+                            log.info(f"🔍 OCR response key '{path}{k}': {len(v)} chars")
+                        elif isinstance(v, (dict, list)):
+                            log_structure(v, f"{path}{k}.", depth + 1)
+                elif isinstance(obj, list):
+                    log.info(f"🔍 OCR response {path}: list with {len(obj)} items")
+                    if obj and depth < 2:
+                        log_structure(obj[0], f"{path}[0].", depth + 1)
+
+            log_structure(result)
             
             # --- SIMPLIFIED RECURSIVE EXTRACTION ---
             def find_text(obj, key_name=None):
                 """Visit every node. If it's a string and parent key is a text key, return it."""
                 # Whitelist of keys known to contain the final markdown/text
-                TEXT_KEYS = ["md", "markdown", "text", "content", "body", "md_content", "text_content"]
+                # Order matters: prefer shorter text fields over longer ones
+                TEXT_KEYS = ["text", "content", "body", "text_content", "md", "markdown", "md_content"]
                 
                 def is_text_key(k):
                     if not k:
@@ -271,10 +289,11 @@ def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> T
                     return None
                 
                 if isinstance(obj, dict):
-                    # Check our direct children first
-                    for k, v in obj.items():
-                        if is_text_key(k) and isinstance(v, str) and len(v.strip()) > 10:
-                            return v
+                    # Check keys in TEXT_KEYS order, not dict insertion order
+                    for text_key in TEXT_KEYS:
+                        for k, v in obj.items():
+                            if k.lower() == text_key and isinstance(v, str) and len(v.strip()) > 10:
+                                return v
                     # Recurse deeper
                     for k, v in obj.items():
                         res = find_text(v, k)
@@ -294,8 +313,8 @@ def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> T
                 return None, "remote_ocr_no_text", execution_time_ms
 
             if len(text) > 50000:
-                log.warning(f"⚠️ Remote OCR returned {len(text)} chars for {rel_path} P{page_num}, truncating to 50000")
-                text = text[:50000]
+                log.warning(f"⚠️ Remote OCR returned {len(text)} chars for {rel_path} P{page_num} — too large, discarding")
+                return "", "remote_docling_serve_oversized", execution_time_ms
             log.info(f"✅ Remote OCR succeeded for {rel_path} P{page_num} ({len(text)} chars)")
             return text, "remote_docling_serve", execution_time_ms
         else:

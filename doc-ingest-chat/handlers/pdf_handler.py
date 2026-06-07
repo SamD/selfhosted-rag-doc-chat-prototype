@@ -48,10 +48,16 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                             np_image = preprocess_image(images[0])
                             if np_image is not None:
                                 ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, file_path, page_num, trace_id=get_trace_id())
-                                if ocr_text and len(ocr_text) > 50000:
-                                    log.warning(f"⚠️ Page {page_num}: OCR returned {len(ocr_text)} chars, truncating to 50000")
-                                    ocr_text = ocr_text[:50000]
-                                t = ocr_text
+                                if ocr_text:
+                                    # Check if text is garbled (too many chars per word)
+                                    word_count = len(ocr_text.split())
+                                    if word_count > 0 and len(ocr_text) / word_count > 1000:
+                                        log.warning(f"⚠️ Page {page_num}: OCR returned garbled text ({len(ocr_text)} chars, {word_count} words) — discarding")
+                                        t = ""
+                                    else:
+                                        t = ocr_text
+                                else:
+                                    t = ""
 
                             for img in images:
                                 img.close()
