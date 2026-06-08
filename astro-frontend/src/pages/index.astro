@@ -96,13 +96,6 @@ import Layout from '../layouts/Layout.astro';
 		chatMessages.scrollTop = chatMessages.scrollHeight;
 	}
 
-	function clearChat() {
-		chatMessages.innerHTML = `<div class="text-center text-base-content/50 py-16"><p>Start a conversation by typing your question below</p></div>`;
-		displayMessages = [];
-		sessionId = '';
-		localStorage.removeItem(SESSION_KEY);
-	}
-
 	async function sendQuery(query: string) {
 		const sid = getOrCreateSessionId();
 		const response = await fetch(`${API_BASE_URL}/query`, {

@@ -1,8 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from services.chat_session_service import ChatSessionService
 
 FAKE_SESSION = "test-session-uuid-1234"
