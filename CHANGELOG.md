@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`SUPERVISOR_N_CTX` env var**: Separate context window setting for the gatekeeper supervisor LLM prompt truncation. Previously shared `LLAMA_N_CTX` with the main RAG LLM. Default: 8192.
 - **Operational playbooks**: `infra/operations/day-1.md` (setup checklist) and `infra/operations/day-2.md` (symptom→diagnosis→fix runbook).
 - **OpenSpec baseline**: 7 capability specs documenting current architecture (`openspec/specs/`). Project context and per-artifact rules in `openspec/config.yaml`.
+- **OpenSpec proposal: NiFi Redis middleware (Phase 1)**: Complete proposal for introducing Apache NiFi as middleware between workers and Redis. Includes strategy pattern (`MessageQueue` ABC with `RedisQueue`/`NifiQueue` implementations), queue name suffix transformation (`_input`/`_output`), NiFi Python bridge processors (`RedisSourceProcessor`, `RedisSinkProcessor`), programmatic flow setup via REST API, and docker-compose integration. 70+ implementation tasks across 9 groups.
 
 ### Changed
 - **CPU profile removed**: Removed `--cpu` flag from `run-compose.sh`, `CPUEnvConfig` from `env_strategy.py`, `LLAMA_USE_GPU` env var, `USE_OLLAMA` env var, and `run-compose-cpu.sh`. Device hardcoded to `"cuda"` — non-GPU deployments use remote HTTP endpoints.
