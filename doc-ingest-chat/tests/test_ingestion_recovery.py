@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from services.job_service import STATUS_INGEST_FAILED, STATUS_INGESTING, STATUS_NEW, STATUS_PREPROCESSING, JobService
+from services.job_service import STATUS_INGEST_FAILED, STATUS_NEW, STATUS_PREPROCESSING, JobService
 
 
 def test_reclaim_orphaned_jobs_resets_stuck_jobs(tmp_path):

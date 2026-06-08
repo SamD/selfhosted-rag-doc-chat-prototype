@@ -48,7 +48,16 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                             np_image = preprocess_image(images[0])
                             if np_image is not None:
                                 ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, file_path, page_num, trace_id=get_trace_id())
-                                t = ocr_text
+                                if ocr_text:
+                                    if len(ocr_text) > 50000:
+                                        log.warning(f"⚠️ Page {page_num}: OCR returned unusually large output ({len(ocr_text)} chars)")
+                                    if is_bad_ocr(ocr_text):
+                                        log.warning(f"⚠️ Page {page_num}: OCR output failed quality check ({len(ocr_text)} chars) — treating as failed extraction")
+                                        t = ""
+                                    else:
+                                        t = ocr_text
+                                else:
+                                    t = ""
 
                             for img in images:
                                 img.close()

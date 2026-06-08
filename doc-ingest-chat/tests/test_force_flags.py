@@ -79,7 +79,7 @@ class TestPDFForceOCR(unittest.TestCase):
         mock_preprocess.return_value = MagicMock()
         mock_convert.return_value = [MagicMock()]
         mock_send_ocr.return_value = ("ocr text", None, None, "docling", None, None)
-        mock_is_bad_ocr.return_value = True
+        mock_is_bad_ocr.return_value = False
 
         handler = PDFContentTypeHandler()
 
