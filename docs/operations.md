@@ -138,16 +138,92 @@ WHERE id NOT LIKE 'DOC_%';
 
 ## Redis — Queue Inspection
 
+With NiFi middleware, each queue has `_input` and `_output` suffix pairs. Workers write to `*_input` and read from `*_output` — NiFi's bridge processors move data between them. Queue length on `_input` represents backpressure: if it's growing, NiFi may be overwhelmed or a downstream worker is stalled.
+
 ```bash
 docker exec -it doc-ingest-chat-redis-1 redis-cli
 ```
 
 ```redis
+> LLEN chunk_ingest_input:0
+> LLEN chunk_ingest_output:0
+> LLEN chunk_ingest_input:1
+> LLEN chunk_ingest_output:1
+> LLEN ocr_job_input
+> LLEN ocr_job_output
+> LLEN whisper_job_input
+> LLEN whisper_job_output
+```
+
+Also check that there are no orphaned `_output` queues (NiFi should handle draining them):
+
+```redis
 > LLEN chunk_ingest_queue:0
 > LLEN chunk_ingest_queue:1
-> LLEN ocr_job_queue
-> LLEN whisper_job_queue
 ```
+
+These legacy queue names should be empty after the NiFi migration — if they contain data, NiFi's bridge processors aren't consuming correctly.
+
+---
+
+## NiFi — Flow Monitoring
+
+### Access the NiFi UI
+
+Navigate to `https://<nifi-host>:<nifi-port>/nifi` (default `8443`) and log in. The "RAG Pipeline" process group contains all bridge processors organized into sub-groups: OCR Processing, Whisper Processing, Retype to Markdown LLM, and Chunk and Tokenize Consumer.
+
+### Check Processor Health
+
+In the NiFi UI, each processor shows:
+- **Status icon**: Green (running), yellow (warning), red (stopped/error)
+- **Tasks/Time**: How many flowfiles are being processed
+- **In/Out**: Queue counts showing data flow
+
+Right-click any processor → **View data provenance** to trace individual flowfiles through the pipeline. Each flowfile carries the original `trace_id` from the worker as an attribute, preserved end-to-end.
+
+### Verify Flow Health via API
+
+```bash
+curl -k -u "$NIFI_USERNAME:$NIFI_PASSWORD" \
+  "https://<nifi-host>:8443/nifi-api/process-groups/root/process-groups" | \
+  jq '.processGroups[] | select(.component.name == "RAG Pipeline") | .id'
+```
+
+```bash
+# Get processor status for the RAG Pipeline group
+PG_ID="<pg-id-from-above>"
+curl -k -u "$NIFI_USERNAME:$NIFI_PASSWORD" \
+  "https://<nifi-host>:8443/nifi-api/process-groups/$PG_ID/processors" | \
+  jq '.processors[] | {name: .component.name, state: .component.state, tasks: .status.aggregateSnapshot.tasks}'
+```
+
+### Check Bootstrap Logs
+
+The `nifi_bootstrap` service deploys the flow on first start. Check its logs if processors aren't running:
+
+```bash
+docker logs nifi_bootstrap
+```
+
+### Restart the Flow
+
+If NiFi was restarted, re-deploy:
+
+```bash
+cd nifi/ && PYTHONPATH=.. python ./nifi_bootstrap.py
+```
+
+The bootstrap is idempotent — it skips creation if the "RAG Pipeline" process group already exists and just starts all processors.
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Processors stuck yellow/stopped | NiFi restarted without re-bootstrap | Run `nifi_bootstrap.py` |
+| `_input` queues growing, `_output` empty | Consumer worker down or slow | Check Consumer worker logs |
+| `_output` queues growing, `_input` empty | NiFi processors running but downstream not consuming | Check downstream worker logs |
+| NiFi UI shows 0/0 in/out | No data flowing — check worker logs for Redis connectivity | Check `REDIS_HOST`/`REDIS_PORT` in worker env |
+| Provenance shows flowfile stuck | Processor error (check bulletins in NiFi UI) | Right-click processor → View data provenance → Error tab |
 
 ---
 
@@ -349,4 +425,4 @@ WHERE id NOT LIKE 'DOC_%';
 
 ### Ingestion stalled
 
-Check for lock contention using the query in [Lock Contention Audit](#lock-contention-audit) above. Also check Redis queue lengths — if `LLEN chunk_ingest_queue:N` is growing without bound, the Consumer may have crashed or be blocked.
+Check for lock contention using the query in [Lock Contention Audit](#lock-contention-audit) above. Also check NiFi queue backpressure — if `LLEN chunk_ingest_input:N` is growing without bound, the Consumer may have crashed or be blocked. In the NiFi UI, check that the "RAG Pipeline" processors are green (running) and not showing errors in the bulletins.

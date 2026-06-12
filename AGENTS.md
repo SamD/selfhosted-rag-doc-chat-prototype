@@ -64,6 +64,57 @@ export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:11
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
 ```
 
+## NiFi Middleware (Required)
+
+Apache NiFi is deployed as transparent middleware between Redis queues, providing flow orchestration, provenance tracking, and backpressure management. Workers continue using direct Redis calls — NiFi sits between `_input` and `_output` queues.
+
+### NiFi Environment Variables
+
+- `NIFI_ENDPOINT` - NiFi REST API endpoint (must include `/nifi-api` suffix, e.g., `https://nifi-host:8443/nifi-api`) [REQUIRED]
+- `NIFI_USERNAME` - NiFi username for basic auth (e.g., `admin`) [REQUIRED]
+- `NIFI_PASSWORD` - NiFi password for basic auth (e.g., `admin1234567`) [REQUIRED]
+- `NIFI_SSL_VERIFY` - SSL certificate verification (`false` for self-signed certs, default: `false`)
+- `REGISTRY_ENDPOINT` - NiFi Registry endpoint (optional, for flow versioning)
+
+### Bootstrap Service
+
+The `nifi_bootstrap` service automatically deploys the flow on startup:
+1. Waits for NiFi to become available (with exponential backoff)
+2. Checks if "RAG Pipeline" process group exists
+3. Creates the process group with consumer/producer pairs for each queue
+4. Starts all processors
+5. Verifies flow health
+6. Exits (one-shot service, doesn't restart)
+
+### Quick Setup
+
+1. Deploy Python processors to NiFi's extensions directory:
+   ```bash
+   scp nifi/python/extensions/RedisQueueConsumer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+   scp nifi/python/extensions/RedisQueueProducer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+   ssh <nifi-host> "docker restart nifi"
+   ```
+
+2. Configure environment:
+   ```bash
+   export NIFI_ENDPOINT="https://<nifi-host>:8443/nifi-api"
+   export NIFI_USERNAME="admin"
+   export NIFI_PASSWORD="<your-password>"
+   export NIFI_SSL_VERIFY="false"
+   ```
+
+3. Start the stack:
+   ```bash
+   ./doc-ingest-chat/run-compose.sh --build
+   ```
+
+4. Verify bootstrap success:
+   ```bash
+   docker logs nifi_bootstrap
+   ```
+
+See [nifi/README.md](nifi/README.md) for detailed deployment and operations documentation.
+
 ## Shared Utilities (`shared/utils.py`)
 
 - `parse_endpoints(env_value)`: Parse comma-separated endpoint URLs from env vars.
@@ -116,6 +167,13 @@ When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to
 - `VECTOR_DB_URL` - Full URL for remote vector DB (e.g., `http://192.168.30.71:6333`)
 - `VECTOR_DB_USE_GRPC` - Use gRPC for Qdrant (default: `true`)
 - `VECTOR_DB_GRPC_PORT` - gRPC port (default: `6334`)
+
+### Redis Message Broker
+
+- `REDIS_HOST` - Redis server hostname or IP (required, must be accessible from all workers and NiFi)
+- `REDIS_PORT` - Redis server port (required, typically `6379`)
+
+Redis must be hosted on a separate host accessible via DNS or IP from all workers and NiFi. It cannot run in Docker on the same host as workers due to network isolation requirements.
 
 ### GPU / Inference
 
@@ -180,6 +238,8 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 - `MAX_CHUNKS` - Default: `5000`
 - `CHUNK_SIZE` - Default: `512`
 - `CHUNK_OVERLAP` - Default: `50`
+- `STAGED_CHUNK_TTL` - TTL for stale staged chunks in seconds (default: `300`)
+- `CONSUMER_BATCH_SIZE` - Number of chunks to buffer before staging (default: `50`)
 - `DEVICE` - Default: `cuda`
 - `COMPUTE_TYPE` - Default: `float16`
 

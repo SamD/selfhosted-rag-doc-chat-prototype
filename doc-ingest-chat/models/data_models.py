@@ -31,7 +31,6 @@ class OCRJob:
     image_shape: List[int]
     image_dtype: str
     image_base64: str
-    reply_key: str
 
 
 @dataclass

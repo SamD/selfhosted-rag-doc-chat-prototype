@@ -2,7 +2,75 @@
 
 A production-grade, air-gapped semantic search and document intelligence system. Drop PDFs, videos, or audio files into a folder and chat with them using an AI that cites its sources — all running on your own hardware with zero internet dependency.
 
----
+> **⚠️ Work in Progress:** This branch (`nifi-testing-wip`) is integrating **Apache NiFi** into the ingestion pipeline as transparent middleware between Redis queues. NiFi provides data governance, provenance tracking, flow orchestration, and operational control over the ingestion lifecycle — without changing the worker code's Redis interface.
+>
+> ### NiFi Sandwich Architecture
+>
+> Each Redis queue is split into `_input` and `_output` halves. NiFi sits transparently between them — workers keep the same LPUSH/BRPOP interface and never touch NiFi directly. The NiFi UI shows one process group per queue, each containing a consumer→producer pair:
+>
+> ```mermaid
+> flowchart LR
+>     subgraph Workers
+>         P[Producer Worker]
+>         O1[ocr_utils]
+>         W1[whisper_utils]
+>     end
+>     subgraph Consumers
+>         C[Consumer Worker]
+>         O2[ocr_worker]
+>         W2[whisperx_worker]
+>     end
+>     subgraph Redis_Input["Redis _input queues"]
+>         RI1[chunk:0_input]
+>         RI2[ocr_processing_job_input]
+>         RI3[whisper_processing_job_input]
+>     end
+>     subgraph Redis_Output["Redis _output queues"]
+>         RO1[chunk:0_output]
+>         RO2[ocr_processing_job_output]
+>         RO3[whisper_processing_job_output]
+>     end
+>     subgraph NiFi["Apache NiFi — RAG Pipeline Process Group"]
+>         direction TB
+>         subgraph PG1["OCR Processing"]
+>             OC[RedisQueueConsumer] --> OF[RedisQueueProducer]
+>         end
+>         subgraph PG2["Whisper Processing"]
+>             WC[RedisQueueConsumer] --> WF[RedisQueueProducer]
+>         end
+>         subgraph PG3["Retype to Markdown LLM"]
+>             RC[RedisQueueConsumer] --> RF[RedisQueueProducer]
+>         end
+>         subgraph PG4["Chunk and Tokenize Consumer"]
+>         end
+>     end
+>     P -- RPUSH --> RI1
+>     O1 -- LPUSH --> RI2
+>     W1 -- LPUSH --> RI3
+>     RI1 -- BRPOP --> OC
+>     RI2 -- BRPOP --> WC
+>     RI3 -- BRPOP --> RC
+>     OF -- LPUSH --> RO1
+>     WF -- LPUSH --> RO2
+>     RF -- LPUSH --> RO3
+>     RO1 -- BLPOP --> C
+>     RO2 -- BRPOP --> O2
+>     RO3 -- BRPOP --> W2
+> ```
+>
+> **What NiFi brings at the middleware layer:**
+>
+> | Capability | How it helps |
+> |------------|-------------|
+> | **Data Governance** | Every FlowFile transformation is provenance-tracked. Full audit trail from file drop to vector storage — who processed what, when, and with which attributes. |
+> | **Operational Control** | Backpressure thresholds prevent Redis queue overflow. Per-queue throughput, latency, and error rates visible in NiFi's UI or REST API. |
+> | **Attribute Propagation** | `trace_id`, `file_name`, `queue_name`, and MIME type persist across the pipeline as FlowFile attributes. End-to-end observability without modifying worker payloads. |
+> | **Data Validation** | Messages can be inspected, transformed, or rejected at the NiFi layer before they reach consumers. Malformed payloads caught early. |
+> | **Formatting & Transform** | NiFi can normalize payload schemas, enrich attributes, and apply routing logic centrally — no changes needed in worker code. |
+> | **Zero Worker Changes** | Workers use the same Redis LPUSH/BRPOP calls as before. Queue names gain `_input`/`_output` suffixes, resolved from environment — no worker code changes. |
+> | **Auto-Recovery** | If NiFi is unavailable, the `nifi_bootstrap` service recreates the flow on next startup. Workers can fall back to direct Redis if needed. |
+>
+> ---
 
 ## About This Project
 
@@ -130,6 +198,44 @@ export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 ```
 
+### NiFi Middleware (Required)
+
+Apache NiFi is deployed as transparent middleware between Redis queues, providing flow orchestration, provenance tracking, and backpressure management. Workers continue using direct Redis calls — NiFi sits between `_input` and `_output` queues.
+
+**Required Environment Variables:**
+
+```bash
+export NIFI_ENDPOINT="https://<nifi-host>:8443/nifi-api"
+export NIFI_USERNAME="admin"
+export NIFI_PASSWORD="<your-password>"
+export NIFI_SSL_VERIFY="false"  # For self-signed certificates
+```
+
+**Deployment:**
+
+The `nifi_bootstrap` service automatically deploys the flow on startup. It:
+1. Waits for NiFi to become available
+2. Creates the "RAG Pipeline" process group
+3. Deploys RedisQueueConsumer and RedisQueueProducer processors for each queue
+4. Starts all processors
+5. Verifies flow health
+6. Exits (one-shot service, doesn't restart)
+
+**Manual Deployment:**
+
+If you need to manually deploy or redeploy the flow:
+
+```bash
+# Deploy Python processors to NiFi (if not already deployed)
+scp nifi/python/extensions/RedisQueueConsumer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+scp nifi/python/extensions/RedisQueueProducer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+
+# Run the bootstrap service
+cd nifi/ && python nifi_bootstrap.py
+```
+
+See [nifi/README.md](nifi/README.md) for detailed deployment and operations documentation.
+
 ### Launch
 
 ```bash
@@ -154,6 +260,7 @@ Drop files into `$DEFAULT_DOC_INGEST_ROOT/staging/`. The system auto-detects and
 | **[Architecture](docs/overview.md)** | System flow, component map, state machine, and Redis queue architecture |
 | **[Deep Dive](docs/deep-dive.md)** | Design rationale, dual-LLM architecture, chunking strategy, production roadmap |
 | **[Operations](infra/operations/day-1.md)** | Setup checklist and Day 1 / Day 2 operational playbooks with symptom-driven runbooks |
+| **[NiFi Middleware](nifi/README.md)** | Apache NiFi integration for flow orchestration, provenance tracking, and backpressure |
 | **[Edge Agent](docs/edge-agent.md)** | Deploy MQTT SRE agents on standalone Debian minipcs for telemetry and task execution |
 | **[Changelog](CHANGELOG.md)** | Version history and feature tracking |
 

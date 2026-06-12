@@ -1,6 +1,7 @@
 # Packages required by NiFi's Java-to-Python bridge
+from nifiapi.processor import FlowFileTransform, FlowFileTransformResult, ProcessorDetails
 from nifiapi.properties import PropertyDescriptor
-from nifiapi.processor import ProcessorDetails, FlowFileTransform, FlowFileTransformResult
+
 
 class PythonHttpRequest(FlowFileTransform):
     class Details(ProcessorDetails):

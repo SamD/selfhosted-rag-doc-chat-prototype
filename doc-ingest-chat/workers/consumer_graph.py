@@ -52,15 +52,16 @@ def validate_remaining_chunks_node(state: ConsumerState) -> ConsumerState:
 
     log.info(f"🧐 [Node: Final Validate] {source_file}")
 
-    # Find Job ID using protected retry helper
-    job_id = None
-    try:
-        query = "SELECT id FROM ingestion_lifecycle WHERE original_filename = ? AND status != ?"
-        res, _ = JobService._execute_with_retry(query, (source_file, STATUS_INGEST_FAILED), fetch=True)
-        if res:
-            job_id = res[0]
-    except Exception as e:
-        log.warning(f"⚠️ Could not find job ID for {source_file} in lifecycle DB: {e}")
+    # Find Job ID: prefer sentinel-provided value, fall back to DB lookup
+    job_id = state.get("job_id")
+    if not job_id:
+        try:
+            query = "SELECT id FROM ingestion_lifecycle WHERE original_filename = ? AND status != ?"
+            res, _ = JobService._execute_with_retry(query, (source_file, STATUS_INGEST_FAILED), fetch=True)
+            if res:
+                job_id = res[0]
+        except Exception as e:
+            log.warning(f"⚠️ Could not find job ID for {source_file} in lifecycle DB: {e}")
 
     tokenizer = get_tokenizer()
     processed_chunks = []
@@ -191,9 +192,9 @@ def get_consumer_app():
     return _COMPILED_CONSUMER_APP
 
 
-def run_consumer_graph(source_file: str, expected_chunks: int, chunks: List[Dict[str, Any]], metrics: Optional[FileMetrics], trace_id: str = None) -> bool:
+def run_consumer_graph(source_file: str, expected_chunks: int, chunks: List[Dict[str, Any]], metrics: Optional[FileMetrics], trace_id: str = None, job_id: str = None) -> bool:
     """Invokes the cached graph to finalize a document."""
-    initial_state: ConsumerState = {"source_file": source_file, "trace_id": trace_id, "expected_chunks": expected_chunks, "chunks": chunks, "metrics": metrics, "status": "pending", "error": None, "job_id": None}
+    initial_state: ConsumerState = {"source_file": source_file, "trace_id": trace_id, "expected_chunks": expected_chunks, "chunks": chunks, "metrics": metrics, "status": "pending", "error": None, "job_id": job_id}
     try:
         app = get_consumer_app()
         final_state = app.invoke(initial_state)

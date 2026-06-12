@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  nifi:
+    image: apache/nifi:2.0.0
+    container_name: nifi
+    ports:
+      - "8443:8443"  # HTTPS web UI
+    environment:
+      # Single-user authentication
+      - SINGLE_USER_CREDENTIALS_USERNAME=admin
+      - SINGLE_USER_CREDENTIALS_PASSWORD=admin1234567
+      # NiFi properties overrides
+      - NIFI_WEB_HTTPS_PORT=8443
+      - NIFI_WEB_PROXY_HOST=192.168.30.67:8443
+      - NIFI_SECURITY_USERLOGINFAILUREMAX=10
+      - NIFI_SECURITY_USERLOGINFAILUREWINDOW=00:05:00
+    volumes:
+      # Mount Python extensions directory
+      - ./nifi/python/extensions:/opt/nifi/nifi-current/python/extensions
+      # NiFi state and configuration
+      - nifi_database:/opt/nifi/nifi-current/database_repository
+      - nifi_flowfile:/opt/nifi/nifi-current/flowfile_repository
+      - nifi_content:/opt/nifi/nifi-current/content_repository
+      - nifi_provenance:/opt/nifi/nifi-current/provenance_repository
+      - nifi_state:/opt/nifi/nifi-current/state
+      - nifi_logs:/opt/nifi/nifi-current/logs
+      - nifi_conf:/opt/nifi/nifi-current/conf
+    restart: unless-stopped
+
+volumes:
+  nifi_database:
+  nifi_flowfile:
+  nifi_content:
+  nifi_provenance:
+  nifi_state:
+  nifi_logs:
+  nifi_conf:

@@ -50,7 +50,7 @@ class ParquetService:
 
         df = pd.DataFrame(entries)
         # Map to DuckDB schema
-        df_staged = pd.DataFrame({"id": df["id"], "source_file": df["source_file"], "document_id": df["document_id"], "chunk": df["chunk"], "metadata": df["metadata_json"]})
+        df_staged = pd.DataFrame({"id": df["id"], "source_file": df["source_file"], "document_id": df["document_id"], "chunk": df["chunk"], "metadata": df["metadata_json"], "trace_id": df.get("trace_id", "")})
 
         # Use protected logic for the registration/insertion
         max_retries = 20
@@ -63,7 +63,7 @@ class ParquetService:
                 con = DatabaseService.get_duckdb()
                 con.register("df_staged_temp", df_staged)
                 # Explicit column names ensure we don't hit column-count mismatches with timestamps
-                con.execute("INSERT OR REPLACE INTO staged_chunks (id, source_file, document_id, chunk, metadata) SELECT * FROM df_staged_temp")
+                con.execute("INSERT OR REPLACE INTO staged_chunks (id, source_file, document_id, chunk, metadata, trace_id) SELECT * FROM df_staged_temp")
                 return
             except Exception as e:
                 err_msg = str(e).lower()
@@ -155,7 +155,7 @@ class ParquetService:
             return
 
         df = pd.DataFrame(entries)
-        desired_cols = ["id", "chunk", "source_file", "document_id", "type", "chunk_index", "engine", "hash", "page"]
+        desired_cols = ["id", "chunk", "source_file", "document_id", "type", "chunk_index", "engine", "hash", "page", "trace_id"]
         for col in desired_cols:
             if col not in df.columns:
                 if col == "page" or col == "chunk_index":

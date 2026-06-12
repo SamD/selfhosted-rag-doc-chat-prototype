@@ -132,41 +132,14 @@ def sliding_window_normalize(file_path: str, chunk_size: int = 6000, overlap: in
     return sliding_window_chunks(raw_text, chunk_size=chunk_size, overlap=overlap)
 
 
-def _normalize_with_endpoint(endpoint_url: str, raw_content: str, idx: int, file_slug: str) -> str:
-    """Call the supervisor LLM at the given endpoint URL and return normalized text."""
-    from utils.text_utils import get_tokenizer
-    tokenizer = get_tokenizer()
+def _normalize_with_endpoint(endpoint_url: str, raw_content: str, idx: int, file_slug: str, trace_id: str = None) -> str:
+    """Send raw text to Retype to Markdown LLM worker via NiFi queues and return normalized text."""
+    from utils.retype_utils import send_raw_text_to_retype_llm
 
-    # Build prompt (same as process_chunk)
-    user_msg = (
-        "You are a Markdown formatter. "
-        "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
-        "Preserve all content and structure as much as possible. "
-        "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
-        "DO NOT summarize, infer, or add new information. "
-        "Return only Markdown, with no preface or explanation. "
-        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, "
-        "encoding errors, or isolated non-alphanumeric strings. "
-        "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
-        f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
-    )
-    messages = [{"role": "user", "content": user_msg}]
-
-    # Enforce context limit
-    CONTEXT_LIMIT = int(settings.SUPERVISOR_N_CTX * 0.8)
-    encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
-    if len(encoded_prompt) > CONTEXT_LIMIT:
-        truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
-        raw_content = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
-        user_msg = (
-            "You are a Markdown formatter. ...\n\n"
-            f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
-        )
-        messages = [{"role": "user", "content": user_msg}]
-
-    llm = RemoteLlama(base_url=endpoint_url)
-    response = llm.create_chat_completion(messages=messages, stop=["END_OF_RAW_TEXT"])
-    content = response["choices"][0]["message"]["content"] or ""
+    content = send_raw_text_to_retype_llm(raw_content, idx=idx, trace_id=trace_id)
+    if not content.strip():
+        log.warning(f"🈳 Batch {idx} (retype): Empty response, falling back to raw text")
+        content = raw_content
     return content
 
 
@@ -244,7 +217,7 @@ def gatekeeper_extract_and_normalize(job_id: str, file_path: str, md_path: str) 
             dispatcher = EndpointDispatcher(haproxy_endpoints, interleave=True)
 
             def normalize_batch(endpoint: str, raw_content: str, idx: int, slug: str) -> Tuple[dict, str]:
-                content = _normalize_with_endpoint(endpoint, raw_content, idx, slug)
+                content = _normalize_with_endpoint(endpoint, raw_content, idx, slug, trace_id=trace_id)
                 meta = assemble_metadata(file_path, slug, idx, len(all_batch_contents))
                 if not content.strip():
                     log.warning(f"🈳 Batch {idx}: returned empty")
@@ -343,8 +316,6 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
     else:
         anchor_header = "\n\n\n\n"
 
-    from utils.text_utils import get_tokenizer
-
     # 2. QUALITY CHECK: If text is already clean, skip LLM entirely
     # Only pages that fail the quality check go through the supervisor LLM.
     # This is the 3-tier approach: pdfplumber → OCR → LLM (last resort).
@@ -364,68 +335,21 @@ def process_chunk(idx, raw_content, file_path, slug, md_path=None, trace_id=None
         log.info(f"📝 Wrote Chunk {idx} to {md_path} (bypassed LLM)")
         return meta, content
 
-    # 3. VERIFIED 'Markdown Formatter' Prompt (FLATTENED - ZERO INDENTATION)
-    user_msg = (
-        "You are a Markdown formatter. "
-        "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
-        "Preserve all content and structure as much as possible. "
-        "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
-        "DO NOT summarize, infer, or add new information. "
-        "Return only Markdown, with no preface or explanation. "
-        "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings. "
-        "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
-        f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
-    )
+    # 3. LLM NORMALIZATION via Retype to Markdown LLM worker (last resort)
+    from utils.retype_utils import send_raw_text_to_retype_llm
 
-    log.info(f"🧠 Normalizing Batch {idx} (High-Fidelity Verified Prompt)...")
-
-    llm, _ = get_llm_and_grammar()
-    tokenizer = get_tokenizer()
-
-    # ENFORCE CONTEXT LIMIT: Truncate if batch is somehow massive (e.g. OCR error/leak)
-    # We target 80% of context size for safety
-    CONTEXT_LIMIT = int(settings.SUPERVISOR_N_CTX * 0.8)
-    encoded_prompt = tokenizer.encode(user_msg, add_special_tokens=True)
-    
-    if len(encoded_prompt) > CONTEXT_LIMIT:
-        log.warning(f"⚠️ Batch {idx} is too large ({len(encoded_prompt)} tokens). Truncating to {CONTEXT_LIMIT} to fit context window.")
-        truncated_tokens = tokenizer.encode(raw_content, add_special_tokens=False)[:CONTEXT_LIMIT - 200]
-        raw_content = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
-        user_msg = (
-            "You are a Markdown formatter. "
-            "Convert ONLY the text contained between START_OF_RAW_TEXT and END_OF_RAW_TEXT into valid Markdown. "
-            "Preserve all content and structure as much as possible. "
-            "Use headings, bullet points, numbered lists, code blocks, and tables only when they fit the input. "
-            "DO NOT summarize, infer, or add new information. "
-            "Return only Markdown, with no preface or explanation. "
-            "Remove only characters that are clearly non-linguistic artifacts such as repeated symbols, encoding errors, or isolated non-alphanumeric strings. "
-            "Stop immediately when you reach END_OF_RAW_TEXT.\n\n"
-            f"START_OF_RAW_TEXT\n{raw_content}\nEND_OF_RAW_TEXT"
-        )
-
-    # 4. LLM NORMALIZATION (last resort)
-    response = llm.create_chat_completion(
-        messages=[{"role": "user", "content": user_msg}],
-        stop=["END_OF_RAW_TEXT"],
-    )
-
-    content = response["choices"][0]["message"]["content"] or ""
-
-    finish_reason = response["choices"][0].get("finish_reason", "unknown")
-    usage = response.get("usage", {})
-    token_info = f"tokens_in={usage.get('prompt_tokens', '?')} tokens_out={usage.get('completion_tokens', '?')} reason={finish_reason}"
+    log.info(f"🧠 Normalizing Batch {idx} via Retype LLM worker...")
+    content = send_raw_text_to_retype_llm(raw_content, idx=idx, trace_id=trace_id)
 
     stripped = content.strip()
     if not stripped:
-        log.error(
-            f"🈳 Chunk {idx}: LLM returned empty response ({token_info}). "
-            f"This typically means reasoning tokens consumed the entire budget. "
-            f"Check --reasoning-budget and --n-predict on the model server."
-        )
+        log.error(f"🈳 Chunk {idx}: Retype LLM returned empty, falling back to raw text")
+        content = raw_content
     elif stripped.isspace():
-        log.warning(f"⚠️ Chunk {idx}: LLM returned only whitespace ({len(content)} chars, {token_info}).")
+        log.warning(f"⚠️ Chunk {idx}: Retype LLM returned whitespace, falling back to raw text")
+        content = raw_content
     else:
-        log.info(f"🤖 Chunk {idx}: LLM returned {len(content)} chars ({token_info}).")
+        log.info(f"🤖 Chunk {idx}: Retype LLM returned {len(content)} chars")
 
     final_text = anchor_header + content
     mode = "w" if idx == 0 else "a"

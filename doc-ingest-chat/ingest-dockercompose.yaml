@@ -19,6 +19,7 @@ x-base-service: &base-service
     - ${LLM_PATH_MOUNT}:${LLM_PATH_MOUNT}:ro
     - ${SUPERVISOR_LLM_ENDPOINTS_MOUNT}:${SUPERVISOR_LLM_ENDPOINTS_MOUNT}:ro
     - ${WHISPER_MODEL_ENDPOINTS_MOUNT:-/tmp}:${WHISPER_MODEL_ENDPOINTS_MOUNT:-/tmp}:ro
+    - ${TOKENIZER_MODEL_PATH}:${TOKENIZER_MODEL_PATH}:ro
 
 x-gpu-params: &gpu-params
   runtime: nvidia
@@ -33,10 +34,11 @@ x-gpu-params: &gpu-params
   environment:
     - PYTHONUNBUFFERED=1
     - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-    - REDIS_HOST=redis
+    - REDIS_HOST=${REDIS_HOST}
     - REDIS_PORT=${REDIS_PORT:-6379}
     - DEFAULT_DOC_INGEST_ROOT=${DEFAULT_DOC_INGEST_ROOT}
     - EMBEDDING_ENDPOINTS=${EMBEDDING_ENDPOINTS}
+    - TOKENIZER_MODEL_PATH=${TOKENIZER_MODEL_PATH}
     - LLM_PATH=${LLM_PATH}
     - SUPERVISOR_LLM_ENDPOINTS=${SUPERVISOR_LLM_ENDPOINTS}
     - SUPERVISOR_MAX_TOKENS=${SUPERVISOR_MAX_TOKENS:-4096}
@@ -49,6 +51,7 @@ x-gpu-params: &gpu-params
     - VECTOR_DB_TIMEOUT=${VECTOR_DB_TIMEOUT:-60.0}
     - VECTOR_DB_BATCH_SIZE=${VECTOR_DB_BATCH_SIZE:-20}
     - PDF_FORCE_OCR=${PDF_FORCE_OCR:-false}
+    - FORCE_MARKDOWN_LLM=${FORCE_MARKDOWN_LLM:-false}
     - HA_INTERLEAVE=${HA_INTERLEAVE:-}
     - HAPROXY_SUPERVISOR_ENDPOINTS=${HAPROXY_SUPERVISOR_ENDPOINTS:-}
     - HAPROXY_EMBEDDING_ENDPOINTS=${HAPROXY_EMBEDDING_ENDPOINTS:-}
@@ -59,17 +62,6 @@ x-gpu-params: &gpu-params
     - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 services:
-  redis:
-    image: redis:7.2-alpine
-    command: --port ${REDIS_PORT:-6379} --save "" --appendonly no
-    ports:
-      - "${REDIS_PORT:-6379}:${REDIS_PORT:-6379}"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    env_file:
-      - .env
-
   qdrant:
     image: qdrant/qdrant:v1.12.2
     profiles: [local-qdrant]
@@ -92,8 +84,6 @@ services:
         aliases:
           - vector-db
     restart: unless-stopped
-    depends_on:
-      - redis
 
   haproxy_supervisor:
     image: haproxy:2.8-alpine
@@ -125,6 +115,7 @@ services:
     environment:
       - SERVICE=embedding
       - EMBEDDING_ENDPOINTS=${HAPROXY_EMBEDDING_ENDPOINTS:-}
+      - TOKENIZER_MODEL_PATH=${TOKENIZER_MODEL_PATH}
     volumes:
       - ../infra/haproxy-entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/entrypoint.sh", "embedding"]
@@ -185,8 +176,6 @@ services:
     container_name: consumer_worker_gpu
     profiles: [cuda-qdrant]
     command: ["python", "run_consumer.py"]
-    depends_on:
-      - redis
 
   ocr_worker:
     <<: [*base-service, *gpu-params]
@@ -195,6 +184,18 @@ services:
     command: ["python", "run_ocr_worker.py"]
     healthcheck:
       test: ["CMD", "pgrep", "-f", "run_ocr_worker.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  retype_llm_worker:
+    <<: [*base-service, *gpu-params]
+    container_name: retype_llm_worker
+    profiles: [cuda]
+    command: ["python", "run_retype_llm_worker.py"]
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "run_retype_llm_worker.py"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -213,10 +214,11 @@ services:
       - PYTHONUNBUFFERED=1
       - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
       - PYTHONPATH=/app
-      - REDIS_HOST=redis
+      - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT:-6379}
       - DEFAULT_DOC_INGEST_ROOT=${DEFAULT_DOC_INGEST_ROOT}
       - EMBEDDING_ENDPOINTS=${EMBEDDING_ENDPOINTS}
+      - TOKENIZER_MODEL_PATH=${TOKENIZER_MODEL_PATH}
       - LLM_PATH=${LLM_PATH}
       - SUPERVISOR_LLM_ENDPOINTS=${SUPERVISOR_LLM_ENDPOINTS}
       - SUPERVISOR_MAX_TOKENS=${SUPERVISOR_MAX_TOKENS:-4096}
@@ -231,8 +233,6 @@ services:
       - PDF_FORCE_OCR=${PDF_FORCE_OCR:-false}
       - DEVICE=cuda
       - COMPUTE_TYPE=float16
-    depends_on:
-      - redis
 
   gatekeeper_worker:
     <<: [*base-service, *gpu-params]
@@ -262,8 +262,6 @@ services:
     command: ["python", "apimain.py"]
     ports:
       - "8000:8000"
-    depends_on:
-      - redis
 
   frontend:
     build:
@@ -284,6 +282,3 @@ services:
       - ../astro-frontend:/app
       - /app/node_modules
       - /app/.astro
-
-volumes:
-  redis_data:

@@ -32,3 +32,9 @@ os.environ.setdefault("SUPERVISOR_LLM_ENDPOINTS", str(_llama))  # Use same dummy
 # Explicit defaults used in tests
 os.environ.setdefault("ALLOW_LATIN_EXTENDED", "true")
 os.environ.setdefault("LATIN_SCRIPT_MIN_RATIO", "0.7")
+os.environ.setdefault("REDIS_HOST", "localhost")
+os.environ.setdefault("REDIS_PORT", "6379")
+os.environ.setdefault("NIFI_ENDPOINT", "https://nifi.example.com:8443/nifi-api")
+os.environ.setdefault("NIFI_USERNAME", "admin")
+os.environ.setdefault("NIFI_PASSWORD", "admin1234567")
+os.environ.setdefault("NIFI_EXTENSIONS_DIR", "/tmp/nifi_extensions")

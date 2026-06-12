@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openssh-client curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    pip install --no-cache-dir redis requests urllib3 nipyapi
+
+WORKDIR /app
+
+COPY doc-ingest-chat/pipeline-init/entrypoint.sh /app/entrypoint.sh
+COPY doc-ingest-chat/pipeline-init/flush_redis.py /app/flush_redis.py
+COPY doc-ingest-chat/pipeline-init/nuke_nifi.py /app/nuke_nifi.py
+COPY nifi/python/extensions/ /app/processors/
+COPY nifi/ /app/nifi/
+
+RUN chmod +x /app/entrypoint.sh
+
+ENTRYPOINT ["/app/entrypoint.sh"]

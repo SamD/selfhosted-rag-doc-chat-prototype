@@ -48,6 +48,7 @@ context: |
 rules_workflow:
   - "The USER drives every step via the CLI. Do NOT initiate, propose, implement, branch, commit, push, or create PRs unless explicitly instructed."
   - "Only one change may be active at a time. Before creating a new change, check openspec/changes/ (excluding archive/) — if one exists, archive it first or add to it."
+  - "Hardcoded values must not be used in production code. All configurable values must be defined as environment variables in shared/env_names.py with defaults in shared/defaults.py, unless the value is in a test case or is truly trivial (e.g., boolean flags, simple counters). When in doubt, make it configurable."
 
 # Per-artifact rules — applied when creating each artifact type.
 rules:

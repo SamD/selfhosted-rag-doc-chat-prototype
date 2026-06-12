@@ -64,7 +64,6 @@ def send_image_to_ocr(np_image, rel_path, page_num, trace_id: str = None):
 
     start_time = time.perf_counter()
     job_id = str(uuid.uuid4())
-    reply_key = f"ocr_reply:{job_id}"
     job = {
         "job_id": job_id,
         "rel_path": rel_path,
@@ -72,26 +71,34 @@ def send_image_to_ocr(np_image, rel_path, page_num, trace_id: str = None):
         "image_shape": np_image.shape,
         "image_dtype": str(np_image.dtype),
         "image_base64": base64.b64encode(np_image.tobytes()).decode(),
-        "reply_key": reply_key,
         "trace_id": trace_id,
     }
     try:
         redis_client = get_redis_client()
-        redis_client.lpush(REDIS_OCR_JOB_QUEUE, json.dumps(job))
+        redis_client.lpush(f"{REDIS_OCR_JOB_QUEUE}_input", json.dumps(job))
     except Exception as e:
         log.error(f"❌ Failed to submit OCR job to Redis: {e}")
         raise RuntimeError(f"Redis submission failed: {e}")
 
-    # HEARTBEAT POLLING: Instead of one long block, we poll and log status
+    # Read from shared reply queue, match by job_id
+    reply_queue = f"{REDIS_OCR_JOB_QUEUE.replace('_processing_job', '_reply')}_output"
     result = None
     wait_timeout = 300
     start_wait = time.time()
 
     while (time.time() - start_wait) < wait_timeout:
-        # Check for response in 30-second increments
-        result = redis_client.blpop(reply_key, timeout=30)
+        result = redis_client.blpop(reply_queue, timeout=30)
         if result:
-            break
+            _, data = result
+            reply = json.loads(data)
+            if reply.get("job_id") == job_id:
+                result = reply
+                break
+            else:
+                # Not our reply, put it back for another caller
+                redis_client.lpush(reply_queue, data)
+                result = None
+                continue
 
         elapsed = int(time.time() - start_wait)
         log.info(f"⏳ Waiting for OCR... {rel_path} P{page_num} ({elapsed}s elapsed)")
@@ -100,8 +107,6 @@ def send_image_to_ocr(np_image, rel_path, page_num, trace_id: str = None):
         raise TimeoutError(f"OCR timeout after {wait_timeout}s for {rel_path} page {page_num}")
 
     ocr_roundtrip_ms = (time.perf_counter() - start_time) * 1000.0
-    _, data = result
-    result = json.loads(data)
     return (
         result.get("text"),
         result.get("rel_path"),
@@ -311,6 +316,13 @@ def run_remote_ocr(np_image, rel_path, page_num, url, trace_id: str = None) -> T
                 log.warning(f"⚠️ Remote OCR succeeded but text extraction failed. FULL RESPONSE: {json.dumps(result)}")
                 return None, "remote_ocr_no_text", execution_time_ms
 
+            import re
+            text = re.sub(r'!\[Image\]\(data:image/[^)]+\)', '', text).strip()
+
+            if not text:
+                log.warning(f"⚠️ Remote OCR returned only image blobs for {rel_path} P{page_num}")
+                return None, "remote_ocr_only_images", execution_time_ms
+
             if len(text) > 50000:
                 log.warning(f"⚠️ Remote OCR returned unusually large output ({len(text)} chars) for {rel_path} P{page_num} — will be quality-checked downstream")
             log.info(f"✅ Remote OCR succeeded for {rel_path} P{page_num} ({len(text)} chars)")
@@ -358,6 +370,9 @@ def run_ocr(np_image, rel_path, page_num, trace_id: str = None) -> Tuple[Optiona
             full_text = result.document.export_to_markdown().strip()
 
             execution_time_ms = (time.perf_counter() - start_time) * 1000.0
+
+            import re
+            full_text = re.sub(r'!\[Image\]\(data:image/[^)]+\)', '', full_text).strip()
 
             if not full_text:
                 return None, "notext_docling", execution_time_ms

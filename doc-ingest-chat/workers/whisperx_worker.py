@@ -94,7 +94,7 @@ def worker_loop():
             host=REDIS_HOST, port=REDIS_PORT, decode_responses=True,
             socket_connect_timeout=5, socket_timeout=None,
         )
-        log.info(f"🛰️ WhisperX Worker listening on {REDIS_WHISPER_JOB_QUEUE}...")
+        log.info(f"🛰️ WhisperX Worker listening on {REDIS_WHISPER_JOB_QUEUE}_output...")
         log.info(f"🚀 Using Device: {DEVICE}, Compute Type: {COMPUTE_TYPE}, Model Path: {WHISPER_MODEL_ENDPOINTS}")
 
         # Lazy load whisperx to avoid overhead if redis fails
@@ -127,13 +127,19 @@ def worker_loop():
 
         while not SHUTDOWN:
             try:
-                res = redis_client.brpop(REDIS_WHISPER_JOB_QUEUE, timeout=5)
+                res = redis_client.brpop(f"{REDIS_WHISPER_JOB_QUEUE}_output", timeout=5)
                 if res:
                     _, job_raw = res
                     job = json.loads(job_raw)
+
+                    required_keys = {"file_path"}
+                    missing = required_keys - set(job.keys())
+                    if missing:
+                        log.error(f"💥 Malformed Whisper job missing keys: {missing}. Job keys: {list(job.keys())}")
+                        continue
+
                     job_id = job.get("job_id")
                     file_path = job.get("file_path")
-                    reply_key = job.get("reply_key")
                     language = job.get("language", "en")
                     trace_id = job.get("trace_id")
                     mime_type = job.get("mime_type")
@@ -158,15 +164,15 @@ def worker_loop():
 
                         for segment in result["segments"]:
                             redis_client.rpush(
-                                reply_key, json.dumps({"type": "segment", "text": segment["text"]})
+                                f"{REDIS_WHISPER_JOB_QUEUE.replace('_processing_job', '_reply')}_input", json.dumps({"type": "segment", "text": segment["text"], "job_id": job_id, "trace_id": trace_id})
                             )
 
-                        redis_client.rpush(reply_key, json.dumps({"type": "done"}))
+                        redis_client.rpush(f"{REDIS_WHISPER_JOB_QUEUE.replace('_processing_job', '_reply')}_input", json.dumps({"type": "done", "job_id": job_id, "trace_id": trace_id}))
                         log.info(f"✅ Job {job_id} complete.")
 
                     except Exception as e:
                         log.error(f"💥 Error processing job {job_id}: {e}")
-                        redis_client.rpush(reply_key, json.dumps({"type": "error", "error": str(e)}))
+                        redis_client.rpush(f"{REDIS_WHISPER_JOB_QUEUE.replace('_processing_job', '_reply')}_input", json.dumps({"type": "error", "error": str(e), "job_id": job_id, "trace_id": trace_id}))
 
             except json.JSONDecodeError:
                 log.error("💥 Malformed Job received")

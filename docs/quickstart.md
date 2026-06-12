@@ -67,6 +67,19 @@ These three must be set. Each accepts a remote URL or a local path.
 
 ---
 
+## Redis Message Broker (Required)
+
+Redis is used as the message broker for queue coordination between workers and NiFi. It must be hosted on a separate host accessible via DNS or IP from all workers and NiFi.
+
+| Env Var | Purpose | Example |
+|---------|---------|---------|
+| `REDIS_HOST` | Redis server hostname or IP address | `redis.example.com` or `192.168.30.100` |
+| `REDIS_PORT` | Redis server port (typically 6379) | `6379` |
+
+**Important:** Redis cannot run in Docker on the same host as workers due to network isolation requirements. It must be hosted on a separate VLAN or host that is accessible from all workers and NiFi instances.
+
+---
+
 ## All Settings Are Overridable
 
 Every env var in `ingest-svc.env` and `shared/defaults.py` can be overridden at runtime by exporting it before starting the stack. This includes LLM context sizes, batch sizes, timeouts, and compute settings. For example:
@@ -91,6 +104,125 @@ The remaining services have defaults and only need configuration when using remo
 | `WHISPER_MODEL_ENDPOINTS` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_ENDPOINTS` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
+
+---
+
+## NiFi Middleware (Required)
+
+Apache NiFi is deployed as transparent middleware between Redis queues, providing flow orchestration, provenance tracking, and backpressure management. Workers continue using direct Redis calls — NiFi sits between `_input` and `_output` queues.
+
+### NiFi Environment Variables
+
+| Env Var | Purpose | Example |
+|---------|---------|---------|
+| `NIFI_ENDPOINT` | NiFi REST API endpoint (must include `/nifi-api` suffix) | `https://<nifi-host>:8443/nifi-api` |
+| `NIFI_USERNAME` | NiFi username for basic auth | `admin` |
+| `NIFI_PASSWORD` | NiFi password for basic auth | `admin1234567` |
+| `NIFI_SSL_VERIFY` | SSL certificate verification (`false` for self-signed certs) | `false` |
+| `REGISTRY_ENDPOINT` | NiFi Registry endpoint (optional, for flow versioning) | `http://<registry-host>:18080/nifi-registry-api` |
+| `NIFI_EXTENSIONS_DIR` | Path to NiFi Python extensions directory on the NiFi server | `/opt/nifi/python_extensions` |
+| `MESSAGING_MODE` | Queue naming mode: `direct` (base queue names) or `nifi` (appends `_input`/`_output` suffixes for NiFi middleware) | `nifi` |
+
+### Quick Setup
+
+1. **Create virtual environment** from the project's `pyproject.toml`:
+   ```bash
+   uv sync --extra test
+   source .venv/bin/activate
+   ```
+
+1. **Deploy NiFi** (see [NiFi Docker Setup](#nifi-docker-setup) below) and ensure it is running and accessible at the URL configured in `NIFI_ENDPOINT`.
+
+2. **Deploy Python processors** to NiFi's extensions directory:
+   ```bash
+   # Copy processors to NiFi's Python extensions directory
+   scp nifi/python/extensions/RedisQueueConsumer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+   scp nifi/python/extensions/RedisQueueProducer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+   
+   # Restart NiFi to load new processors
+   ssh <nifi-host> "docker restart nifi"
+   ```
+
+3. **Configure environment**:
+   ```bash
+   export NIFI_ENDPOINT="https://<nifi-host>:8443/nifi-api"
+   export NIFI_USERNAME="admin"
+   export NIFI_PASSWORD="<your-password>"
+   export NIFI_SSL_VERIFY="false"
+   export MESSAGING_MODE="nifi"
+   ```
+
+4. **Run NiFi bootstrap** (from the `nifi/` directory) to deploy the RAG Pipeline flow into NiFi:
+   ```bash
+   cd nifi/
+   PYTHONPATH=.. python ./nifi_bootstrap.py
+   cd ..
+   ```
+   This script will:
+   - Wait for NiFi to become available (with exponential backoff)
+   - Create the "RAG Pipeline" process group if it doesn't exist
+   - Deploy RedisQueueConsumer and RedisQueueProducer processor pairs for each queue
+   - Create connections with backpressure (10,000 FlowFiles or 1GB)
+   - Start all processors
+   - Verify flow health (all processors RUNNING)
+   - Exit (one-shot)
+
+   The bootstrap is idempotent — safe to run multiple times.
+
+5. **Start the worker stack**:
+   ```bash
+   ./doc-ingest-chat/run-compose.sh --build
+   ```
+
+6. **Verify the flow** in NiFi UI at `https://<nifi-host>:8443/nifi`
+
+### NiFi Docker Setup
+
+For testing or development, deploy NiFi using Docker:
+
+```bash
+docker run -d \
+  --name nifi \
+  -p 8443:8443 \
+  -e NIFI_WEB_HTTPS_PORT=8443 \
+  -e NIFI_WEB_HTTPS_HOST=0.0.0.0 \
+  -e NIFI_WEB_PROXY_HOST=<nifi-host> \
+  -e SINGLE_USER_CREDENTIALS_USERNAME=admin \
+  -e SINGLE_USER_CREDENTIALS_PASSWORD=admin1234567 \
+  -e NIFI_PYTHON_EXTENSIONS_ENABLED=true \
+  -e NIFI_PYTHON_MAX_TASKS=2 \
+  apache/nifi:2.0.0
+```
+
+Access the NiFi UI at `https://<nifi-host>:8443/nifi`.
+
+### Delete NiFi Flow
+
+To remove the RAG Pipeline process group:
+
+```bash
+cd nifi/
+python -c "
+from nifi_client import NifiClient
+import os
+
+client = NifiClient(
+    base_url=os.getenv('NIFI_ENDPOINT'),
+    username=os.getenv('NIFI_USERNAME'),
+    password=os.getenv('NIFI_PASSWORD'),
+    ssl_verify=os.getenv('NIFI_SSL_VERIFY', 'false').lower() == 'true',
+)
+
+pg_id = client.check_flow_exists('RAG Pipeline')
+if pg_id:
+    client.delete_process_group(pg_id)
+    print('Deleted RAG Pipeline process group')
+else:
+    print('RAG Pipeline not found')
+"
+```
+
+See [nifi/README.md](../nifi/README.md) for detailed deployment and operations documentation.
 
 
 ---

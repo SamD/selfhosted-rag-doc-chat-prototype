@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS parquet_chunks (
     engine VARCHAR,
     hash VARCHAR,
     page INTEGER,
+    trace_id VARCHAR,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS staged_chunks (
     document_id VARCHAR,
     chunk TEXT,
     metadata JSON,
+    trace_id VARCHAR,
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

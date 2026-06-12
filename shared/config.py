@@ -18,8 +18,8 @@ from shared.defaults import (
     DEFAULT_API_BASE_URL,
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
-    DEFAULT_CHUNK_TIMEOUT,
     DEFAULT_COMPUTE_TYPE,
+    DEFAULT_CONSUMER_BATCH_SIZE,
     DEFAULT_DEVICE,
     DEFAULT_EMBEDDING_BATCH_SIZE,
     DEFAULT_FORCE_MARKDOWN_LLM,
@@ -46,18 +46,19 @@ from shared.defaults import (
     DEFAULT_MAX_SESSION_TURNS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MEDIA_BATCH_SIZE,
+    DEFAULT_MESSAGING_MODE,
     DEFAULT_METRICS_ENABLED,
     DEFAULT_METRICS_LOG_TO_STDOUT,
+    DEFAULT_NIFI_SSL_VERIFY,
     DEFAULT_OCR_ENDPOINTS,
     DEFAULT_PDF_FORCE_OCR,
-    DEFAULT_REDIS_HOST,
     DEFAULT_REDIS_INGEST_QUEUE,
     DEFAULT_REDIS_OCR_JOB_QUEUE,
-    DEFAULT_REDIS_PORT,
     DEFAULT_REDIS_STAGING_QUEUE,
     DEFAULT_REDIS_WHISPER_JOB_QUEUE,
     DEFAULT_RETRIEVER_TOP_K,
     DEFAULT_SESSION_TTL_HOURS,
+    DEFAULT_STAGED_CHUNK_TTL,
     DEFAULT_STUCK_JOB_TIMEOUT_HOURS,
     DEFAULT_SUPERVISOR_MAX_TOKENS,
     DEFAULT_SUPERVISOR_N_CTX,
@@ -65,6 +66,7 @@ from shared.defaults import (
     DEFAULT_SUPERVISOR_TEMPERATURE,
     DEFAULT_SUPERVISOR_TOP_K,
     DEFAULT_SUPPORTED_MEDIA_EXT,
+    DEFAULT_TOKENIZER_MODEL_PATH,
     DEFAULT_VECTOR_DB_BATCH_SIZE,
     DEFAULT_VECTOR_DB_COLLECTION,
     DEFAULT_VECTOR_DB_GRPC_PORT,
@@ -83,8 +85,8 @@ from shared.env_names import (
     ENV_CHROMA_PORT,
     ENV_CHUNK_OVERLAP,
     ENV_CHUNK_SIZE,
-    ENV_CHUNK_TIMEOUT,
     ENV_COMPUTE_TYPE,
+    ENV_CONSUMER_BATCH_SIZE,
     ENV_CONSUMING_DIR,
     ENV_DEBUG_IMAGE_DIR,
     ENV_DEFAULT_DOC_INGEST_ROOT,
@@ -124,9 +126,15 @@ from shared.env_names import (
     ENV_MAX_SESSION_TURNS,
     ENV_MAX_TOKENS,
     ENV_MEDIA_BATCH_SIZE,
+    ENV_MESSAGING_MODE,
     ENV_METRICS_ENABLED,
     ENV_METRICS_LOG_FILE,
     ENV_METRICS_LOG_TO_STDOUT,
+    ENV_NIFI_ENDPOINT,
+    ENV_NIFI_EXTENSIONS_DIR,
+    ENV_NIFI_PASSWORD,
+    ENV_NIFI_SSL_VERIFY,
+    ENV_NIFI_USERNAME,
     ENV_OCR_ENDPOINTS,
     ENV_PARQUET_FILE,
     ENV_PDF_FORCE_OCR,
@@ -138,8 +146,10 @@ from shared.env_names import (
     ENV_REDIS_PORT,
     ENV_REDIS_STAGING_QUEUE,
     ENV_REDIS_WHISPER_JOB_QUEUE,
+    ENV_REGISTRY_ENDPOINT,
     ENV_RETRIEVER_TOP_K,
     ENV_SESSION_TTL_HOURS,
+    ENV_STAGED_CHUNK_TTL,
     ENV_STAGING_DIR,
     ENV_STUCK_JOB_TIMEOUT_HOURS,
     ENV_SUCCESS_DIR,
@@ -150,6 +160,7 @@ from shared.env_names import (
     ENV_SUPERVISOR_TEMPERATURE,
     ENV_SUPERVISOR_TOP_K,
     ENV_SUPPORTED_MEDIA_EXT,
+    ENV_TOKENIZER_MODEL_PATH,
     ENV_VECTOR_DB_BATCH_SIZE,
     ENV_VECTOR_DB_COLLECTION,
     ENV_VECTOR_DB_GRPC_PORT,
@@ -195,6 +206,18 @@ def _require_abs_path(key: str, default: str = None) -> str:
     if val.startswith(("http://", "https://")):
         return val
     return os.path.abspath(val)
+
+
+def _require_env(key: str) -> str:
+    """Require an environment variable to be set, exit with error if not."""
+    val = os.getenv(key)
+    if not val:
+        log.error(
+            f"❌ CRITICAL ERROR: Environment variable '{key}' is NOT set. "
+            "This is required for the system to function."
+        )
+        sys.exit(1)
+    return val
 
 
 def _get_vector_db_port() -> int:
@@ -304,10 +327,10 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "DUCKDB_FILE": lambda: _abs_path(
         ENV_DUCKDB_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "chunks.duckdb")
     ),
-    # Hostname for the Redis message broker
-    "REDIS_HOST": lambda: os.environ.get(ENV_REDIS_HOST) or os.getenv(ENV_REDIS_HOST, DEFAULT_REDIS_HOST),
-    # Port for the Redis message broker
-    "REDIS_PORT": lambda: int(os.environ.get(ENV_REDIS_PORT) or os.getenv(ENV_REDIS_PORT, str(DEFAULT_REDIS_PORT))),
+    # [REQUIRED] Hostname for the Redis message broker (must be accessible from all workers and NiFi)
+    "REDIS_HOST": lambda: _require_env(ENV_REDIS_HOST),
+    # [REQUIRED] Port for the Redis message broker
+    "REDIS_PORT": lambda: int(_require_env(ENV_REDIS_PORT)),
     # Queue name used for offloading images to the OCR workers
     "REDIS_OCR_JOB_QUEUE": lambda: os.getenv(ENV_REDIS_OCR_JOB_QUEUE, DEFAULT_REDIS_OCR_JOB_QUEUE),
     # Queue name used for offloading media to the WhisperX workers
@@ -318,7 +341,7 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "REDIS_STAGING_QUEUE": lambda: os.getenv(ENV_REDIS_STAGING_QUEUE, DEFAULT_REDIS_STAGING_QUEUE),
     # List of Redis queues to monitor (supports partitioning)
     "QUEUE_NAMES": lambda: os.getenv(
-        ENV_QUEUE_NAMES, "chunk_ingest_queue:0,chunk_ingest_queue:1"
+        ENV_QUEUE_NAMES, "chunk_ingest_queue"
     ).split(","),
     # Active vector database ("qdrant" or "chroma")
     "VECTOR_DB_PROFILE": lambda: os.getenv(ENV_VECTOR_DB_PROFILE, DEFAULT_VECTOR_DB_PROFILE).lower(),
@@ -347,7 +370,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
         os.getenv(ENV_VECTOR_DB_BATCH_SIZE, os.getenv(ENV_MAX_CHROMA_BATCH_SIZE, str(DEFAULT_VECTOR_DB_BATCH_SIZE)))
     ),
     # Time (seconds) before an incomplete chunk buffer is discarded
-    "CHUNK_TIMEOUT": lambda: int(os.getenv(ENV_CHUNK_TIMEOUT, str(DEFAULT_CHUNK_TIMEOUT))),
+    "STAGED_CHUNK_TTL": lambda: int(os.getenv(ENV_STAGED_CHUNK_TTL, str(DEFAULT_STAGED_CHUNK_TTL))),
+    "CONSUMER_BATCH_SIZE": lambda: int(os.getenv(ENV_CONSUMER_BATCH_SIZE, str(DEFAULT_CONSUMER_BATCH_SIZE))),
     # Maximum chunks per file before discarding (safety limit)
     "MAX_CHUNKS": lambda: int(os.getenv(ENV_MAX_CHUNKS, str(DEFAULT_MAX_CHUNKS))),
     # [ALIAS] Compatibility with old Chroma-specific hostname
@@ -368,6 +392,8 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "ALLOW_LATIN_EXTENDED": lambda: os.getenv(ENV_ALLOW_LATIN_EXTENDED, DEFAULT_ALLOW_LATIN_EXTENDED).lower() == "true",
     # Minimum ratio of Latin characters required before triggering OCR fallback
     "LATIN_SCRIPT_MIN_RATIO": lambda: float(os.getenv(ENV_LATIN_SCRIPT_MIN_RATIO, str(DEFAULT_LATIN_SCRIPT_MIN_RATIO))),
+    # Local tokenizer model path (HuggingFace name or local directory)
+    "TOKENIZER_MODEL_PATH": lambda: os.getenv(ENV_TOKENIZER_MODEL_PATH, DEFAULT_TOKENIZER_MODEL_PATH),
     # [OPTIONAL] Remote Docling endpoint or 'LOCAL'
     "OCR_ENDPOINTS": lambda: os.getenv(ENV_OCR_ENDPOINTS, DEFAULT_OCR_ENDPOINTS),
     # Directory where OCR failure images are stored for debugging
@@ -427,6 +453,20 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "HF_HOME": lambda: os.getenv(ENV_HF_HOME, "/usr/local/model_cache"),
     # HuggingFace offline mode
     "HF_HUB_OFFLINE": lambda: os.getenv(ENV_HF_HUB_OFFLINE, DEFAULT_HF_HUB_OFFLINE),
+    # [REQUIRED] NiFi REST API endpoint for message queue middleware
+    "NIFI_ENDPOINT": lambda: _require_abs_path(ENV_NIFI_ENDPOINT),
+    # [REQUIRED] Path to NiFi Python extensions directory on the NiFi server
+    "NIFI_EXTENSIONS_DIR": lambda: _require_env(ENV_NIFI_EXTENSIONS_DIR),
+    # NiFi SSL certificate verification (false for self-signed certs)
+    "NIFI_SSL_VERIFY": lambda: os.getenv(ENV_NIFI_SSL_VERIFY, DEFAULT_NIFI_SSL_VERIFY).lower() == "true",
+    # NiFi username for basic auth
+    "NIFI_USERNAME": lambda: os.getenv(ENV_NIFI_USERNAME),
+    # NiFi password for basic auth
+    "NIFI_PASSWORD": lambda: os.getenv(ENV_NIFI_PASSWORD),
+    # NiFi Registry endpoint URL (optional, HTTP = no auth)
+    "REGISTRY_ENDPOINT": lambda: os.getenv(ENV_REGISTRY_ENDPOINT),
+    # Messaging mode: "direct" (workers use base queue names) or "nifi" (workers use _input/_output suffixes)
+    "MESSAGING_MODE": lambda: os.getenv(ENV_MESSAGING_MODE, DEFAULT_MESSAGING_MODE),
 }
 
 

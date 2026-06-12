@@ -156,10 +156,160 @@ docker logs haproxy_supervisor 2>&1 | grep "be_supervisor/" | tail -10
 
 Expected: alternating `srv0`, `srv1`, etc. across requests.
 
+---
+
+## 7. NiFi Middleware (Required)
+
+NiFi is deployed as transparent middleware between Redis queues. The `nifi_bootstrap` service automatically deploys the flow on startup.
+
+### Prerequisites
+
+- NiFi 2.x deployed and accessible (see [quickstart.md](../../docs/quickstart.md#nifi-docker-setup) for Docker setup)
+- Python processors deployed to NiFi's extensions directory
+- NiFi restarted after processor deployment
+
+### Environment Variables
+
+```bash
+export NIFI_ENDPOINT="https://<nifi-host>:8443/nifi-api"
+export NIFI_USERNAME="admin"
+export NIFI_PASSWORD="<your-password>"
+export NIFI_SSL_VERIFY="false"  # For self-signed certificates
+```
+
+### Deploy Python Processors
+
+Copy the Redis bridge processors to NiFi's Python extensions directory:
+
+```bash
+# From the project root
+scp nifi/python/extensions/RedisQueueConsumer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+scp nifi/python/extensions/RedisQueueProducer.py <nifi-host>:/opt/nifi/nifi-current/python/extensions/
+
+# Restart NiFi to load new processors
+ssh <nifi-host> "docker restart nifi"
+```
+
+Wait 30-60 seconds for NiFi to restart and load the processors.
+
+### Start the Stack
+
+```bash
+./doc-ingest-chat/run-compose.sh --build
+```
+
+The `nifi_bootstrap` service will automatically:
+1. Wait for NiFi to become available (with exponential backoff)
+2. Check if "RAG Pipeline" process group exists
+3. If not, create the process group with consumer/producer pairs for each queue
+4. Start all processors
+5. Verify flow health
+6. Exit (one-shot service, doesn't restart)
+
+### Verify Bootstrap Success
+
+Check the bootstrap service logs:
+
+```bash
+docker logs nifi_bootstrap
+```
+
+Expected output:
+```
+✅ NiFi endpoint configured successfully
+✅ NiFi is available. Root process group ID: <id>
+✅ Created process group 'RAG Pipeline' (ID: <id>)
+✅ Created consumer processor for ocr_processing_job_input
+✅ Created producer processor for ocr_processing_job_output
+✅ Created connection: ocr_processing_job_input → ocr_processing_job_output
+... (for each queue)
+✅ Flow started successfully: RAG Pipeline
+✅ All processors are running
+✅ Flow deployed, started, and healthy
+```
+
+### Verify Flow Health
+
+```bash
+cd nifi/
+python -c "
+from nifi_client import NifiClient
+import os
+
+client = NifiClient(
+    base_url=os.getenv('NIFI_ENDPOINT'),
+    username=os.getenv('NIFI_USERNAME'),
+    password=os.getenv('NIFI_PASSWORD'),
+    ssl_verify=os.getenv('NIFI_SSL_VERIFY', 'false').lower() == 'true',
+)
+
+pg_id = client.check_flow_exists('RAG Pipeline')
+if pg_id:
+    healthy = client.verify_flow_health(pg_id)
+    print('Flow health:', '✅ All processors running' if healthy else '❌ Some processors not running')
+else:
+    print('❌ RAG Pipeline not found')
+"
+```
+
+### Access NiFi UI
+
+Open `https://<nifi-host>:8443/nifi` in a browser. You should see:
+- The "RAG Pipeline" process group on the root canvas
+- Inside it: consumer/producer pairs for each queue
+- All processors showing "Running" status
+- Queue depths visible on connections
+
+### Manual Bootstrap (if needed)
+
+If the bootstrap service fails or you need to redeploy:
+
+```bash
+cd nifi/
+python nifi_bootstrap.py
+```
+
+### Delete the Flow (Rollback)
+
+To remove the NiFi middleware and revert to direct Redis:
+
+```bash
+cd nifi/
+python -c "
+from nifi_client import NifiClient
+import os
+
+client = NifiClient(
+    base_url=os.getenv('NIFI_ENDPOINT'),
+    username=os.getenv('NIFI_USERNAME'),
+    password=os.getenv('NIFI_PASSWORD'),
+    ssl_verify=os.getenv('NIFI_SSL_VERIFY', 'false').lower() == 'true',
+)
+
+pg_id = client.check_flow_exists('RAG Pipeline')
+if pg_id:
+    # Stop the process group first
+    client.start_process_group(pg_id)  # This toggles, so call again to stop
+    import time
+    time.sleep(2)
+    client.delete_process_group(pg_id)
+    print('✅ Deleted RAG Pipeline process group')
+else:
+    print('RAG Pipeline not found')
+"
+```
+
+Then revert worker queue names to remove `_input`/`_output` suffixes (or use the pre-NiFi code).
+
+---
+
 ## Checklist
 
 - [ ] All 4 required env vars set
+- [ ] NiFi deployed and accessible
+- [ ] Python processors deployed to NiFi
 - [ ] `docker ps` shows all expected containers as healthy
+- [ ] `nifi_bootstrap` service completed successfully
 - [ ] `curl /health` returns `"healthy"`
 - [ ] `curl /status` returns `"operational"`
 - [ ] Frontend loads at `http://localhost:4321`
@@ -167,3 +317,4 @@ Expected: alternating `srv0`, `srv1`, etc. across requests.
 - [ ] Chat API returns answer with citations
 - [ ] Session ID works across follow-up queries
 - [ ] (If HAProxy) Stats pages respond and traffic distributes
+- [ ] All processors showing "Running" in NiFi UI

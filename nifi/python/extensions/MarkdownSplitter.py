@@ -1,8 +1,8 @@
+import re
+
 from nifiapi.flowfiletransform import FlowFileTransform, FlowFileTransformResult
 from nifiapi.properties import PropertyDescriptor, StandardValidators
-import re
-import logging
-import json
+
 
 class MarkdownSplitter(FlowFileTransform):
     class ProcessorDetails:
@@ -43,9 +43,9 @@ class MarkdownSplitter(FlowFileTransform):
         return [self.EMBEDDING_MODEL, self.MAX_TOKENS, self.SAFE_BUDGET]
 
     def transform(self, context, flowfile):
-        from transformers import AutoTokenizer
-        from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
         import yaml
+        from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+        from transformers import AutoTokenizer
 
         # 1. Initialization (Lazy load tokenizer)
         model_path = context.getProperty(self.EMBEDDING_MODEL).getValue()
@@ -59,14 +59,13 @@ class MarkdownSplitter(FlowFileTransform):
         content = flowfile.read().decode('utf-8')
         trace_id = flowfile.getAttribute('trace_id') or flowfile.getAttribute('uuid')
         doc_id = flowfile.getAttribute('document_id') or "DOC_UNKNOWN"
-        rel_path = flowfile.getAttribute('filename')
         
         # 3. Separate YAML header
         header_match = re.search(r"^---\s*\n(.*?)\n---\s*\n", content, re.DOTALL)
         if header_match:
             try:
                 file_metadata = yaml.safe_load(header_match.group(1))
-            except:
+            except Exception:
                 file_metadata = {}
             content_body = content[header_match.end() :]
         else:

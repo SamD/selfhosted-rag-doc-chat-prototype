@@ -113,7 +113,7 @@ def _push_chunks_to_redis(state: IngestState, chunks_with_engine: List[tuple]) -
         }
         entries.append(json.dumps(TextProcessor.normalize_metadata(entry)))
     redis_client = get_redis_client()
-    blocking_push_with_backpressure(rclient=redis_client, queue_name=queue_name, entries=entries, max_queue_length=50000, rel_path=rel_path)
+    blocking_push_with_backpressure(rclient=redis_client, queue_name=f"{queue_name}_input", entries=entries, max_queue_length=50000, rel_path=rel_path)
     return len(entries)
 
 
@@ -188,9 +188,11 @@ def send_sentinel_node(state: IngestState) -> IngestState:
         redis_client = get_redis_client()
         send_file_end_sentinel(
             rclient=redis_client,
-            queue_name=state["queue_name"],
+            queue_name=f"{state['queue_name']}_input",
             source_file=state["rel_path"],
             total_chunks=len(state["chunks"]),
+            job_id=state.get("job_id"),
+            trace_id=state.get("trace_id"),
         )
         return {**state, "status": "processing"}
     except Exception as e:

@@ -28,6 +28,12 @@ def worker_task(job):
     """
     from workers.ocr_graph import run_ocr_graph
 
+    required_keys = {"rel_path", "page_num", "image_base64", "image_shape", "image_dtype"}
+    missing = required_keys - set(job.keys())
+    if missing:
+        log.error(f"💥 Malformed OCR job missing keys: {missing}. Job keys: {list(job.keys())}")
+        return
+
     trace_id = job.get("trace_id")
     if trace_id:
         set_trace_id(trace_id)
@@ -58,12 +64,12 @@ def signal_handler(sig, frame):
 def dispatcher(p, shared_state):
     """Main loop that pops jobs and dispatches to pool."""
     redis_client = get_redis_client()
-    log.info(f"🛰️ OCR Dispatcher listening on {REDIS_OCR_JOB_QUEUE}...")
+    log.info(f"🛰️ OCR Dispatcher listening on {REDIS_OCR_JOB_QUEUE}_output...")
 
     while not SHUTDOWN.is_set():
         try:
             # Use timeout to check SHUTDOWN event frequently
-            res = redis_client.brpop(REDIS_OCR_JOB_QUEUE, timeout=5)
+            res = redis_client.brpop(f"{REDIS_OCR_JOB_QUEUE}_output", timeout=5)
             if res:
                 _, job_raw = res
                 job = json.loads(job_raw)

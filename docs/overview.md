@@ -38,6 +38,8 @@ sequenceDiagram
     participant PRD as Producer Worker
     participant CSN as Consumer Worker
     
+    participant NIFI as Apache NiFi (Middleware)
+    
     participant HAP_S as HAProxy Supervisor
     participant NORM_LLM as Supervisor LLM Backends
     participant HAP_E as HAProxy Embedding
@@ -50,11 +52,15 @@ sequenceDiagram
     alt PDF (Digital)
         GK->>GK: pdfplumber extracts text from each page
     else PDF (Scanned/Gibberish)
-        GK->>OCR: Request OCR via Redis
-        OCR-->>GK: Return raw text
+        GK->>NIFI: OCR job via Redis ocr_job_input
+        NIFI->>OCR: Forward to ocr_job_output
+        OCR-->>NIFI: OCR result
+        NIFI-->>GK: Return raw text
     else Media (MP4/MP3)
-        GK->>WSP: Request Transcription via Redis (MIME-typed)
-        WSP-->>GK: Stream segments
+        GK->>NIFI: Whisper job via Redis whisper_job_input
+        NIFI->>WSP: Forward to whisper_job_output
+        WSP-->>NIFI: Transcription segments
+        NIFI-->>GK: Stream segments
     end
     GK->>HAP_S: Normalize raw text to Markdown (batched)
     HAP_S->>NORM_LLM: roundrobin to backends
@@ -67,13 +73,18 @@ sequenceDiagram
     PRD->>DB: ATOMIC CLAIM (PREPROCESSING_COMPLETE → INGESTING)
     PRE->>ING: Physical MOVE (.md + original)
     PRD->>PRD: Hierarchical splitting (512-token budget)
-    PRD->>Redis: Enqueue chunks + file_end sentinel
+    PRD->>NIFI: Enqueue chunks + file_end sentinel via Redis
+    NIFI->>Redis: Forward to chunk ingest queues
     PRD->>DB: TRANSITION (CONSUMING)
 
     Note over STG, SUC: Phase 3 — Persistence (Consumer)
-    CSN->>Redis: Pull chunks
+    CSN->>NIFI: Pull chunks via Redis
+    NIFI->>Redis: Read from chunk ingest queues
+    Redis-->>NIFI: Return chunks
+    NIFI-->>CSN: Forward chunks
     CSN->>DB: Stage chunks (DuckDB as WAL)
-    CSN->>Redis: Receive file_end sentinel
+    CSN->>NIFI: Receive file_end sentinel via Redis
+    NIFI->>Redis: Read sentinel from queue
     CSN->>DB: Retrieve all staged chunks for file
     CSN->>HAP_E: Embed chunks
     HAP_E->>EMB: roundrobin to backends
@@ -109,8 +120,9 @@ graph TD
     N2 --> B
     B -->|PREPROCESSING_COMPLETE| D[ingestion/]
     D --> E(Producer Worker)
-    E -->|Split + Enqueue| F{Redis Queues}
-    F --> G(Consumer Worker)
+    E -->|Split + Enqueue| NIFI[Apache NiFi]
+    NIFI -->|_input → _output| F{Redis Queues}
+    NIFI --> G(Consumer Worker)
     G -->|Stage| H[(DuckDB)]
     G -->|Embed| HP_E[HAProxy Embedding]
     HP_E --> E1[Embed Backend 0]
@@ -161,15 +173,15 @@ These are the state transitions tracked in the `ingestion_lifecycle` table. Comp
 
 ### Ingestion Workers
 
-These workers communicate via Redis queues and operate on files through the pipeline stages:
+These workers communicate via Redis queues (routed through Apache NiFi) and operate on files through the pipeline stages:
 
 | Worker | Entry Point | Queue(s) | Role |
 |--------|------------|----------|------|
-| **Gatekeeper** | `run_gatekeeper.py` | Claims from DuckDB | Extracts raw text via handler chain, normalizes to Markdown via Supervisor LLM, writes `.md` file |
-| **OCR** | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via Docling/EasyOCR |
-| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`) |
-| **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
-| **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
+| **Gatekeeper** | `run_gatekeeper.py` | Claims from DuckDB | Extracts raw text via handler chain, normalizes to Markdown via Supervisor LLM, writes `.md` file. Dispatches OCR and Whisper jobs via Redis → NiFi. |
+| **OCR** | `run_ocr_worker.py` | `ocr_job_input` / `ocr_job_output` (via NiFi) | Processes image-based PDF pages via Docling/EasyOCR |
+| **WhisperX** | `run_whisperx_worker.py` | `whisper_job_input` / `whisper_job_output` (via NiFi) | Transcribes audio/video files (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`) |
+| **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis via NiFi (`QUEUE_NAMES`), sends `file_end` sentinel |
+| **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (via NiFi, partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
 
 ### API Server
 
@@ -218,17 +230,17 @@ Key properties:
 
 ---
 
-## Redis Queue Architecture
+## Redis Queue Architecture (via NiFi Middleware)
 
-Queues enforce the 1:1 producer-to-consumer mapping for file-level affinity:
+Apache NiFi sits as transparent middleware between all workers and Redis queues. Every queue has an `_input` and `_output` suffix pair — workers write to `*_input`, NiFi's bridge processors consume from `*_input` and produce to `*_output`, and downstream workers read from `*_output`.
 
-| Queue | Purpose |
-|-------|---------|
-| `REDIS_OCR_JOB_QUEUE` | Image-based pages sent from Gatekeeper to OCR Worker |
-| `REDIS_WHISPER_JOB_QUEUE` | Audio/video files sent from Gatekeeper/Producers to WhisperX Worker |
-| `QUEUE_NAMES` (e.g., `chunk_ingest_queue:0`, `:1`) | Partitioned queues — one per consumer process; Producer assigns a queue per file, so all chunks + the sentinel for a file arrive at the same consumer |
+| Queue Pair | Purpose |
+|------------|---------|
+| `ocr_job_input` / `ocr_job_output` | Image-based pages: Gatekeeper → NiFi → OCR Worker → NiFi → Gatekeeper |
+| `whisper_job_input` / `whisper_job_output` | Audio/video files: Gatekeeper/Producers → NiFi → WhisperX Worker → NiFi → requestor |
+| `QUEUE_NAMES` (partitioned, e.g., `chunk_ingest_input:0` / `chunk_ingest_output:0`) | Chunk pipeline: Producer → NiFi → Consumer. One partition per consumer process, ensuring all chunks + sentinel for a file arrive at the same consumer. |
 
-This 1:1 mapping ensures a single consumer owns all chunks for a file, providing file-level atomicity without distributed coordination.
+NiFi provides data governance, provenance tracking, flow orchestration, and operational control without requiring any code changes to the workers. See `nifi/README.md` for full details on flow setup, processor configuration, and monitoring.
 
 ---
 

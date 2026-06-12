@@ -49,6 +49,7 @@ class PDFContentTypeHandler(BaseContentTypeHandler):
                             if np_image is not None:
                                 ocr_text, _, _, engine, _, _ = send_image_to_ocr(np_image, file_path, page_num, trace_id=get_trace_id())
                                 if ocr_text:
+                                    log.info(f"🔍 Page {page_num}: OCR returned {len(ocr_text)} chars via {engine}, first 200: {repr(ocr_text[:200])}")
                                     if len(ocr_text) > 50000:
                                         log.warning(f"⚠️ Page {page_num}: OCR returned unusually large output ({len(ocr_text)} chars)")
                                     if is_bad_ocr(ocr_text):

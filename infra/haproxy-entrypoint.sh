@@ -110,8 +110,8 @@ defaults
     option log-health-checks
     option redispatch
     timeout connect 5s
-    timeout client  300s
-    timeout server  300s
+    timeout client  600s
+    timeout server  600s
     retries 3
     retry-on all-retryable-errors
 
@@ -148,8 +148,8 @@ defaults
     option log-health-checks
     option redispatch
     timeout connect 5s
-    timeout client  300s
-    timeout server  300s
+    timeout client  600s
+    timeout server  600s
     retries 3
     retry-on all-retryable-errors
 
@@ -410,6 +410,7 @@ EOF
 global
     log stdout format raw daemon info
     maxconn 4096
+    tune.bufsize 1048576
 
 defaults
     mode http

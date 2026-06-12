@@ -10,7 +10,7 @@ import os
 from typing import List, Optional, TypedDict
 
 import numpy as np
-from config.settings import DEBUG_IMAGE_DIR
+from config.settings import DEBUG_IMAGE_DIR, REDIS_OCR_JOB_QUEUE
 from langgraph.graph import END, StateGraph
 from services.redis_service import get_redis_client
 from utils.ocr_utils import run_ocr, save_bad_image
@@ -32,7 +32,6 @@ class OCRState(TypedDict):
     image_base64: str
     image_shape: List[int]
     image_dtype: str
-    reply_key: str
     np_image: Optional[np.ndarray]
     text: Optional[str]
     engine: str
@@ -83,12 +82,12 @@ def ocr_node(state: OCRState) -> OCRState:
 
 def respond_node(state: OCRState) -> OCRState:
     """Sends the result back to Redis via LPUSH, regardless of success/failure."""
-    response = {"text": state.get("text", ""), "rel_path": state["rel_path"], "page_num": state["page_num"], "engine": state.get("engine", "unknown"), "job_id": state["job_id"], "error": state.get("error"), "status": state["status"]}
+    response = {"text": state.get("text", ""), "rel_path": state["rel_path"], "page_num": state["page_num"], "engine": state.get("engine", "unknown"), "job_id": state["job_id"], "trace_id": state.get("trace_id"), "error": state.get("error"), "status": state["status"]}
     try:
         redis_client = get_redis_client()
-        redis_client.lpush(state["reply_key"], json.dumps(response))
-        redis_client.expire(state["reply_key"], 300)
-        log.info(f"📤 [OCR Node: Respond] Sent to {state['reply_key']} status={state['status']} engine={state.get('engine', 'unknown')}")
+        reply_queue = f"{REDIS_OCR_JOB_QUEUE.replace('_processing_job', '_reply')}_input"
+        redis_client.lpush(reply_queue, json.dumps(response))
+        log.info(f"📤 [OCR Node: Respond] Sent to {reply_queue} status={state['status']} engine={state.get('engine', 'unknown')}")
     except Exception as e:
         log.error(f"💥 [OCR Node: Respond] Failed to send Redis response: {e}")
     return state
@@ -127,7 +126,6 @@ def run_ocr_graph(job: dict) -> bool:
         "image_base64": job["image_base64"],
         "image_shape": job["image_shape"],
         "image_dtype": job["image_dtype"],
-        "reply_key": job["reply_key"],
         "np_image": None,
         "text": None,
         "engine": "unknown",

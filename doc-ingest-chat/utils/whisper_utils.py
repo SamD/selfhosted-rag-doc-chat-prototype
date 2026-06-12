@@ -39,7 +39,6 @@ def send_media_to_whisperx(file_path: str, language: str = "en", mime_type: str 
         set_trace_id(trace_id)
 
     job_id = str(uuid.uuid4())
-    reply_key = f"whisper_reply:{job_id}"
 
     # We send the absolute path so the worker (sharing volumes) can find it
     abs_file_path = os.path.abspath(file_path)
@@ -47,7 +46,6 @@ def send_media_to_whisperx(file_path: str, language: str = "en", mime_type: str 
     job = {
         "job_id": job_id,
         "file_path": abs_file_path,
-        "reply_key": reply_key,
         "language": language,
         "mime_type": mime_type,
         "trace_id": trace_id,
@@ -57,22 +55,29 @@ def send_media_to_whisperx(file_path: str, language: str = "en", mime_type: str 
 
     try:
         redis_client = get_redis_client()
-        redis_client.lpush(REDIS_WHISPER_JOB_QUEUE, json.dumps(job))
+        redis_client.lpush(f"{REDIS_WHISPER_JOB_QUEUE}_input", json.dumps(job))
     except Exception as e:
         log.error(f"❌ Failed to submit WhisperX job to Redis: {e}")
         raise RuntimeError(f"Redis submission failed: {e}")
 
-    # WhisperX jobs can take a long time.
+    # Read from shared reply queue, match by job_id
+    reply_queue = f"{REDIS_WHISPER_JOB_QUEUE.replace('_processing_job', '_reply')}_output"
     wait_timeout = 1800  # 30 minutes for long videos
     start_wait = time.time()
 
     segments_received = 0
 
     while (time.time() - start_wait) < wait_timeout:
-        res = redis_client.blpop(reply_key, timeout=30)
+        res = redis_client.blpop(reply_queue, timeout=30)
         if res:
             _, data_raw = res
             data = json.loads(data_raw)
+
+            # Check if this reply belongs to our job
+            if data.get("job_id") != job_id:
+                # Not our reply, put it back for another caller
+                redis_client.lpush(reply_queue, data_raw)
+                continue
 
             if data.get("type") == "segment":
                 segments_received += 1

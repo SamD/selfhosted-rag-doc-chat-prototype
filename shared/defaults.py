@@ -44,7 +44,7 @@ DEFAULT_REDIS_OCR_JOB_QUEUE = "ocr_processing_job"
 DEFAULT_REDIS_WHISPER_JOB_QUEUE = "whisper_processing_job"
 DEFAULT_REDIS_INGEST_QUEUE = "chunk_ingest_queue"
 DEFAULT_REDIS_STAGING_QUEUE = "chunk_staging_queue"
-DEFAULT_QUEUE_NAMES = "chunk_ingest_queue:0,chunk_ingest_queue:1"
+DEFAULT_QUEUE_NAMES = "chunk_ingest_queue"
 
 # Vector DB
 DEFAULT_VECTOR_DB_PROFILE = "qdrant"
@@ -56,7 +56,8 @@ DEFAULT_VECTOR_DB_BATCH_SIZE = 20
 DEFAULT_VECTOR_DB_TIMEOUT = 60.0
 
 # Chunking / ingestion
-DEFAULT_CHUNK_TIMEOUT = 300
+DEFAULT_STAGED_CHUNK_TTL = 1800
+DEFAULT_CONSUMER_BATCH_SIZE = 50
 DEFAULT_MAX_CHUNKS = 5000
 DEFAULT_MAX_TOKENS = 256
 DEFAULT_CHUNK_SIZE = 512
@@ -65,6 +66,7 @@ DEFAULT_CHUNK_OVERLAP = 50
 # Text / encoding
 DEFAULT_ALLOW_LATIN_EXTENDED = "true"
 DEFAULT_LATIN_SCRIPT_MIN_RATIO = 0.7
+DEFAULT_TOKENIZER_MODEL_PATH = "mixedbread-ai/mxbai-embed-large-v1"
 
 # OCR
 DEFAULT_OCR_ENDPOINTS = "LOCAL"
@@ -108,6 +110,11 @@ DEFAULT_API_BASE_URL = "http://localhost:8000"
 
 # Load balancing
 DEFAULT_HA_INTERLEAVE = "false"
+
+# NiFi
+DEFAULT_NIFI_SSL_VERIFY = "false"
+DEFAULT_NIFI_EXTENSIONS_DIR = "/opt/nifi/python_extensions"
+DEFAULT_MESSAGING_MODE = "direct"
 
 # Hard-coded lists (not from env)
 SUPPORTED_DOC_EXT = (".pdf", ".html", ".htm", ".txt", ".md")

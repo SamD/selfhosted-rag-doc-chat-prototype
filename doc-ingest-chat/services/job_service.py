@@ -183,7 +183,12 @@ class JobService:
             try:
                 r = get_redis_client()
                 r.ping()
-                RedisService.purge_queue_entries(source_file, QUEUE_NAMES)
+                # Purge from both _input and _output queues
+                all_queue_names = []
+                for qname in QUEUE_NAMES:
+                    all_queue_names.append(f"{qname}_input")
+                    all_queue_names.append(f"{qname}_output")
+                RedisService.purge_queue_entries(source_file, all_queue_names)
             except Exception as re:
                 log.warning(f"Redis unavailable for cleanup of {source_file}: {re}")
 

@@ -106,12 +106,16 @@ def handle_error(state: dict, error_msg: str, logger: logging.Logger) -> dict:
     return {**state, "status": "failed", "error": error_msg}
 
 
-def send_file_end_sentinel(rclient, queue_name: str, source_file: str, total_chunks: int):
+def send_file_end_sentinel(rclient, queue_name: str, source_file: str, total_chunks: int, job_id: str = None, trace_id: str = None):
     """Sends the sentinel message to indicate the end of document processing."""
     sentinel = {
         "source_file": source_file,
         "type": "file_end",
         "expected_chunks": total_chunks,
     }
+    if job_id:
+        sentinel["job_id"] = job_id
+    if trace_id:
+        sentinel["trace_id"] = trace_id
     rclient.rpush(queue_name, json.dumps(sentinel))
-    log.info(f"🏁 Sent file_end sentinel for {source_file} ({total_chunks} chunks)")
+    log.info(f"🏁 Sent file_end sentinel for {source_file} ({total_chunks} chunks) job_id={job_id}")

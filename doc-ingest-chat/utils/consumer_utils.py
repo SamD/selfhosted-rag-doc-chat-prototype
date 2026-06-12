@@ -61,6 +61,7 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
                 "chunk_index": entry.get("chunk_index", i),
                 "id": entry.get("id", f"missing_id_{i}"),
                 "page": int(entry.get("page", -1)) if str(entry.get("page", "")).isdigit() else -1,
+                "trace_id": entry.get("trace_id", ""),
             }
             for i, entry in enumerate(chunks_to_store)
         ]
@@ -68,6 +69,7 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
 
         # Split and ingest in safe batches
         batches_count = 0
+        batches_total = max(1, (len(all_texts) + MAX_CHROMA_BATCH_SIZE - 1) // MAX_CHROMA_BATCH_SIZE)
 
         # RETRY CONFIG
         MAX_RETRIES = 5
@@ -77,7 +79,9 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
             last_err = None
             for attempt in range(MAX_RETRIES):
                 try:
+                    log.info(f"📤 Storing batch {batch_idx + 1}/{batches_total} ({len(texts)} chunks)...")
                     db.add_texts(texts, metadatas=metas, ids=ids)
+                    log.info(f"✅ Batch {batch_idx + 1}/{batches_total} stored")
                     return True
                 except Exception as e:
                     last_err = e
@@ -102,6 +106,10 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
             log.error(f"💥 Batch {batch_idx} failed after {MAX_RETRIES} attempts.")
             raise last_err
 
+        # SAFETY: prevent infinite loops
+        MAX_TOTAL_ATTEMPTS = batches_total * (MAX_RETRIES + 1)
+        total_attempts = 0
+
         # If metrics provided, wrap in timer
         timer_ctx = metrics.timer("chromadb_embedding") if metrics else open(os.devnull, "w")
 
@@ -113,6 +121,9 @@ def store_chunks_in_db(source_file: str, chunks: List[Dict[str, Any]], metrics: 
                     chunked(all_ids, MAX_CHROMA_BATCH_SIZE),
                 )
             ):
+                total_attempts += 1
+                if total_attempts > MAX_TOTAL_ATTEMPTS:
+                    raise RuntimeError(f"Consumer loop safety limit exceeded for {source_file}")
                 add_batch_with_retry(texts_batch, metas_batch, ids_batch, i)
                 batches_count += 1
 

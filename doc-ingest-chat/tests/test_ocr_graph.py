@@ -10,7 +10,7 @@ from workers.ocr_graph import run_ocr_graph
 def mock_ocr_job():
     img = np.zeros((10, 10), dtype=np.uint8)
     img_base64 = base64.b64encode(img.tobytes()).decode()
-    return {"job_id": "ocr-job-1", "rel_path": "test.pdf", "page_num": 1, "image_base64": img_base64, "image_shape": [10, 10], "image_dtype": "uint8", "reply_key": "ocr_reply:test"}
+    return {"job_id": "ocr-job-1", "rel_path": "test.pdf", "page_num": 1, "image_base64": img_base64, "image_shape": [10, 10], "image_dtype": "uint8"}
 
 
 def test_decode_image_node(mock_ocr_job):
