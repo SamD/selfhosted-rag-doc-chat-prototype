@@ -91,6 +91,10 @@ The remaining services have defaults and only need configuration when using remo
 | `WHISPER_MODEL_ENDPOINTS` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_ENDPOINTS` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
+| `USE_TEMPORAL_WHISPER` | **Temporal** — enables durable WhisperX transcription via Temporal Activities (crash-recovery, retries). Requires a remote Temporal server. | `false` | `true` |
+| `TEMPORAL_HOST` | **Temporal** — Remote Temporal server host. | `localhost` | `temporal.example.com` |
+| `TEMPORAL_PORT` | **Temporal** — Remote Temporal server gRPC port. | `7233` | `7233` |
+| `TEMPORAL_WHISPER_TASK_QUEUE` | **Temporal** — task queue name for WhisperX Activities. | `whisperx` | `whisperx` |
 
 
 ---
@@ -105,7 +109,7 @@ The ingestion workers run on the coordinator host. They handle document lifecycl
 | **Producer** | `run_producer.py` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues |
 | **Consumer** | `run_consumer.py` | Buffers chunks in DuckDB, embeds via the embedding service, batch-upserts to Qdrant, archives to Parquet |
 | **OCR Worker** | `run_ocr_worker.py` | Processes image-based PDF pages via docling-serve |
-| **WhisperX Worker** | `run_whisperx_worker.py` | Transcribes audio/video files |
+| **WhisperX Worker** | `run_whisperx_worker.py` | Transcribes audio/video files. Also available as a Temporal Activity when `USE_TEMPORAL_WHISPER=true`. |
 
 ---
 
@@ -208,6 +212,12 @@ Performance on this setup: **10–15 PDFs/min** (mixed quality), **~400ms query 
 
 ```bash
 ./doc-ingest-chat/run-compose.sh --build
+```
+
+For durable WhisperX transcription with crash recovery, deploy a remote Temporal server and run:
+
+```bash
+USE_TEMPORAL_WHISPER=true TEMPORAL_HOST=<temporal-host> ./doc-ingest-chat/run-compose.sh --build
 ```
 
 The compose stack starts: Redis, Gatekeeper, Producer, Consumer (2x), and the FastAPI backend. OCR and WhisperX workers start when the `cuda` profile is active and connect to their configured backends (remote HTTP endpoint or local processing, depending on `OCR_ENDPOINTS` and `WHISPER_MODEL_ENDPOINTS`).

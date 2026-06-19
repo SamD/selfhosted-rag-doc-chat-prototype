@@ -53,7 +53,7 @@ sequenceDiagram
         GK->>OCR: Request OCR via Redis
         OCR-->>GK: Return raw text
     else Media (MP4/MP3)
-        GK->>WSP: Request Transcription via Redis (MIME-typed)
+        GK->>WSP: Request Transcription via Redis or Temporal
         WSP-->>GK: Stream segments
     end
     GK->>HAP_S: Normalize raw text to Markdown (batched)
@@ -101,7 +101,7 @@ graph TD
     B -->|OCR Needed| C(OCR Worker)
     C --> B
     B -->|Transcription Needed| W(WhisperX Worker)
-    W --> B
+    W -->|Redis or Temporal| B
     B -->|Supervisor LLM| HP_S[HAProxy Supervisor]
     HP_S --> N1[LLM Backend 0]
     HP_S --> N2[LLM Backend 1]
@@ -167,7 +167,7 @@ These workers communicate via Redis queues and operate on files through the pipe
 |--------|------------|----------|------|
 | **Gatekeeper** | `run_gatekeeper.py` | Claims from DuckDB | Extracts raw text via handler chain, normalizes to Markdown via Supervisor LLM, writes `.md` file |
 | **OCR** | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via Docling/EasyOCR |
-| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`) |
+| **WhisperX** | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (`.mp3`, `.wav`, `.m4a`, `.aac`, `.flac`, `.mp4`, `.mov`, `.mkv`). Also available as a Temporal Activity when `USE_TEMPORAL_WHISPER=true`. |
 | **Producer** | `run_producer.py` | Reads from `ingestion/` | Claims normalized Markdown, splits into chunks with `[DOC_XXXX]` IDs, enqueues to Redis consumer queues, sends `file_end` sentinel |
 | **Consumer** | `run_consumer.py` | `QUEUE_NAMES` (partitioned) | Buffers chunks in DuckDB, on sentinel: retrieves, embeds, upserts to Qdrant, archives to Parquet |
 
@@ -254,6 +254,7 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
 | `doc-ingest-chat/processors/` | Text chunking, validation, zero-loss sub-splitting |
 | `doc-ingest-chat/prompts/` | LLM prompt templates |
 | `doc-ingest-chat/models/` | Pydantic/dataclass data structures |
+| `doc-ingest-chat/temporal_worker/` | Temporal Activity/Workflow definitions for durable WhisperX transcription |
 | `doc-ingest-chat/utils/` | LLM setup, OCR, Whisper, tracing, logging |
 | `doc-ingest-chat/sql/` | DuckDB schema definitions |
 | `astro-frontend/` | Astro + Tailwind v4 + daisyUI chat UI (dark theme default, 11-theme picker) |
@@ -266,6 +267,7 @@ This 1:1 mapping ensures a single consumer owns all chunks for a file, providing
   - `--profile cuda` (default) — NVIDIA GPU acceleration
   - `--profile cpu` — CPU-only mode
   - `--profile qdrant` or `--profile chroma` — vector database selection
+- **Temporal**: Remote-only deployment. Set `USE_TEMPORAL_WHISPER=true` + `TEMPORAL_HOST` to connect to a remote Temporal server for durable WhisperX transcription.
 - **`./run-chat-system.sh`**: Local dev startup (FastAPI backend + Astro frontend)
 - **Environment strategy**: `config/env_strategy.py` handles CUDA visibility and memory allocation for GPU
 - **Network diagram**: See [docs/infra/sample-lab-deployment.puml](infra/sample-lab-deployment.puml) for the reference lab topology. This is a PlantUML diagram — use a PlantUML viewer (VS Code extension, [plantuml.com](https://www.plantuml.com), or `plantuml` CLI) to render it. Consider requesting a pre-rendered image if plaintext viewing is needed.

@@ -56,7 +56,7 @@ PDFContentTypeHandler SHALL handle files with MIME type application/pdf. It SHAL
 
 ### Requirement: Media file transcription
 
-The system SHALL support audio and video file transcription via WhisperX. MP4ContentTypeHandler SHALL handle video files (.mp4, .mov, .mkv) with MIME type video/mp4. MP3ContentTypeHandler SHALL handle audio files (.mp3, .wav, .m4a, .aac, .flac) with MIME type guessed from extension. Both handlers SHALL delegate transcription to the whisperx worker via send_media_to_whisperx().
+The system SHALL support audio and video file transcription via WhisperX. MP4ContentTypeHandler SHALL handle video files (.mp4, .mov, .mkv) with MIME type video/mp4. MP3ContentTypeHandler SHALL handle audio files (.mp3, .wav, .m4a, .aac, .flac) with MIME type guessed from extension. Both handlers SHALL delegate transcription to the whisperx worker via `send_media_to_whisperx()`. When `USE_TEMPORAL_WHISPER=true`, the delegation SHALL route through a Temporal workflow instead of the Redis queue.
 
 #### Scenario: MP4 file transcription
 - **WHEN** an .mp4 file is processed

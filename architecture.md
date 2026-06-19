@@ -18,6 +18,7 @@ The diagram uses 6 nodes representing the main system actors:
 | **Vector Database** | `vector` · violet | Qdrant v1.12.5 · COSINE | `http://localhost:6333` | `http://remote-qdrant:6333` |
 | **Main LLM** | `compute` · magenta | llama-cpp-python · Phi-3.5-mini Q6_K | `http://localhost:11435` | `http://haproxy_supervisor:11437/v1` |
 | **Worker Pipeline** | `seed` · orange | 6 workers · Redis queues · DuckDB state | (internal) | (internal) |
+| **Temporal Worker** | `temporal` · teal | Connects to remote Temporal server (optional) | (internal) | (internal) |
 
 **Mode toggle:**
 
@@ -91,18 +92,23 @@ Baseline comparison. Same model, same temperature, NO context retrieval. Demonst
 
 ### 4. Media Ingest (Audio/Video) — 6 steps
 
-WhisperX transcription for `.mp3`, `.wav`, `.mp4` files. Uses request-reply pattern via Redis ephemeral keys.
+WhisperX transcription for `.mp3`, `.wav`, `.mp4` files. Supports two dispatch modes:
+
+- **Redis path** (default): Request-reply via Redis ephemeral keys (`whisper_processing_job` / `whisper_reply:{uuid}`)
+- **Temporal path** (`USE_TEMPORAL_WHISPER=true`): Durable workflow execution via Temporal Activities with automatic retries and crash recovery
 
 | # | From | To | What happens |
 |---|---|---|---|
 | 1 | User | FastAPI | `POST /api/v1/stage` with media file + language hint |
-| 2 | FastAPI | Workers | Gatekeeper pushes job to `whisper_processing_job` queue with `reply_key` |
-| 3 | Workers | LLM | WhisperX calls `/inference` with `Content-Type: video/mp4` |
+| 2 | FastAPI | Workers | Gatekeeper dispatches to Redis queue **or** Temporal workflow (based on `USE_TEMPORAL_WHISPER` flag) |
+| 3 | Workers | LLM | WhisperX calls `/inference` with correct MIME type |
 | 4 | LLM | Workers | Returns streaming segments with word-level timestamps |
-| 5 | Workers | FastAPI | Gatekeeper blocks on `BLPOP whisper_reply:{uuid}` until `done` message |
+| 5 | Workers | FastAPI | Result returned via Redis BLPOP **or** Temporal Activity completion |
 | 6 | FastAPI | Vector DB | Transcription treated as document, flows through Producer → Consumer → Vector DB |
 
-**MIME type handling:** Content handlers declare `MIME_TYPE` class var, pass it through Redis job metadata, so WhisperX sends correct `Content-Type` header to the Whisper server.
+**MIME type handling:** Content handlers declare `MIME_TYPE` class var, pass it through job metadata, so WhisperX sends correct `Content-Type` header to the Whisper server.
+
+**Temporal mode:** When enabled, transcription runs as a durable Temporal Activity (`transcribe_media`). The Temporal server tracks workflow state, provides automatic retries (3 attempts with exponential backoff), and offers observability via the Web UI at `http://localhost:8233`.
 
 ---
 
@@ -176,6 +182,7 @@ The diagram shows how the same pipeline adapts to different deployment shapes:
 - **Embeddings:** e5-large-v2 (1024-dim, HuggingFace or remote API)
 - **OCR:** Docling (EasyOCR) local or docling-serve remote
 - **Transcription:** WhisperX (CTranslate2 format)
+- **Workflow Orchestration:** Temporal (optional, for durable WhisperX transcription)
 - **Load Balancer:** HAProxy (multi-backend support)
 - **Containerization:** Docker Compose with CUDA/CPU profiles
 

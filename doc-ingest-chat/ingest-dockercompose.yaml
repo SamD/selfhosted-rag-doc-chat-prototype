@@ -54,6 +54,10 @@ x-gpu-params: &gpu-params
     - HAPROXY_EMBEDDING_ENDPOINTS=${HAPROXY_EMBEDDING_ENDPOINTS:-}
     - HAPROXY_WHISPER_ENDPOINTS=${HAPROXY_WHISPER_ENDPOINTS:-}
     - HAPROXY_OCR_ENDPOINTS=${HAPROXY_OCR_ENDPOINTS:-}
+    - USE_TEMPORAL_WHISPER=${USE_TEMPORAL_WHISPER:-false}
+    - TEMPORAL_HOST=${TEMPORAL_HOST:-localhost}
+    - TEMPORAL_PORT=${TEMPORAL_PORT:-7233}
+    - TEMPORAL_WHISPER_TASK_QUEUE=${TEMPORAL_WHISPER_TASK_QUEUE:-whisperx}
     - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/nvidia/lib64:/usr/lib/x86_64-linux-gnu
     - NVIDIA_VISIBLE_DEVICES=all
     - NVIDIA_DRIVER_CAPABILITIES=compute,utility
@@ -174,11 +178,11 @@ services:
       - "11440:11440"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8407/stats"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 5s
+        test: ["CMD", "wget", "-q", "--spider", "http://localhost:8407/stats"]
+        interval: 10s
+        timeout: 3s
+        retries: 3
+        start_period: 5s
 
   consumer_worker_gpu:
     <<: [*base-service, *gpu-params]
@@ -229,6 +233,24 @@ services:
       - VECTOR_DB_TIMEOUT=${VECTOR_DB_TIMEOUT:-60.0}
       - VECTOR_DB_BATCH_SIZE=${VECTOR_DB_BATCH_SIZE:-20}
       - PDF_FORCE_OCR=${PDF_FORCE_OCR:-false}
+      - DEVICE=cuda
+      - COMPUTE_TYPE=float16
+    depends_on:
+      - redis
+
+  temporal_activity_worker:
+    <<: [*base-service, *gpu-params]
+    container_name: temporal_activity_worker
+    profiles: [cuda-temporal]
+    command: ["python", "run_temporal_worker.py"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+      - USE_TEMPORAL_WHISPER=true
+      - TEMPORAL_HOST=${TEMPORAL_HOST:-localhost}
+      - TEMPORAL_PORT=${TEMPORAL_PORT:-7233}
+      - TEMPORAL_WHISPER_TASK_QUEUE=${TEMPORAL_WHISPER_TASK_QUEUE:-whisperx}
+      - WHISPER_MODEL_ENDPOINTS=${WHISPER_MODEL_ENDPOINTS}
       - DEVICE=cuda
       - COMPUTE_TYPE=float16
     depends_on:

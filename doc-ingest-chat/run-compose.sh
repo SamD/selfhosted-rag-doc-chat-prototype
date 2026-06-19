@@ -66,8 +66,62 @@ export VECTOR_DB_TIMEOUT="${VECTOR_DB_TIMEOUT:-${env_map[VECTOR_DB_TIMEOUT]:-60.
 export VECTOR_DB_BATCH_SIZE="${VECTOR_DB_BATCH_SIZE:-${env_map[VECTOR_DB_BATCH_SIZE]:-20}}"
 export VECTOR_DB_PROFILE
 
-# 3. PROFILE LOGIC
+# 3. LOG ALL USER-PROVIDED VARIABLES (shell env takes priority over env file)
+log_var() {
+  local var_name="$1"
+  local resolved="${!var_name:-${env_map[$var_name]:-<UNSET>}}"
+  local icon="📡"
+  if [[ "$resolved" =~ ^https?:// ]]; then icon="📡";
+  elif [[ "$resolved" == "LOCAL" || -f "$resolved" || -d "$resolved" ]]; then icon="🏠";
+  elif [[ "$resolved" == "true" || "$resolved" == "false" ]]; then icon="⚙️";
+  fi
+  echo "$icon $var_name=$resolved"
+}
+
+# Core endpoints
+log_var DEFAULT_DOC_INGEST_ROOT
+log_var LLM_PATH
+log_var SUPERVISOR_LLM_ENDPOINTS
+log_var EMBEDDING_ENDPOINTS
+log_var WHISPER_MODEL_ENDPOINTS
+log_var OCR_ENDPOINTS
+
+# Vector DB
+log_var VECTOR_DB_PROFILE
+log_var VECTOR_DB_URL
+log_var VECTOR_DB_USE_GRPC
+
+# Misc config
+log_var TOKENIZER_MODEL_PATH
+log_var PDF_FORCE_OCR
+log_var HA_INTERLEAVE
+log_var FORCE_MARKDOWN_LLM
+log_var EMBEDDING_BATCH_SIZE
+
+# Redis
+log_var REDIS_HOST
+log_var REDIS_PORT
+export REDIS_HOST REDIS_PORT
+
+# Temporal — set shell vars from env_map BEFORE profile logic and export
+USE_TEMPORAL_WHISPER="${USE_TEMPORAL_WHISPER:-${env_map[USE_TEMPORAL_WHISPER]:-false}}"
+TEMPORAL_HOST="${TEMPORAL_HOST:-${env_map[TEMPORAL_HOST]:-localhost}}"
+TEMPORAL_PORT="${TEMPORAL_PORT:-${env_map[TEMPORAL_PORT]:-7233}}"
+TEMPORAL_WHISPER_TASK_QUEUE="${TEMPORAL_WHISPER_TASK_QUEUE:-${env_map[TEMPORAL_WHISPER_TASK_QUEUE]:-whisperx}}"
+
+log_var USE_TEMPORAL_WHISPER
+log_var TEMPORAL_HOST
+log_var TEMPORAL_PORT
+log_var TEMPORAL_WHISPER_TASK_QUEUE
+
+export USE_TEMPORAL_WHISPER TEMPORAL_HOST TEMPORAL_PORT TEMPORAL_WHISPER_TASK_QUEUE
+
+# 4. PROFILE LOGIC
 COMPOSE_FILE_OPTS="--profile cuda-$VECTOR_DB_PROFILE --profile cuda --profile with-frontend"
+# Include Temporal worker if USE_TEMPORAL_WHISPER is enabled
+if [[ "${USE_TEMPORAL_WHISPER,,}" == "true" ]]; then
+  COMPOSE_FILE_OPTS="$COMPOSE_FILE_OPTS --profile cuda-temporal"
+fi
 
 case "$VECTOR_DB_URL" in
   http://*|https://*)
@@ -102,7 +156,7 @@ export HAPROXY_OCR_ENDPOINTS="$OCR_ENDPOINTS_VAL"
 # Auto-override to haproxy URL when multi-endpoint detected
 if [[ -n "$SUPERVISOR_ENDPOINTS" ]]; then
   count=$(echo "$SUPERVISOR_ENDPOINTS" | tr ',' '\n' | grep -c 'http' || true)
-  if [[ "$count" -gt 0 ]]; then
+  if [[ "$count" -gt 1 ]]; then
     export SUPERVISOR_LLM_ENDPOINTS="http://haproxy_supervisor:11437/v1"
     echo "🔀 SUPERVISOR_LLM_ENDPOINTS detected ($count endpoints) → SUPERVISOR_LLM_ENDPOINTS=$SUPERVISOR_LLM_ENDPOINTS"
   fi
@@ -110,7 +164,7 @@ fi
 
 if [[ -n "$EMBEDDING_ENDPOINTS_VAL" ]]; then
   count=$(echo "$EMBEDDING_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
-  if [[ "$count" -gt 0 ]]; then
+  if [[ "$count" -gt 1 ]]; then
     export EMBEDDING_ENDPOINTS="http://haproxy_embd:11438/v1"
     echo "🔀 EMBEDDING_ENDPOINTS detected ($count endpoints) → EMBEDDING_ENDPOINTS=$EMBEDDING_ENDPOINTS"
   fi
@@ -118,7 +172,7 @@ fi
 
 if [[ -n "$WHISPER_ENDPOINTS_VAL" ]]; then
   count=$(echo "$WHISPER_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
-  if [[ "$count" -gt 0 ]]; then
+  if [[ "$count" -gt 1 ]]; then
     export WHISPER_MODEL_ENDPOINTS="http://haproxy_whisper:11439/inference"
     echo "🔀 WHISPER_MODEL_ENDPOINTS detected ($count endpoints) → WHISPER_MODEL_ENDPOINTS=$WHISPER_MODEL_ENDPOINTS"
   fi
@@ -126,7 +180,7 @@ fi
 
 if [[ -n "$OCR_ENDPOINTS_VAL" ]]; then
   count=$(echo "$OCR_ENDPOINTS_VAL" | tr ',' '\n' | grep -c 'http' || true)
-  if [[ "$count" -gt 0 ]]; then
+  if [[ "$count" -gt 1 ]]; then
     export OCR_ENDPOINTS="http://haproxy_ocr:11440/v1/convert/file"
     echo "🔀 OCR_ENDPOINTS detected ($count endpoints) → OCR_ENDPOINTS=$OCR_ENDPOINTS"
   fi

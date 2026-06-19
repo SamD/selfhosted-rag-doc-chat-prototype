@@ -29,7 +29,7 @@ nwdiag {
         lxc-nvidia [address="192.168.30.60" shape = node, description = "lxc-nvidia (Supervisor LLM + Chat LLM)\nRTX3060 via OCuLink\n---\n Supervisor:11435 | Chat:11434"]
         lxc-amd [address="192.168.30.70" shape = node, description = "lxc-amd (whisper.cpp)\nRadeon 780M iGPU\n---\n http://192.168.30.70:1145/inference"]
         address = "192.168.30.x/24"
-        coordinator [address="192.168.30.71" shape = node, description = "Coordinator (worker stack)\n---\n Gatekeeper + Producer + Consumer\n Redis + DuckDB\n HAProxy containers"]
+        coordinator [address="192.168.30.71" shape = node, description = "Coordinator (worker stack)\n---\n Gatekeeper + Producer + Consumer\n Redis + DuckDB\n HAProxy containers\n Temporal (optional)"]
    }
 
     group {

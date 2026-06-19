@@ -18,7 +18,7 @@ Vector store integration uses lightweight wrappers (`langchain_chroma.Chroma`, `
 
 **Quality Assurance**: Multi-stage text quality detection catches gibberish, corruption, and encoding issues. The PDF handler attempts `pdfplumber` first, then falls back to the OCR worker (Docling/EasyOCR) for scanned or unreadable pages. Latin script ratio checking with configurable thresholds identifies OCR failures.
 
-**Production Guarantees**: File-level atomicity via DuckDB staging — all chunks from a document commit to Qdrant together or not at all. Redis-based backpressure prevents memory overflow. Distributed worker pools with multiprocessing. Comprehensive error tracking with per-file and per-chunk diagnostics.
+**Production Guarantees**: File-level atomicity via DuckDB staging — all chunks from a document commit to Qdrant together or not at all. Redis-based backpressure prevents memory overflow. Distributed worker pools with multiprocessing. Comprehensive error tracking with per-file and per-chunk diagnostics. Optional Temporal integration provides durable workflow execution for WhisperX transcription — crash-recovery, automatic retries, and workflow observability.
 
 **Transparency**: All parameters exposed via environment variables. Direct access to vector DB, Redis queues, and DuckDB for inspection. No hidden abstractions. Full logging with timestamped, trace-id-tagged, emoji-coded event types.
 

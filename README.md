@@ -55,6 +55,7 @@ Six workers coordinate via Redis queues and a DuckDB-backed state machine with a
 | **Zero-drop chunking** | Hierarchical header splitting with recursive sub-splitting. No content is ever truncated — oversized chunks are split, not dropped. |
 | **DuckDB staging** | Chunks are persisted to DuckDB before embedding. A file_end sentinel triggers atomic batch upsert to Qdrant — zero partial-visibility for RAG. |
 | **HAProxy load balancing** | Auto-detects multiple LLM/embedding/Whisper/OCR backends and distributes requests with health checks and failover. |
+| **Temporal durability (optional)** | When enabled, WhisperX transcription runs as Temporal Activities — crash-recovery, automatic retries, and workflow observability via Web UI. |
 | **Dual vector DB support** | Qdrant (gRPC + REST) and Chroma both supported via `VECTOR_DB_PROFILE`. |
 | **Deterministic chunk IDs** | MurmurHash3-based IDs prevent duplicate vectors on re-ingestion. |
 | **20-retry exponential backoff** | DuckDB lock contention is handled gracefully under high concurrency. |
@@ -62,11 +63,11 @@ Six workers coordinate via Redis queues and a DuckDB-backed state machine with a
 
 ### Tech Stack
 
-**Backend**: Python 3.12, FastAPI, llama-cpp-python, LangChain (vector store wrappers only), Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, HAProxy
+**Backend**: Python 3.12, FastAPI, llama-cpp-python, LangChain (vector store wrappers only), Redis, DuckDB, Qdrant/Chroma, WhisperX, Docling, HAProxy, Temporal (optional)
 
 **Frontend**: Astro v6, Tailwind CSS v4, daisyUI 5.5
 
-**Infrastructure**: Docker Compose with profile support (cuda/qdrant/chroma), multi-architecture worker images
+**Infrastructure**: Docker Compose with profile support (cuda/qdrant/chroma/temporal), multi-architecture worker images
 
 ---
 
@@ -134,6 +135,12 @@ export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/
 
 ```bash
 ./doc-ingest-chat/run-compose.sh --build
+```
+
+To enable durable transcription via Temporal (crash-recovery for audio/video jobs), deploy a remote Temporal server and set:
+
+```bash
+USE_TEMPORAL_WHISPER=true TEMPORAL_HOST=<temporal-host> ./run-compose.sh --build
 ```
 
 ### Use

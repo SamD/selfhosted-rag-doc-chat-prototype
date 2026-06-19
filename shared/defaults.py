@@ -106,6 +106,13 @@ DEFAULT_SESSION_TTL_HOURS = 24
 DEFAULT_HF_HUB_OFFLINE = "0"
 DEFAULT_API_BASE_URL = "http://localhost:8000"
 
+# Temporal / Transcription durability
+DEFAULT_TEMPORAL_SERVER_URL = "localhost:7233"  # Legacy: use TEMPORAL_HOST/TEMPORAL_PORT instead
+DEFAULT_TEMPORAL_WHISPER_TASK_QUEUE = "whisperx"
+DEFAULT_USE_TEMPORAL_WHISPER = "false"
+DEFAULT_TEMPORAL_HOST = "localhost"  # Remote Temporal server host
+DEFAULT_TEMPORAL_PORT = 7233  # Remote Temporal server gRPC port
+
 # Load balancing
 DEFAULT_HA_INTERLEAVE = "false"
 

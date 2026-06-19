@@ -149,6 +149,8 @@ docker exec -it doc-ingest-chat-redis-1 redis-cli
 > LLEN whisper_job_queue
 ```
 
+**Note:** When `USE_TEMPORAL_WHISPER=true`, the `whisper_job_queue` is bypassed — transcription jobs are dispatched to the Temporal task queue instead. Monitor those via the Temporal Web UI (`http://localhost:8233`) or `tctl` CLI.
+
 ---
 
 ## Whisper.cpp — Server Debugging
@@ -251,6 +253,37 @@ docker exec haproxy_supervisor cat /tmp/haproxy.cfg | grep "server srv"
 | All traffic to one backend | Keep-alive connection pinning | `option httpclose` is set — check if client is reusing connections |
 | Backend marked DOWN | Health check failing | Check if the backend's `/models` or `/health` endpoint responds |
 | 503 from HAProxy | 0 endpoints configured | Set `*_ENDPOINTS` env var or point `*_PATH` directly to backend |
+
+---
+
+## Temporal — Workflow Monitoring (when enabled)
+
+When `USE_TEMPORAL_WHISPER=true`, the system connects to a remote Temporal server.
+
+### Web UI
+
+Access the Temporal Web UI provided by your remote deployment (URL varies by infrastructure).
+
+### CLI Monitoring
+
+```bash
+# List running workflows
+tctl --namespace default workflow list
+
+# Describe a specific workflow
+tctl --namespace default workflow describe --workflow_id <workflow-id>
+
+# View workflow execution history
+tctl --namespace default workflow show --workflow_id <workflow-id>
+```
+
+### Common Issues
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Workflows stuck in PENDING | Temporal server unreachable | Verify `TEMPORAL_HOST` and `TEMPORAL_PORT` are correct and the remote server is reachable |
+| Activities timing out | Whisper server down or slow | Check `WHISPER_MODEL_ENDPOINTS` and whisper server health |
+| Transcription not starting | `USE_TEMPORAL_WHISPER` not set | Set `USE_TEMPORAL_WHISPER=true` and restart workers |
 
 ---
 

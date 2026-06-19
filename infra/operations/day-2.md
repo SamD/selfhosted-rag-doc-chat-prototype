@@ -311,3 +311,54 @@ jq -r 'select(.event == "file_processing_complete") | .metrics.total_processing_
   $DEFAULT_DOC_INGEST_ROOT/metrics.jsonl | \
   awk '{sum+=$1; count+=1} END {print "Avg: " sum/count " ms"}'
 ```
+
+---
+
+## 7. Temporal Troubleshooting
+
+Temporal is a remote service — all troubleshooting is against the remote server.
+
+### Symptom: WhisperX worker fails to connect to Temporal
+
+**Diagnosis:**
+
+```bash
+docker logs whisperx_worker 2>&1 | grep -i "temporal\|connection\|error"
+```
+
+**Fix:** Verify `TEMPORAL_HOST` and `TEMPORAL_PORT` are correct and the remote Temporal server is reachable:
+
+```bash
+# Test gRPC connectivity (from the host, not inside Docker)
+curl -v http://<TEMPORAL_HOST>:<TEMPORAL_PORT>/ 2>&1 | head -5
+```
+
+### Symptom: Transcription stuck / no completion
+
+```bash
+# List workflows on the remote Temporal server
+tctl --namespace default workflow list
+
+# Describe specific workflow
+tctl --namespace default workflow describe --workflow_id <workflow-id>
+
+# Cancel stuck workflow
+tctl --namespace default workflow cancel --workflow_id <workflow-id>
+
+# Terminate workflow
+tctl --namespace default workflow terminate --workflow_id <workflow-id>
+```
+
+### Symptom: Worker disconnects and reconnects
+
+**Diagnosis:** Check if the worker container is healthy:
+
+```bash
+docker logs whisperx_worker 2>&1 | grep -E "Started|shutdown|disconnect"
+```
+
+**Fix:** Worker uses `asyncio.run()` to bridge async Temporal SDK. If the worker crashes mid-workflow, Temporal automatically retries the Activity on reconnection. Restart the worker container to reconnect.
+
+### Port reference
+- Temporal gRPC: `TEMPORAL_PORT` (default: 7233)
+- Remote Temporal Web UI: Varies by deployment (check your Temporal server docs)
