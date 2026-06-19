@@ -1,0 +1,52 @@
+# Standalone Temporal server for WhisperX worker
+# Deploy: docker compose -f docker-compose.temporal.yaml up -d
+version: "3.5"
+services:
+  postgresql:
+    container_name: temporal-postgresql
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_USER: temporal
+    volumes:
+      - temporal-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  temporal:
+    container_name: temporal
+    image: temporalio/auto-setup:1.24
+    depends_on:
+      - postgresql
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=postgresql
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CLI_ADDRESS=temporal:7233
+    ports:
+      - "7233:7233"       # gRPC frontend (required for worker connection)
+    restart: unless-stopped
+    networks:
+      - dockge_dockge-net  # same network as SearXNG / other services
+
+  temporal-ui:
+    container_name: temporal-ui
+    image: temporalio/ui:2.27.0
+    depends_on:
+      - temporal
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+    ports:
+      - "8181:8080"        # Web UI — change to any free port
+    restart: unless-stopped
+    networks:
+      - dockge_dockge-net
+
+volumes:
+  temporal-pgdata:
+
+networks:
+  dockge_dockge-net:
+    external: true

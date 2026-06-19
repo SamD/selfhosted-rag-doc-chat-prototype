@@ -43,8 +43,8 @@ When multiple backend endpoints are configured via `*_ENDPOINTS` env vars, HAPro
 ### Behavior by Endpoint Count
 
 - **0 (unset)**: HAProxy returns 503. `*_PATH` env var used directly (no haproxy dependency).
-- **1**: Transparent proxy to that single backend.
-- **2+**: `roundrobin` balancing with `httpclose` (no keep-alive pinning). Health checks on `/models` or `/health`.
+- **1**: Workers connect directly to the single backend (HAProxy container runs but receives no traffic). `*_PATH` env var used directly.
+- **2+**: Workers auto-overridden to HAProxy URL. HAProxy does `roundrobin` balancing with `httpclose` (no keep-alive pinning). Health checks on `/models` or `/health`.
 
 ### How It Works
 
@@ -62,6 +62,30 @@ export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
+```
+
+## Temporal Transcription Worker (Optional)
+
+When `USE_TEMPORAL_WHISPER=true`, the WhisperX worker runs as a Temporal Activity instead of Redis-based polling.
+
+- **Temporal is a remote service** — no Docker Compose services are provided. Deploy Temporal separately and configure the endpoint via env vars.
+- **Activity**: `transcribe_media()` in `doc-ingest-chat/temporal_worker/activities.py`
+- **Worker**: `run_temporal_worker.py` entry point
+- **Task Queue**: `whisperx` (configurable via `TEMPORAL_WHISPER_TASK_QUEUE`)
+
+### Temporal Environment Variables
+
+- `USE_TEMPORAL_WHISPER` — Enable Temporal-based WhisperX transcription (default: `false`)
+- `TEMPORAL_HOST` — Host of the remote Temporal server (default: `localhost`)
+- `TEMPORAL_PORT` — Port of the remote Temporal server (default: `7233`)
+- `TEMPORAL_WHISPER_TASK_QUEUE` — Temporal task queue name (default: `whisperx`)
+
+```bash
+# Start with Temporal (connect to remote server)
+USE_TEMPORAL_WHISPER=true TEMPORAL_HOST=temporal.example.com ./run-compose.sh
+
+# Start without Temporal (default — Redis-based)
+./run-compose.sh
 ```
 
 ## Shared Utilities (`shared/utils.py`)
@@ -123,6 +147,13 @@ When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to
 - `SUPERVISOR_REMOTE_MODEL_NAME` - Model name for remote supervisor (default: `local-model`)
 - `LLAMA_REMOTE_TIMEOUT` - Timeout for remote LLM requests in seconds (default: `300`)
 
+### Temporal (Remote Deployment)
+
+- `USE_TEMPORAL_WHISPER` - Enable Temporal-based WhisperX transcription (default: `false`)
+- `TEMPORAL_HOST` - Host of the remote Temporal server (default: `localhost`)
+- `TEMPORAL_PORT` - Port of the remote Temporal server (default: `7233`)
+- `TEMPORAL_WHISPER_TASK_QUEUE` - Temporal task queue name (default: `whisperx`)
+
 ## Docker Compose Profiles
 
 `./run-compose.sh` supports profiles:
@@ -140,7 +171,8 @@ All workers use `get_env_strategy().apply()` early:
 - `run_consumer.py` - Consumer worker (processes chunks)
 - `run_ocr_worker.py` - OCR worker (extracts text from images)
 - `run_gatekeeper.py` - Gatekeeper worker (extracts + normalizes via supervisor LLM only for low-quality text; clean text bypasses LLM)
-- `run_whisperx_worker.py` - WhisperX worker (transcribes audio/video)
+- `run_whisperx_worker.py` - WhisperX worker (transcribes audio/video, default Redis-based path)
+- `run_temporal_worker.py` - Temporal Activity Worker (requires `USE_TEMPORAL_WHISPER=true`, connects to remote Temporal server)
 
 ## FastAPI Backend
 
@@ -208,6 +240,7 @@ Strict citation requirements in `prompts/chat_prompts.py`:
 - **Warmup**: `warmup.py` skips Docling import when `OCR_ENDPOINTS` is a remote URL
 - **Whisper MIME type**: Content handlers determine MIME type, pass it through Redis to whisperx worker, which sends correct Content-Type to whisper server
 - **Whisper server**: Must be started with `--convert` flag to handle non-WAV formats (MP4, MP3, etc.)
+- **Temporal async bridge**: `whisper_utils.py` uses `asyncio.run()` to bridge async `Client.connect()` from the Temporal SDK with the synchronous generator pattern. This is called from `send_media_to_whisperx_temporal()` when `USE_TEMPORAL_WHISPER=true`.
 
 ## File Extensions
 
@@ -228,7 +261,7 @@ The system operates as a distributed state machine using Redis as the message br
 2.  **Routing Phase**: `gatekeeper_worker` -> `gatekeeper_logic` (claims from DuckDB `NEW` state, inspects file extensions, and dispatches to specific `handlers/` or `ocr_worker`).
 3.  **Processing/Embedding Phase**: `consumer_worker` -> `consumer_graph` (monitors `QUEUE_NAMES`, calls `handlers/` for text extraction, then uses `rag_service` and `database` services to perform chunking, embedding, and storage).
 4.  **OCR Phase**: `ocr_worker` -> `ocr_graph` (specifically for heavy media/image-based text extraction from PDFs).
-5.  **Media Phase**: `whisperx_worker` (dedicated container for transcribing media files via WhisperX).
+5.  **Media Phase**: `whisperx_worker` (dedicated container for transcribing media files via WhisperX. When `USE_TEMPORAL_WHISPER=true`, transcription is delegated to a remote Temporal server).
 
 ### Service-Worker Mapping
 - **`services/`**: Pure logic/data access (e.g., `rag_service` handles the logic of "what to do with text", `database` handles "how to talk to Qdrant").
@@ -252,7 +285,7 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 |---|---|---|---|
 | Gatekeeper | `run_gatekeeper.py` | Claims from DuckDB (`ingestion_lifecycle`) | Raw text extraction via handlers, LLM normalization to Markdown, writes `.md` to ingestion |
 | OCR | `run_ocr_worker.py` | `REDIS_OCR_JOB_QUEUE` | Processes image-based PDF pages via docling-serve (EasyOCR) |
-| WhisperX | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (.mp3, .wav, .mp4) |
+| WhisperX | `run_whisperx_worker.py` | `REDIS_WHISPER_JOB_QUEUE` | Transcribes audio/video files (.mp3, .wav, .mp4). When `USE_TEMPORAL_WHISPER=true`, transcription is delegated to a remote Temporal server instead of Redis |
 | Producer | `run_producer.py` | Reads from `ingestion/` dir | Chunks normalized Markdown, injects `[DOC_XXXX]` IDs, sends to `QUEUE_NAMES` |
 | Consumer (x2) | `run_consumer.py` | `QUEUE_NAMES` (2 queues) | Validates/embeds/upserts chunks, moves files to success/failed |
 | API | `apimain.py` | HTTP :8000 | FastAPI REST + static file serving |
@@ -274,6 +307,7 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 | `doc-ingest-chat/utils/` | `llm_setup.py` (fork-safe singletons, RemoteLlama, RemoteEmbeddings), `trace_utils.py`, `ocr_utils.py`, `whisper_utils.py`, `text_utils.py`, `file_utils.py`, `metrics.py`, `logging_config.py` |
 | `doc-ingest-chat/tests/` | 28 pytest files covering all major components |
 | `doc-ingest-chat/sql/` | `schema.sql` - DuckDB schema for `ingestion_lifecycle` table |
+| `doc-ingest-chat/temporal_worker/` | Temporal Activity (`activities.py`) and Workflow (`workflows.py`) for WhisperX transcription durability |
 | `astro-frontend/` | Astro v6 + Tailwind v4 SPA: `src/pages/index.astro` (single chat UI), `src/layouts/Layout.astro`, `src/styles/global.css` |
 | `infra/` | HAProxy entrypoint script (`haproxy-entrypoint.sh`) and config renderer (`render-haproxy-cfg.sh`) |
 | `shared/` | Shared utilities (`utils.py`, `config.py`, `defaults.py`, `env_names.py`) and tests |
@@ -298,7 +332,7 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 
 9. **HAProxy Load Balancing**: When `*_ENDPOINTS` env vars are set, `run-compose.sh` auto-creates HAProxy containers. Entrypoint script generates config from env vars at startup. `roundrobin` + `httpclose` for even distribution. Health checks on `/models` or `/health`.
 
-10. **MIME Type Pipeline**: Content handlers declare `MIME_TYPE` class var or use `get_mime_type()`. MIME type flows: handler -> `send_media_to_whisperx()` -> Redis job -> whisperx worker -> `RemoteWhisper.transcribe_file()` -> whisper server.
+10. **MIME Type Pipeline**: Content handlers declare `MIME_TYPE` class var or use `get_mime_type()`. MIME type flows: handler -> `send_media_to_whisperx()` -> Redis job -> whisperx worker -> `RemoteWhisper.transcribe_file()` -> whisper server. When `USE_TEMPORAL_WHISPER=true`, the path is: handler -> `send_media_to_whisperx()` -> Temporal workflow -> Temporal Activity -> `RemoteWhisper.transcribe_file()` -> whisper server.
 
 ### Chat/RAG Implementation (`chat/chroma_chat.py`)
 
@@ -318,6 +352,8 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 | `run_consumer.py` | `python run_consumer.py` |
 | `run_ocr_worker.py` | `python run_ocr_worker.py` |
 | `run_whisperx_worker.py` | `python run_whisperx_worker.py` |
+| `run_temporal_worker.py` | `python run_temporal_worker.py` (Temporal Activity Worker, requires `USE_TEMPORAL_WHISPER=true`) |
+| `run_temporal_worker.py` | `python run_temporal_worker.py` (Temporal Activity Worker, requires `USE_TEMPORAL_WHISPER=true`) |
 
 ### Critical Env Vars Quick Reference
 
@@ -329,6 +365,10 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 - `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated)
 - `VECTOR_DB_PROFILE` - `qdrant` or `chroma`
 - `VECTOR_DB_URL` - Remote vector DB URL (bypasses host/port)
+- `USE_TEMPORAL_WHISPER` - Enable Temporal-based WhisperX transcription (default: `false`)
+- `TEMPORAL_HOST` - Host of the remote Temporal server (default: `localhost`)
+- `TEMPORAL_PORT` - Port of the remote Temporal server (default: `7233`)
+- `TEMPORAL_WHISPER_TASK_QUEUE` - Temporal task queue name (default: `whisperx`)
 
 - `OCR_ENDPOINTS` - `LOCAL` or docling-serve URL
 - `WHISPER_MODEL_ENDPOINTS` - Whisper model dir or URL

@@ -65,6 +65,11 @@ from shared.defaults import (
     DEFAULT_SUPERVISOR_TEMPERATURE,
     DEFAULT_SUPERVISOR_TOP_K,
     DEFAULT_SUPPORTED_MEDIA_EXT,
+    DEFAULT_TEMPORAL_HOST,
+    DEFAULT_TEMPORAL_PORT,
+    DEFAULT_TEMPORAL_SERVER_URL,
+    DEFAULT_TEMPORAL_WHISPER_TASK_QUEUE,
+    DEFAULT_USE_TEMPORAL_WHISPER,
     DEFAULT_VECTOR_DB_BATCH_SIZE,
     DEFAULT_VECTOR_DB_COLLECTION,
     DEFAULT_VECTOR_DB_GRPC_PORT,
@@ -150,6 +155,11 @@ from shared.env_names import (
     ENV_SUPERVISOR_TEMPERATURE,
     ENV_SUPERVISOR_TOP_K,
     ENV_SUPPORTED_MEDIA_EXT,
+    ENV_TEMPORAL_HOST,
+    ENV_TEMPORAL_PORT,
+    ENV_TEMPORAL_SERVER_URL,
+    ENV_TEMPORAL_WHISPER_TASK_QUEUE,
+    ENV_USE_TEMPORAL_WHISPER,
     ENV_VECTOR_DB_BATCH_SIZE,
     ENV_VECTOR_DB_COLLECTION,
     ENV_VECTOR_DB_GRPC_PORT,
@@ -296,6 +306,12 @@ _SETTINGS: dict[str, Callable[[], Any]] = {
     "SUPERVISOR_MAX_TOKENS": lambda: int(os.getenv(ENV_SUPERVISOR_MAX_TOKENS, str(DEFAULT_SUPERVISOR_MAX_TOKENS))),
     # Context window for the supervisor LLM (used for gatekeeper prompt truncation)
     "SUPERVISOR_N_CTX": lambda: int(os.getenv(ENV_SUPERVISOR_N_CTX, str(DEFAULT_SUPERVISOR_N_CTX))),
+    # Temporal / Transcription durability (remote server, no local Docker services)
+    "TEMPORAL_SERVER_URL": lambda: os.getenv(ENV_TEMPORAL_SERVER_URL, DEFAULT_TEMPORAL_SERVER_URL),  # Legacy
+    "TEMPORAL_HOST": lambda: os.getenv(ENV_TEMPORAL_HOST, DEFAULT_TEMPORAL_HOST),  # Remote Temporal server host
+    "TEMPORAL_PORT": lambda: int(os.getenv(ENV_TEMPORAL_PORT, str(DEFAULT_TEMPORAL_PORT))),  # Remote Temporal server gRPC port
+    "TEMPORAL_WHISPER_TASK_QUEUE": lambda: os.getenv(ENV_TEMPORAL_WHISPER_TASK_QUEUE, DEFAULT_TEMPORAL_WHISPER_TASK_QUEUE),
+    "USE_TEMPORAL_WHISPER": lambda: os.getenv(ENV_USE_TEMPORAL_WHISPER, DEFAULT_USE_TEMPORAL_WHISPER).lower() == "true",
     # Path to the Parquet archival file for all chunks
     "PARQUET_FILE": lambda: _abs_path(
         ENV_PARQUET_FILE, os.path.join(_SETTINGS["DEFAULT_DOC_INGEST_ROOT"](), "chunks.parquet")

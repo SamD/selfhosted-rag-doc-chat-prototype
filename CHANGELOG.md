@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Temporal Activity Wrapper for WhisperX Transcription**
+  - **Temporal Activity**: `doc-ingest-chat/temporal_worker/activities.py` implements `transcribe_media()` Activity that wraps existing `RemoteWhisper` pattern from `whisperx_worker.py` with proper error handling and retry logic.
+  - **Temporal Workflow**: `doc-ingest-chat/temporal_worker/workflows.py` defines `TranscribeWorkflow` with retry policy and timeouts (90 minutes activity, 4 hours workflow).
+  - **Temporal Worker**: `run_temporal_worker.py` entry point starts a Temporal async Worker on the `whisperx` task queue with graceful shutdown handling.
+  - **Durability & Crash Recovery**: Temporal provides durable workflow execution with automatic Activity restart on worker crashes, ensuring no transcription jobs are lost.
+  - **Dual-Run Mode**: Feature flag `USE_TEMPORAL_WHISPER` enables switching between Redis-based and Temporal-based transcription paths without code changes.
+  - **Type-Safe Serialization**: `doc-ingest-chat/models/transcription_input.py` provides `TranscriptionInput` and `TranscriptionResult` dataclasses for structured data exchange.
+  - **Configuration**: New env vars `TEMPORAL_HOST` (default: `localhost`), `TEMPORAL_PORT` (default: `7233`), `TEMPORAL_WHISPER_TASK_QUEUE` (default: `whisperx`), and `USE_TEMPORAL_WHISPER` (default: `false`) in `shared/env_names.py`, `shared/defaults.py`, and `shared/config.py`.
+  - **Sender Dispatch**: `doc-ingest-chat/utils/whisper_utils.py` implements `send_media_to_whisperx_temporal()` and modifies `send_media_to_whisperx()` to dispatch to Temporal path when flag is true.
+  - **Operations Documentation**: Added Temporal sections to `infra/operations/day-1.md` and `infra/operations/day-2.md` with deployment and troubleshooting instructions.
+  - **Architecture Documentation**: Updated `AGENTS.md` with Temporal Transcription Worker section.
+  - **Changelog Entry**: Added Temporal implementation to `CHANGELOG.md` under [Unreleased].
+  - **Unit Tests**: Created `doc-ingest-chat/tests/unit/test_temporal_activities.py` with mock-based unit tests for `transcribe_media()` Activity.
+  - **Integration Tests**: Created `doc-ingest-chat/tests/integration/test_temporal_worker.py` with integration tests using `temporalite` dev server.
+  - **E2E Tests**: Created `doc-ingest-chat/tests/e2e/test_transcription_latency.py` to measure Temporal vs Redis overhead (target <50ms).
+
 - **Unified worker settings**: All workers now load configuration through `config.settings` instead of direct `os.getenv()` calls. Added missing `API_BASE_URL`, `HF_HOME`, and `HF_HUB_OFFLINE` settings to shared config. Removed direct `shared.env_names` imports from `llama_strategy.py`. Consolidated shared config files with `shared/config.py` as the single entry point.
 - **Embedding batch progress logging**: `RemoteEmbeddings.embed_documents()` now logs `📤 Embedding batch X/Y texts...` for visibility into embedding throughput.
 - **Ingestion error recovery**: Workers now reclaim orphaned jobs on startup. Gatekeeper resets `PREPROCESSING` → `NEW`, Producer resets `INGESTING` → `PREPROCESSING_COMPLETE`, Consumer resets `CONSUMING` → `INGESTING`. New env var `STUCK_JOB_TIMEOUT_HOURS` (default 1). 5 unit tests.
@@ -19,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **OpenSpec baseline**: 7 capability specs documenting current architecture (`openspec/specs/`). Project context and per-artifact rules in `openspec/config.yaml`.
 
 ### Changed
+- **Temporal migrated to remote-only deployment**: Removed `temporal-server`, `temporal-web`, and `temporalite` services from `ingest-dockercompose.yaml`. Removed `--profile temporal` from `run-compose.sh`. Temporal is now an all-remote infrastructure dependency — users must deploy their own Temporal server and configure `TEMPORAL_HOST`/`TEMPORAL_PORT`. New env vars `TEMPORAL_HOST` (default: `localhost`) and `TEMPORAL_PORT` (default: `7233`) replace the single `TEMPORAL_SERVER_URL` var for flexible host/port configuration. `whisper_utils.py` uses `asyncio.run()` bridge pattern to connect async `Client.connect()` from the Temporal SDK in the synchronous generator context.
+- **HAProxy activation threshold**: `run-compose.sh` auto-override now triggers at 2+ endpoints (`-gt 1`) instead of 1+ (`-gt 0`). Single-endpoint deployments bypass HAProxy entirely — workers connect directly to the backend. HAProxy containers still start but receive no traffic.
 - **CPU profile removed**: Removed `--cpu` flag from `run-compose.sh`, `CPUEnvConfig` from `env_strategy.py`, `LLAMA_USE_GPU` env var, `USE_OLLAMA` env var, and `run-compose-cpu.sh`. Device hardcoded to `"cuda"` — non-GPU deployments use remote HTTP endpoints.
 - **Ollama code path removed**: `USE_OLLAMA` branch removed from `chroma_chat.py` and `utils/llm_setup.py`. Users who want Ollama set `LLM_PATH` to the Ollama server URL (OpenAI-compatible).
 - **Gatekeeper context limit**: Now uses `SUPERVISOR_N_CTX` instead of `LLAMA_N_CTX * 0.8`. Decouples supervisor prompt truncation from main LLM context.
@@ -47,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Local GGUF model never loaded**: Missing `_LLAMA_MODEL_CACHE = Llama(**params)` caused `get_chain_or_llama()` to return `None` for local GGUF paths, resulting in `'NoneType' object has no attribute 'create_chat_completion'`.
 - **MP3 handler missing extensions**: Added `.m4a`, `.aac`, `.flac` to `MP3ContentTypeHandler.can_handle()`.
 - **MP4 handler missing extensions**: Added `.mov`, `.mkv` to `MP4ContentTypeHandler.can_handle()`.
+- **Temporal async await bug**: `whisper_utils.py` Temporal path now correctly uses `asyncio.run()` bridge pattern since `Client.connect()` is async but called from synchronous generators.
 - **Frontend theme picker**: Changed `themeChange()` to `themeChange(false)` to avoid `DOMContentLoaded` race condition — Astro module scripts load after the event fires, so the listener never executes.
 - **Frontend layout**: Replaced fixed `h-96` with `flex-1` + `min-h-0` so the chat area fills available viewport height.
 - **Frontend chat bubbles**: Widened from `max-w-xs/md` to `max-w-lg/2xl` for better readability.

@@ -156,6 +156,36 @@ docker logs haproxy_supervisor 2>&1 | grep "be_supervisor/" | tail -10
 
 Expected: alternating `srv0`, `srv1`, etc. across requests.
 
+## 7. Temporal Services (if USE_TEMPORAL_WHISPER=true)
+
+Temporal is a remote service — no Docker Compose services are provided. Deploy Temporal separately (e.g., Temporal Cloud, self-hosted Kubernetes, or a standalone `temporalite` process on another host).
+
+### Set Temporal env vars
+
+```bash
+export USE_TEMPORAL_WHISPER=true
+export TEMPORAL_HOST=<temporal-host>       # e.g. temporal.example.com
+export TEMPORAL_PORT=7233                  # gRPC port (default: 7233)
+export TEMPORAL_WHISPER_TASK_QUEUE=whisperx  # task queue (default: whisperx)
+```
+
+### Start with Temporal enabled
+
+```bash
+USE_TEMPORAL_WHISPER=true TEMPORAL_HOST=<temporal-host> ./run-compose.sh
+```
+
+### Verify Temporal connectivity
+
+```bash
+# Check the Temporal worker container logs for connection
+docker logs whisperx_worker 2>&1 | grep -i temporal
+```
+
+### Expected containers
+- `whisperx_worker` connects to the remote Temporal server via gRPC
+- No local Temporal server containers (temporal-server, temporal-web, temporalite) are started
+
 ## Checklist
 
 - [ ] All 4 required env vars set
@@ -167,3 +197,4 @@ Expected: alternating `srv0`, `srv1`, etc. across requests.
 - [ ] Chat API returns answer with citations
 - [ ] Session ID works across follow-up queries
 - [ ] (If HAProxy) Stats pages respond and traffic distributes
+- [ ] (If Temporal) `USE_TEMPORAL_WHISPER=true` + `TEMPORAL_HOST` set, worker connects to remote server

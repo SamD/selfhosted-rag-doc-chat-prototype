@@ -8,7 +8,7 @@ The infrastructure capability manages deployment, containerization, environment 
 
 ### Requirement: Docker Compose deployment
 
-The system SHALL be deployable via Docker Compose with profile support. Supported profiles SHALL include: cuda (NVIDIA GPU acceleration), qdrant (Qdrant vector DB), and chroma (Chroma vector DB). The cpu profile SHALL be removed — users without GPU access SHALL use remote HTTP endpoints. Multiple profiles SHALL be composable (e.g., --profile cuda --profile qdrant).
+The system SHALL be deployable via Docker Compose with profile support. Supported profiles SHALL include: cuda (NVIDIA GPU acceleration), qdrant (Qdrant vector DB), chroma (Chroma vector DB), and temporal (Temporal server + Web UI for durable WhisperX transcription). The cpu profile SHALL be removed — users without GPU access SHALL use remote HTTP endpoints. Multiple profiles SHALL be composable (e.g., --profile cuda --profile qdrant --profile temporal).
 
 #### Scenario: GPU deployment
 - **WHEN** deployed with --profile cuda
