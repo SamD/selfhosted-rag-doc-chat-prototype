@@ -93,15 +93,15 @@ export DEFAULT_DOC_INGEST_ROOT=/path/to/docs
 export VECTOR_DB_PROFILE=qdrant
 # Remote Qdrant host. The system connects over gRPC on port 6334 by default.
 # To use the REST API on port 6333 instead, set VECTOR_DB_USE_GRPC=false and prefix the URL with http://.
-export VECTOR_DB_URL=<vector-db-host>:6334
+export VECTOR_DB_URL=http://<vector-db-host>:6334
 export VECTOR_DB_USE_GRPC=true
 
 # --- LLMs ---
 # Chat model that answers RAG queries. Remote http(s):// URL or local .gguf path.
-export LLM_PATH=http://<llm-host>:11434/v1/chat/completions
+export LLM_PATH=http://<llm-host>:11435/v1/chat/completions
 # Gatekeeper model that normalizes raw extracted text to Markdown during ingestion.
-# Often points to the same host as LLM_PATH but serves a distinct role.
-export SUPERVISOR_LLM_ENDPOINTS=http://<llm-host>:11434/v1/chat/completions
+# Often runs on the same host as LLM_PATH but typically uses a different port (11534).
+export SUPERVISOR_LLM_ENDPOINTS=http://<llm-host>:11534/v1/chat/completions
 
 # --- Embedding ---
 # Model that vectorizes document chunks during ingestion and user queries during chat.
@@ -118,6 +118,29 @@ export WHISPER_MODEL_ENDPOINTS=http://<whisper-host>:1145/inference
 # (scanned documents, image-heavy pages). Set to "LOCAL" to run Docling
 # inside the container instead.
 export OCR_ENDPOINTS=http://<ocr-host>:5001/v1/convert/file
+
+# --- Tokenizer (Required) ---
+# Path to tokenizer model for chunk size calculations (e.g., mxbai-embed-large-v1).
+export TOKENIZER_MODEL_PATH=/path/to/tokenizer-model
+
+# --- Optional Tuning Flags (all false by default) ---
+export PDF_FORCE_OCR=false
+export HA_INTERLEAVE=false
+export FORCE_MARKDOWN_LLM=false
+export EMBEDDING_BATCH_SIZE=25
+
+# --- Temporal (Optional - Durable WhisperX Transcription) ---
+# Enable Temporal-based WhisperX transcription for crash-recovery and retries.
+# Requires a remote Temporal server (not provided by docker-compose).
+export USE_TEMPORAL_WHISPER=false
+export TEMPORAL_HOST=<temporal-host>
+export TEMPORAL_PORT=7233
+export TEMPORAL_WHISPER_TASK_QUEUE=whisperx
+
+# --- Redis (Required) ---
+# Redis server for queue coordination and chat session storage.
+export REDIS_HOST=<redis-host>
+export REDIS_PORT=6380
 ```
 
 Full variable reference, local-file alternatives, and optional tuning flags are in [docs/quickstart.md](docs/quickstart.md).
@@ -127,7 +150,7 @@ Full variable reference, local-file alternatives, and optional tuning flags are 
 When you have multiple hosts running the same service, set `*_ENDPOINTS` env vars with comma-separated URLs. HAProxy starts automatically and distributes requests across all backends with health checks and failover.
 
 ```bash
-export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11534/v1/chat/completions,http://gpu1:11534/v1/chat/completions
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 ```
 

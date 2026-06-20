@@ -17,7 +17,7 @@ else
   echo "WARNING: No GPU selection specified. Using default." >&2
 fi
 
-export LLAMA_PORT="${LLAMA_PORT:-11435}"
+export LLAMA_PORT="${LLAMA_PORT:-11534}"
 if [[ -n "$LLAMA_PORT" ]]; then
   echo "Using LLAMA_PORT: $LLAMA_PORT"
 else

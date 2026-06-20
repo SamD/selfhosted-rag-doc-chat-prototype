@@ -58,7 +58,7 @@ When multiple backend endpoints are configured via `*_ENDPOINTS` env vars, HAPro
 Endpoints are comma-separated URLs. Each URL can include the full path. HAProxy extracts `host:port` for routing.
 
 ```bash
-export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11534/v1/chat/completions,http://gpu1:11534/v1/chat/completions
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
@@ -137,7 +137,7 @@ When set, `run-compose.sh` auto-overrides the corresponding `*_PATH` to point to
 ### Vector Database
 
 - `VECTOR_DB_PROFILE` - `qdrant` or `chroma` (default: `qdrant`)
-- `VECTOR_DB_URL` - Full URL for remote vector DB (e.g., `http://192.168.30.71:6333`)
+- `VECTOR_DB_URL` - Full URL for remote vector DB (e.g., `http://192.168.30.68:6334`)
 - `VECTOR_DB_USE_GRPC` - Use gRPC for Qdrant (default: `true`)
 - `VECTOR_DB_GRPC_PORT` - gRPC port (default: `6334`)
 
@@ -358,20 +358,25 @@ staging/ -> Gatekeeper (claims, normalizes via Supervisor LLM through HAProxy, w
 ### Critical Env Vars Quick Reference
 
 - `DEFAULT_DOC_INGEST_ROOT` - Root for all lifecycle dirs (required)
-- `EMBEDDING_ENDPOINTS` - e5-large-v2 path/URL(s) (required)
-- `LLM_PATH` - Main chat LLM path/URL (required)
-- `SUPERVISOR_LLM_ENDPOINTS` - Normalization LLM path/URL(s) (required)
-- `WHISPER_MODEL_ENDPOINTS` - Multi-endpoint whisper URLs (comma-separated)
-- `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated)
-- `VECTOR_DB_PROFILE` - `qdrant` or `chroma`
-- `VECTOR_DB_URL` - Remote vector DB URL (bypasses host/port)
+- `EMBEDDING_ENDPOINTS` - e5-large-v2 path/URL(s) (required) — e.g., `http://<embedding-host>:11434/v1/embeddings`
+- `LLM_PATH` - Main chat LLM path/URL (required) — e.g., `http://<llm-host>:11435/v1/chat/completions`
+- `SUPERVISOR_LLM_ENDPOINTS` - Normalization LLM path/URL(s) (required) — e.g., `http://<llm-host>:11534/v1/chat/completions`
+- `WHISPER_MODEL_ENDPOINTS` - Multi-endpoint whisper URLs (comma-separated) — e.g., `http://<whisper-host>:1145/inference`
+- `OCR_ENDPOINTS` - Multi-endpoint OCR URLs (comma-separated) — e.g., `http://<ocr-host>:5001/v1/convert/file`
+- `VECTOR_DB_PROFILE` - `qdrant` or `chroma` (default: `qdrant`)
+- `VECTOR_DB_URL` - Remote vector DB URL (bypasses host/port) — e.g., `http://<vector-db-host>:6334`
+- `VECTOR_DB_USE_GRPC` - Use gRPC for Qdrant (default: `true`)
+- `TOKENIZER_MODEL_PATH` - Path to tokenizer model for chunk size calculations (required) — e.g., `/path/to/mxbai-embed-large-v1`
+- `EMBEDDING_BATCH_SIZE` - Batch size for embedding requests (default: `25`)
+- `PDF_FORCE_OCR` - Force OCR on all PDF pages, skip pdfplumber (default: `false`)
+- `HA_INTERLEAVE` - HA Proxy interleaving for multi-endpoint batching (default: `false`)
+- `FORCE_MARKDOWN_LLM` - Force all pages through supervisor LLM (default: `false`)
+- `REDIS_HOST` - Redis server host (required) — e.g., `192.168.30.67`
+- `REDIS_PORT` - Redis server port (required) — e.g., `6380`
 - `USE_TEMPORAL_WHISPER` - Enable Temporal-based WhisperX transcription (default: `false`)
 - `TEMPORAL_HOST` - Host of the remote Temporal server (default: `localhost`)
 - `TEMPORAL_PORT` - Port of the remote Temporal server (default: `7233`)
 - `TEMPORAL_WHISPER_TASK_QUEUE` - Temporal task queue name (default: `whisperx`)
-
-- `OCR_ENDPOINTS` - `LOCAL` or docling-serve URL
-- `WHISPER_MODEL_ENDPOINTS` - Whisper model dir or URL
 
 ### Test Structure
 

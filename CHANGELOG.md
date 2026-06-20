@@ -78,6 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Updated `resolve_supervisor_endpoint`**: Only appends `/v1` to HTTP URLs, not local paths.
 - **Updated `resolve_embedding_endpoint`**: Returns `None` for local paths (URLs only).
 - **PlantUML diagram**: Updated node roles and descriptions, added coordinator host.
+- **All documentation env vars**: Fixed port mismatches across all docs — Supervisor LLM now shows port 11534 (was 11434) everywhere; Chat LLM corrected to 11435. Added all missing env vars (`VECTOR_DB_USE_GRPC`, `TOKENIZER_MODEL_PATH`, `REDIS_HOST`/`REDIS_PORT`, `HA_INTERLEAVE`, `FORCE_MARKDOWN_LLM`, `EMBEDDING_BATCH_SIZE`, `PDF_FORCE_OCR`). README.md Quick Start section now includes complete env var block with all 19+ variables grouped by category. `docs/quickstart.md` updated: local-only deployment table, mandatory/optional services tables, distributed deployment diagram, and multi-endpoint examples all use correct ports and include all relevant variables.
 
 ### Added
 - **HAProxy Load Balancing**

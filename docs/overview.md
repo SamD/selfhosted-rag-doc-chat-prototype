@@ -307,8 +307,8 @@ When multiple backend endpoints are configured for any service, HAProxy automati
 Endpoints are comma-separated URLs. Each URL can include the full path — HAProxy extracts `host:port` for routing and forwards the original request path.
 
 ```bash
-export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
-export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11534/v1/chat/completions,http://gpu1:11534/v1/chat/completions
+export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
 ./doc-ingest-chat/run-compose.sh --build

@@ -21,7 +21,7 @@ Every AI workload runs as an HTTP(S) service on a dedicated LAN host. Workers co
 
 | Mode | Example | Behavior |
 |------|---------|----------|
-| **Remote URL** (`http(s)://...`) | `http://llm-host:11434/v1/chat/completions` | Workers use OpenAI-compatible HTTP clients. No model loaded locally. The remote server handles its own GPU, context, and batching settings. |
+| **Remote URL** (`http(s)://...`) | `http://llm-host:11435/v1/chat/completions` | Workers use OpenAI-compatible HTTP clients. No model loaded locally. The remote server handles its own GPU, context, and batching settings. |
 | **Local path** (`/home/user/models/...`) | `/models/Phi-4-mini-instruct-Q6_K.gguf` | Model is loaded directly in the worker container via llama-cpp or HuggingFace. |
 
 You can mix and match — some services remote, some local.
@@ -35,11 +35,20 @@ To run everything locally without remote services, use local model paths instead
 ```bash
 export DEFAULT_DOC_INGEST_ROOT=/home/user/rag-docs
 export LLM_PATH=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
-export SUPERVISOR_LLM_ENDPOINTS=/home/user/models/Phi-4-mini-instruct-Q6_K.gguf
+export SUPERVISOR_LLM_ENDPOINTS=/home/user/models/Qwen3.5-4B-MTP-UD-Q4_K_XL.gguf
 export EMBEDDING_ENDPOINTS=/home/user/models/e5-large-v2
 export WHISPER_MODEL_ENDPOINTS=/home/user/models/whisper
 export OCR_ENDPOINTS=LOCAL
 export VECTOR_DB_PROFILE=qdrant
+export VECTOR_DB_USE_GRPC=true
+export TOKENIZER_MODEL_PATH=/home/user/models/mxbai-embed-large-v1
+export PDF_FORCE_OCR=false
+export HA_INTERLEAVE=false
+export FORCE_MARKDOWN_LLM=false
+export EMBEDDING_BATCH_SIZE=25
+export USE_TEMPORAL_WHISPER=false
+export REDIS_HOST=localhost
+export REDIS_PORT=6380
 ```
 
 
@@ -61,8 +70,8 @@ These three must be set. Each accepts a remote URL or a local path.
 
 | Env Var | Service Role | Remote Example | Local Example |
 |---------|-------------|----------------|---------------|
-| `LLM_PATH` | **Chat LLM** — inference model for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
-| `SUPERVISOR_LLM_ENDPOINTS` | **Gatekeeper LLM** — normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM, may point to the same model. Supports comma-separated URLs for HAProxy load balancing. | `http://<llm-host>:11434/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
+| `LLM_PATH` | **Chat LLM** — inference model for RAG queries. Runs on a GPU host via llama-server or any OpenAI-compatible API. | `http://<llm-host>:11435/v1/chat/completions` | `/models/Phi-4-mini-instruct-Q6_K.gguf` |
+| `SUPERVISOR_LLM_ENDPOINTS` | **Gatekeeper LLM** — normalization model used by the gatekeeper worker to convert raw extracted text into clean Markdown during ingestion. Often the same host as the chat LLM but typically a different port (11534). Supports comma-separated URLs for HAProxy load balancing. | `http://<llm-host>:11534/v1/chat/completions` | `/models/Qwen3.5-4B-MTP-UD-Q4_K_XL.gguf` |
 | `EMBEDDING_ENDPOINTS` | **Embedding model** — vectorizes chunks during ingestion and queries during chat. Supports comma-separated URLs for HAProxy load balancing. | `http://<embedding-host>:11434/v1/embeddings` | `/models/e5-large-v2` |
 
 ---
@@ -91,10 +100,16 @@ The remaining services have defaults and only need configuration when using remo
 | `WHISPER_MODEL_ENDPOINTS` | **WhisperX** — transcribes MP3, MP4, WAV, MOV, MKV files. When `NOT_SET`, audio/video files are skipped during ingestion. Set to a URL or local path to enable transcription. | `NOT_SET` | `http://<whisper-host>:1145/inference` |
 | `OCR_ENDPOINTS` | **OCR** — docling-serve for PDF OCR fallback when pdfplumber cannot extract text. | `LOCAL` | `http://<ocr-host>:5001/v1/convert/file` |
 | `PDF_FORCE_OCR` | Skip pdfplumber and use OCR for all PDF pages | `false` | `true` or `false` |
+| `HA_INTERLEAVE` | HA Proxy interleaving for multi-endpoint batching | `false` | `true` or `false` |
+| `FORCE_MARKDOWN_LLM` | Force all pages through supervisor LLM | `false` | `true` or `false` |
+| `EMBEDDING_BATCH_SIZE` | Batch size for embedding requests | `25` | `25` |
+| `TOKENIZER_MODEL_PATH` | **Required** — Path to tokenizer model for chunk size calculations | (none) | `/path/to/mxbai-embed-large-v1` |
 | `USE_TEMPORAL_WHISPER` | **Temporal** — enables durable WhisperX transcription via Temporal Activities (crash-recovery, retries). Requires a remote Temporal server. | `false` | `true` |
 | `TEMPORAL_HOST` | **Temporal** — Remote Temporal server host. | `localhost` | `temporal.example.com` |
 | `TEMPORAL_PORT` | **Temporal** — Remote Temporal server gRPC port. | `7233` | `7233` |
 | `TEMPORAL_WHISPER_TASK_QUEUE` | **Temporal** — task queue name for WhisperX Activities. | `whisperx` | `whisperx` |
+| `REDIS_HOST` | **Required** — Redis server host for queue coordination and chat sessions | (none) | `192.168.30.67` |
+| `REDIS_PORT` | **Required** — Redis server port | (none) | `6380` |
 
 
 ---
@@ -122,17 +137,25 @@ Every heavy service runs on a dedicated host or container. The worker stack runs
 |    <llm-host>     |   |  <embedding-host> |   |  <vector-db-host> |
 |    (GPU host)     |   |                   |   |                   |
 |                   |   |  embedding model  |   |  Qdrant           |
-| chat LLM +        |   |  :11434/v1        |   |  gRPC:6334        |
-| gatekeeper LLM    |   |                   |   |  REST:6333        |
-| :11434/v1         |   |                   |   |                   |
+| chat LLM          |   |  :11434/v1        |   |  gRPC:6334        |
+| :11435/v1         |   |                   |   |  REST:6333        |
+| gatekeeper LLM    |   |                   |   |                   |
+| :11534/v1         |   |                   |   |                   |
 +-------------------+   +-------------------+   +-------------------+
 
-+-------------------+   +-------------------+
-|   <whisper-host>  |   |    <ocr-host>     |
-|                   |   |                   |
-|  WhisperX         |   |  docling-serve    |
-|  :1145/inference  |   |  :5001/v1         |
-+-------------------+   +-------------------+
++-------------------+   +-------------------+   +-------------------+
+|   <whisper-host>  |   |    <ocr-host>     |   |   <temporal-host> |
+|                   |   |                   |   |                   |
+|  WhisperX         |   |  docling-serve    |   |  Temporal Server  |
+|  :1145/inference  |   |  :5001/v1         |   |  :7233 (gRPC)     |
++-------------------+   +-------------------+   +-------------------+
+
++-------------------+
+|   <redis-host>    |
+|                   |
+|  Redis            |
+|  :6380            |
++-------------------+
 
               +-------------------------------+
               |       Coordinator Host        |
@@ -157,16 +180,16 @@ The coordinator connects to all services over HTTP via HAProxy. Each remote host
 When you have multiple hosts running the same service, set `*_ENDPOINTS` env vars with comma-separated URLs. HAProxy starts automatically and distributes requests across all backends with health checks and failover.
 
 ```bash
-# Two GPU hosts running supervisor LLM
-export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11435/v1/chat/completions,http://gpu1:11436/v1/chat/completions
+# Two GPU hosts running supervisor LLM (port 11534)
+export SUPERVISOR_LLM_ENDPOINTS=http://gpu0:11534/v1/chat/completions,http://gpu1:11534/v1/chat/completions
 
-# Two hosts running embedding model
+# Two hosts running embedding model (port 11434)
 export EMBEDDING_ENDPOINTS=http://gpu0:11434/v1/embeddings,http://gpu1:11434/v1/embeddings
 
-# Two hosts running WhisperX
+# Two hosts running WhisperX (port 1145)
 export WHISPER_MODEL_ENDPOINTS=http://whisper0:1145/inference,http://whisper1:1145/inference
 
-# Two hosts running OCR
+# Two hosts running OCR (port 5001)
 export OCR_ENDPOINTS=http://ocr0:5001/v1/convert/file,http://ocr1:5001/v1/convert/file
 ```
 
