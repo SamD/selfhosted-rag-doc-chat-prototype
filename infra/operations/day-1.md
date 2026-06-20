@@ -8,17 +8,30 @@ Linear checklist for first-time deployment and startup verification.
 
 ```bash
 export DEFAULT_DOC_INGEST_ROOT=/path/to/rag-data
-export EMBEDDING_ENDPOINTS=/path/to/e5-large-v2
-export LLM_PATH=/path/to/phi-3.5-mini-instruct-q6_k.gguf
-export SUPERVISOR_LLM_ENDPOINTS=/path/to/qwen3.5-4b-mtp-ud-q4_k_xl.gguf
+export EMBEDDING_ENDPOINTS=http://<embedding-host>:11434/v1/embeddings
+export LLM_PATH=http://<llm-host>:11435/v1/chat/completions
+export SUPERVISOR_LLM_ENDPOINTS=http://<llm-host>:11534/v1/chat/completions
+export TOKENIZER_MODEL_PATH=/path/to/mxbai-embed-large-v1
+export REDIS_HOST=<redis-host>
+export REDIS_PORT=6380
 ```
 
 ### Optional — sensible defaults exist
 
 ```bash
 export VECTOR_DB_PROFILE=qdrant          # or chroma
-export OCR_ENDPOINTS=LOCAL               # or remote docling-serve URL
-export WHISPER_MODEL_ENDPOINTS=NOT_SET   # or remote URL
+export VECTOR_DB_URL=http://<vector-db-host>:6334
+export VECTOR_DB_USE_GRPC=true
+export OCR_ENDPOINTS=http://<ocr-host>:5001/v1/convert/file  # or LOCAL
+export WHISPER_MODEL_ENDPOINTS=http://<whisper-host>:1145/inference  # or NOT_SET
+export PDF_FORCE_OCR=false
+export HA_INTERLEAVE=false
+export FORCE_MARKDOWN_LLM=false
+export EMBEDDING_BATCH_SIZE=25
+export USE_TEMPORAL_WHISPER=false
+export TEMPORAL_HOST=<temporal-host>
+export TEMPORAL_PORT=7233
+export TEMPORAL_WHISPER_TASK_QUEUE=whisperx
 export MAX_SESSION_TURNS=20              # chat history limit
 export SESSION_TTL_HOURS=24              # session expiry
 ```
@@ -188,7 +201,7 @@ docker logs whisperx_worker 2>&1 | grep -i temporal
 
 ## Checklist
 
-- [ ] All 4 required env vars set
+- [ ] All required env vars set (`DEFAULT_DOC_INGEST_ROOT`, `EMBEDDING_ENDPOINTS`, `LLM_PATH`, `SUPERVISOR_LLM_ENDPOINTS`, `TOKENIZER_MODEL_PATH`, `REDIS_HOST`, `REDIS_PORT`)
 - [ ] `docker ps` shows all expected containers as healthy
 - [ ] `curl /health` returns `"healthy"`
 - [ ] `curl /status` returns `"operational"`
